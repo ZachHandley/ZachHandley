@@ -1,0 +1,34 @@
+{
+  "extends": "astro/tsconfigs/strict",
+  "include": [
+    ".astro/types.d.ts",
+    "**/*"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules",
+    ".devbox",
+    ".vscode"
+  ],
+  "compilerOptions": {
+    "jsx": "preserve",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "module": "ESNext",
+    "target": "ESNext",
+    "moduleResolution": "Bundler",
+    "baseUrl": ".",
+    "paths": {
+      "~/*": ["src/*"],
+      "~assets/*": ["src/assets/*"],
+      "~components/*": ["src/components/*"],
+      "~svelte/*": ["src/svelte/*"],
+      "~vue/*": ["src/vue/*"],
+      "~layouts/*": ["src/layouts/*"],
+      "~pages/*": ["src/pages/*"],
+      "~styles/*": ["src/styles/*"],
+      "~utils/*": ["src/utils/*"],
+      "~types/*": ["src/types/*"]
+    }
+  }
+}
