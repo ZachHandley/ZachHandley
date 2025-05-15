@@ -14,9 +14,9 @@ import topLevelAwait from "vite-plugin-top-level-await";
 export default defineConfig({
   site: import.meta.env.DEV
     ? "http://localhost:3000"
-    : "https://zachhandley.com",
+    : "https://dev.zachhandley.com",
   server: {
-    port: 3000,
+    port: import.meta.env.DEV ? 3000 : 4321,
   },
   vite: {
     plugins: [
