@@ -1,17 +1,22 @@
 import { renderers } from './renderers.mjs';
-import { c as createExports, s as serverEntrypointModule } from './chunks/_@astrojs-ssr-adapter_lZjeLPeO.mjs';
-import { manifest } from './manifest_B46lqFnh.mjs';
+import { c as createExports, s as serverEntrypointModule } from './chunks/_@astrojs-ssr-adapter_CYu0UJCJ.mjs';
+import { manifest } from './manifest_BPFA_38f.mjs';
 let __astrojsSsrVirtualEntry, pageMap;
 let __tla = (async ()=>{
     globalThis.process ??= {};
     globalThis.process.env ??= {};
     const serverIslandMap = new Map();
     ;
-    const _page0 = ()=>import('./pages/index.astro.mjs');
+    const _page0 = ()=>import('./pages/_image.astro.mjs');
+    const _page1 = ()=>import('./pages/index.astro.mjs');
     pageMap = new Map([
         [
-            "src/pages/index.astro",
+            "node_modules/.pnpm/astro@5.7.12_@types+node@22.15.17_encoding@0.1.13_jiti@2.4.2_lightningcss@1.29.2_rollup_b1eaed5fee0e3f65992d725b9bd517b1/node_modules/astro/dist/assets/endpoint/generic.js",
             _page0
+        ],
+        [
+            "src/pages/index.astro",
+            _page1
         ]
     ]);
     const _manifest = Object.assign(manifest, {

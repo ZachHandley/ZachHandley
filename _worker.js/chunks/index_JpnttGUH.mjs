@@ -1,6 +1,7 @@
-import { g as getActionQueryString, a as deserializeActionResult, b as distExports, D as DEFAULT_404_ROUTE, A as ActionError, s as serializeActionResult, c as ACTION_RPC_ROUTE_PATTERN, f as ACTION_QUERY_PARAMS, u as unflatten$1, h as stringify$2 } from './astro-designed-error-pages_CaqMnQ7q.mjs';
-import { s as decryptString, t as createSlotValueFromString, u as isAstroComponentFactory, f as renderComponent, e as renderTemplate, h as REROUTE_DIRECTIVE_HEADER, A as AstroError, v as i18nNoLocaleFoundInPath, w as ResponseSentError, x as originPathnameSymbol, z as RewriteWithBodyUsed, M as MiddlewareNoDataOrNextCalled, B as MiddlewareNotAResponse, G as GetStaticPathsRequired, I as InvalidGetStaticPathsReturn, C as InvalidGetStaticPathsEntry, E as GetStaticPathsExpectedParams, F as GetStaticPathsInvalidRouteParam, P as PageNumberParamNotFound, D as DEFAULT_404_COMPONENT, N as NoMatchingStaticPathFound, H as PrerenderDynamicEndpointPathCollide, J as ReservedSlotName, K as renderSlotToString, O as renderJSX, Q as chunkToString, S as isRenderInstruction, T as SessionStorageSaveError, U as SessionStorageInitError, R as ROUTE_TYPE_HEADER, V as ForbiddenRewrite, W as ASTRO_VERSION, X as green, Y as LocalsReassigned, Z as PrerenderClientAddressNotAvailable, o as clientAddressSymbol, _ as ClientAddressNotAvailable, $ as StaticClientAddressNotAvailable, a0 as AstroResponseHeadersReassigned, q as responseSentSymbol$1, a1 as renderPage, a2 as REWRITE_DIRECTIVE_HEADER_KEY, a3 as REWRITE_DIRECTIVE_HEADER_VALUE, a4 as renderEndpoint } from './astro/server_DVsG1dew.mjs';
-let PERSIST_SYMBOL, RouteCache, SERVER_ISLAND_COMPONENT, redirectToFallback, redirectToDefaultLocale, requestHasLocale, normalizeTheLocale, defineMiddleware, SERVER_ISLAND_ROUTE, createEndpoint, fileExtension, isRequestServerIsland, joinPaths, slash, findRouteToRewrite, removeTrailingForwardSlash, notFound, matchRoute, prependForwardSlash, appendForwardSlash, requestIs404Or500, sequence, collapseDuplicateTrailingSlashes, hasFileExtension, RenderContext, getSetCookiesFromResponse;
+import { g as getActionQueryString, a as deserializeActionResult, b as distExports, D as DEFAULT_404_ROUTE, A as ActionError, s as serializeActionResult, c as ACTION_RPC_ROUTE_PATTERN, f as ACTION_QUERY_PARAMS, u as unflatten$1, h as stringify$2 } from './astro-designed-error-pages_DfKsqSGN.mjs';
+import { v as decryptString, w as createSlotValueFromString, x as isAstroComponentFactory, f as renderComponent, e as renderTemplate, k as REROUTE_DIRECTIVE_HEADER, A as AstroError, z as i18nNoLocaleFoundInPath, B as ResponseSentError, C as originPathnameSymbol, E as RewriteWithBodyUsed, M as MiddlewareNoDataOrNextCalled, F as MiddlewareNotAResponse, G as GetStaticPathsRequired, I as InvalidGetStaticPathsReturn, H as InvalidGetStaticPathsEntry, J as GetStaticPathsExpectedParams, K as GetStaticPathsInvalidRouteParam, P as PageNumberParamNotFound, D as DEFAULT_404_COMPONENT, O as NoMatchingStaticPathFound, Q as PrerenderDynamicEndpointPathCollide, S as ReservedSlotName, T as renderSlotToString, U as renderJSX, V as chunkToString, W as isRenderInstruction, X as SessionStorageSaveError, Y as SessionStorageInitError, j as ROUTE_TYPE_HEADER, Z as ForbiddenRewrite, _ as ASTRO_VERSION, $ as green, a0 as LocalsReassigned, a1 as PrerenderClientAddressNotAvailable, s as clientAddressSymbol, a2 as ClientAddressNotAvailable, a3 as StaticClientAddressNotAvailable, a4 as AstroResponseHeadersReassigned, u as responseSentSymbol$1, a5 as renderPage, a6 as REWRITE_DIRECTIVE_HEADER_KEY, a7 as REWRITE_DIRECTIVE_HEADER_VALUE, a8 as renderEndpoint } from './astro/server_B1EJ9TDe.mjs';
+import { a as appendForwardSlash, j as joinPaths, r as removeTrailingForwardSlash, p as prependForwardSlash, t as trimSlashes } from './internal_DPJyyAwZ.mjs';
+let PERSIST_SYMBOL, RouteCache, SERVER_ISLAND_COMPONENT, redirectToFallback, redirectToDefaultLocale, requestHasLocale, normalizeTheLocale, defineMiddleware, SERVER_ISLAND_ROUTE, createEndpoint, findRouteToRewrite, isRequestServerIsland, RenderContext, getSetCookiesFromResponse, matchRoute, notFound, requestIs404Or500, sequence;
 let __tla = (async ()=>{
     globalThis.process ??= {};
     globalThis.process.env ??= {};
@@ -13,53 +14,6 @@ let __tla = (async ()=>{
         const type = contentType.split(";")[0].toLowerCase();
         return expected.some((t)=>type === t);
     }
-    appendForwardSlash = function(path) {
-        return path.endsWith("/") ? path : path + "/";
-    };
-    prependForwardSlash = function(path) {
-        return path[0] === "/" ? path : "/" + path;
-    };
-    const MANY_TRAILING_SLASHES = /\/{2,}$/g;
-    collapseDuplicateTrailingSlashes = function(path, trailingSlash) {
-        if (!path) {
-            return path;
-        }
-        return path.replace(MANY_TRAILING_SLASHES, trailingSlash ? "/" : "") || "/";
-    };
-    removeTrailingForwardSlash = function(path) {
-        return path.endsWith("/") ? path.slice(0, path.length - 1) : path;
-    };
-    function removeLeadingForwardSlash(path) {
-        return path.startsWith("/") ? path.substring(1) : path;
-    }
-    function trimSlashes(path) {
-        return path.replace(/^\/|\/$/g, "");
-    }
-    function isString(path) {
-        return typeof path === "string" || path instanceof String;
-    }
-    joinPaths = function(...paths) {
-        return paths.filter(isString).map((path, i)=>{
-            if (i === 0) {
-                return removeTrailingForwardSlash(path);
-            } else if (i === paths.length - 1) {
-                return removeLeadingForwardSlash(path);
-            } else {
-                return trimSlashes(path);
-            }
-        }).join("/");
-    };
-    slash = function(path) {
-        return path.replace(/\\/g, "/");
-    };
-    fileExtension = function(path) {
-        const ext = path.split(".").pop();
-        return ext !== path ? `.${ext}` : "";
-    };
-    const WITH_FILE_EXT = /\/[^/]+\.\w+$/;
-    hasFileExtension = function(path) {
-        return WITH_FILE_EXT.test(path);
-    };
     function hasActionPayload(locals) {
         return "_actionPayload" in locals;
     }
@@ -2730,4 +2684,4 @@ let __tla = (async ()=>{
         return fn;
     };
 })();
-export { PERSIST_SYMBOL as P, RouteCache as R, SERVER_ISLAND_COMPONENT as S, redirectToFallback as a, redirectToDefaultLocale as b, requestHasLocale as c, normalizeTheLocale as d, defineMiddleware as e, SERVER_ISLAND_ROUTE as f, createEndpoint as g, fileExtension as h, isRequestServerIsland as i, joinPaths as j, slash as k, findRouteToRewrite as l, removeTrailingForwardSlash as m, notFound as n, matchRoute as o, prependForwardSlash as p, appendForwardSlash as q, requestIs404Or500 as r, sequence as s, collapseDuplicateTrailingSlashes as t, hasFileExtension as u, RenderContext as v, getSetCookiesFromResponse as w, __tla };
+export { PERSIST_SYMBOL as P, RouteCache as R, SERVER_ISLAND_COMPONENT as S, redirectToFallback as a, redirectToDefaultLocale as b, requestHasLocale as c, normalizeTheLocale as d, defineMiddleware as e, SERVER_ISLAND_ROUTE as f, createEndpoint as g, findRouteToRewrite as h, isRequestServerIsland as i, RenderContext as j, getSetCookiesFromResponse as k, matchRoute as m, notFound as n, requestIs404Or500 as r, sequence as s, __tla };

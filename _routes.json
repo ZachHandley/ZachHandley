@@ -4,13 +4,12 @@
     "/*"
   ],
   "exclude": [
-    "/",
     "/_astro/*",
     "/favicon.svg",
     "/files/*",
     "/fonts/*",
+    "/textures/*",
     "/sounds/*",
-    "/models/*",
-    "/textures/*"
+    "/models/*"
   ]
 }
