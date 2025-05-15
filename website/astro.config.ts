@@ -9,6 +9,7 @@ import svelte from "@astrojs/svelte";
 
 import tsConfigPaths from "vite-tsconfig-paths";
 import topLevelAwait from "vite-plugin-top-level-await";
+import removeConsole from "vite-plugin-remove-console";
 
 import cloudflare from "@astrojs/cloudflare";
 
@@ -33,6 +34,7 @@ export default defineConfig({
         // The function to generate import names of top-level await promise in each chunk module
         promiseImportName: (i) => `__tla_${i}`,
       }),
+      removeConsole(),
     ],
     esbuild: {
       target: "esnext",
