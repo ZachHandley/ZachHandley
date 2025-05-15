@@ -171,7 +171,7 @@
     <div
       class="w-full text-center transition-all duration-300 pointer-events-auto"
       style="background-color: rgba(0,0,0,0.65); backdrop-filter: blur(8px);
-             height: {showInfoPanel ? '20vh' : '5vh'};
+             height: {showInfoPanel ? '20vh' : innerWidth < 768 ? '10vh' : '5vh'};
              overflow: hidden;"
     >
       <!-- Title always visible -->
