@@ -81,6 +81,9 @@ importers:
       prettier-plugin-svelte:
         specifier: ^3.3.3
         version: 3.3.3(prettier@3.5.3)(svelte@5.28.2)
+      vite-plugin-remove-console:
+        specifier: ^2.2.0
+        version: 2.2.0
       vite-plugin-top-level-await:
         specifier: ^1.5.0
         version: 1.5.0(@swc/helpers@0.5.17)(rollup@4.40.2)(vite@6.3.5(@types/node@22.15.17)(jiti@2.4.2)(lightningcss@1.29.2)(sass@1.88.0))
@@ -2975,6 +2978,9 @@ packages:
     peerDependenciesMeta:
       '@nuxt/kit':
         optional: true
+
+  vite-plugin-remove-console@2.2.0:
+    resolution: {integrity: sha512-qgjh5pz75MdE9Kzs8J0kBwaCfifHV0ezRbB9rpGsIOxam+ilcGV7WOk91vFJXquzRmiKrFh3Hxlh0JJWAmXTbQ==}
 
   vite-plugin-top-level-await@1.5.0:
     resolution: {integrity: sha512-r/DtuvHrSqUVk23XpG2cl8gjt1aATMG5cjExXL1BUTcSNab6CzkcPua9BPEc9fuTP5UpwClCxUe3+dNGL0yrgQ==}
@@ -6355,6 +6361,8 @@ snapshots:
     transitivePeerDependencies:
       - rollup
       - supports-color
+
+  vite-plugin-remove-console@2.2.0: {}
 
   vite-plugin-top-level-await@1.5.0(@swc/helpers@0.5.17)(rollup@4.40.2)(vite@6.3.5(@types/node@22.15.17)(jiti@2.4.2)(lightningcss@1.29.2)(sass@1.88.0)):
     dependencies:
