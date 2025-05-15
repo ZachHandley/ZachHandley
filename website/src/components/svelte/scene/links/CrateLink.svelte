@@ -177,10 +177,16 @@
 
   function onPointerEnter() {
     hovering = true;
+    if (typeof document !== "undefined") {
+      document.body.classList.add("cursor-pointer");
+    }
   }
 
   function onPointerLeave() {
     hovering = false;
+    if (typeof document !== "undefined") {
+      document.body.classList.remove("cursor-pointer");
+    }
   }
 
   $effect(() => {

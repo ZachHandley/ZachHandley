@@ -8,6 +8,9 @@
   let innerWidth = $state(0);
   let innerHeight = $state(0);
 
+  // Show/hide info panel - show by default
+  let showInfoPanel = $state(true);
+
   // Active category
   let activeCategory = $state<string | undefined>(undefined);
 
@@ -45,6 +48,10 @@
 
   function handleInteract(category?: string) {
     activeCategory = category === undefined ? undefined : category;
+  }
+
+  function toggleInfoPanel() {
+    showInfoPanel = !showInfoPanel;
   }
 
   const links = $state<Link[]>([
@@ -141,32 +148,55 @@
 <div
   class="w-screen relative max-w-screen h-screen overflow-hidden bg-gray-900"
 >
-  <!-- 3D Canvas with the scene -->
-  <Canvas toneMapping={undefined}>
-    <BaseScene {handleDragonClick} {links} {handleInteract} {activeCategory} />
-  </Canvas>
+  <!-- 3D Canvas with the scene - adjusted with padding-top -->
+  <div
+    class="h-full"
+    style="padding-top: {showInfoPanel
+      ? '20vh'
+      : '40px'}; transition: padding-top 0.3s ease;"
+  >
+    <Canvas toneMapping={undefined}>
+      <BaseScene
+        {handleDragonClick}
+        {links}
+        {handleInteract}
+        {activeCategory}
+      />
+    </Canvas>
+  </div>
 
-  <!-- HTML UI overlay -->
-  <div class="absolute inset-0 pointer-events-none">
+  <!-- Top info panel with toggle -->
+  <div class="absolute top-0 left-0 right-0 z-10 pointer-events-none">
+    <!-- Info panel - conditionally shown -->
     <div
-      class="absolute top-10 left-0 right-0 text-center pointer-events-none z-10"
+      class="w-full text-center transition-all duration-300 pointer-events-auto"
+      style="background-color: rgba(0,0,0,0.65); backdrop-filter: blur(8px);
+             height: {showInfoPanel ? '20vh' : '5vh'};
+             overflow: hidden;"
     >
-      <div
-        class="bg-black/30 backdrop-blur-sm p-3 rounded-lg flex flex-col items-center max-w-2xl mx-auto"
-      >
+      <!-- Title always visible -->
+      <div class="py-1 mb-2 px-4">
         <h1
-          class="text-3xl md:text-5xl font-bold text-white mb-2 text-shadow-lg"
+          class="text-xl sm:text-2xl md:text-4xl font-bold text-white text-shadow-lg"
         >
           ZachHandley's Site
         </h1>
-        <p class="text-sm md:text-lg text-white/90 max-w-xl mx-auto mb-3">
+      </div>
+
+      <!-- Content only visible when expanded -->
+      <div
+        class="transition-opacity duration-300 px-3"
+        style="opacity: {showInfoPanel ? '1' : '0'}; 
+               max-height: {showInfoPanel ? '20vh' : '0'};"
+      >
+        <p class="text-xs sm:text-sm text-white/90 max-w-xl mx-auto mb-1">
           Welcome to my interactive portfolio. Click on the crates to explore
           different categories.
         </p>
 
-        <!-- Biography -->
-        <div class="mt-1 bg-black/20 p-3 rounded-lg max-w-xl">
-          <p class="text-xs md:text-sm text-white/90 leading-relaxed">
+        <!-- Biography - condensed -->
+        <div class="bg-black/20 p-2 rounded-lg max-w-xl mx-auto">
+          <p class="text-xs sm:text-sm text-white/90 leading-tight">
             I'm Zach Handley, a software engineer, full-stack developer, and AI
             specialist based in Los Angeles. At Black Leaf Digital, I create
             innovative web, mobile, and AI solutions with expertise in Azure and
@@ -177,23 +207,48 @@
       </div>
     </div>
 
-    <!-- Small instruction text -->
-    <div class="absolute top-4 left-0 right-0 text-center">
-      <p
-        class="text-xs md:text-sm text-white/90 bg-black/40 backdrop-blur-sm py-1 px-3 rounded-full inline-block"
+    <!-- Toggle button (centered at bottom) -->
+    <button
+      class="absolute left-1/2 -translate-x-1/2 top-full bg-black/60 text-white py-2 px-4 rounded-full shadow-lg z-20 hover:bg-black/80 transition-all pointer-events-auto flex items-center gap-2 backdrop-blur-sm border border-white/20"
+      onclick={toggleInfoPanel}
+      aria-label={showInfoPanel
+        ? "Hide information panel"
+        : "Show information panel"}
+    >
+      <span class="text-xs sm:text-sm font-medium">
+        {showInfoPanel ? "Hide Info" : "Show Info"}
+      </span>
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
       >
-        Click on crates to explore categories
-      </p>
-    </div>
+        {#if showInfoPanel}
+          <!-- Minimize icon -->
+          <polyline points="18 15 12 9 6 15"></polyline>
+        {:else}
+          <!-- Maximize icon -->
+          <polyline points="6 9 12 15 18 9"></polyline>
+        {/if}
+      </svg>
+    </button>
 
     <!-- Category description -->
     {#if activeCategory}
-      <div class="absolute bottom-6 left-0 right-0 text-center">
+      <div
+        class="absolute bottom-16 left-0 right-0 text-center pointer-events-none"
+      >
         <div
           class="bg-black/40 backdrop-blur-sm py-2 px-4 rounded-lg inline-block max-w-xs mx-auto"
         >
           <h3
-            class="text-xs md:text-sm font-semibold text-white capitalize mb-1"
+            class="text-xs sm:text-sm font-semibold text-white capitalize mb-1"
           >
             {activeCategory}
           </h3>
