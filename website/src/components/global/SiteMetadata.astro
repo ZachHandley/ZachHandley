@@ -1,8 +1,8 @@
 ---
 import { ClientRouter } from "astro:transitions";
-import Themes from "astro-themes";
 import "../../styles/global.css";
-import "sweetalert2/src/sweetalert2.scss";
+import ClarityInit from "./ClarityInit.astro";
+// import Themes from "astro-themes";
 
 interface Props {
   title: string;
@@ -63,10 +63,10 @@ const fullTitle = `${title} - ${siteName}`;
   media="(prefers-color-scheme: dark)"
 />
 
-
-
 <!-- Client Router for Transitions -->
 <ClientRouter />
 
+<ClarityInit />
+
 <!-- Themes Handler (light/dark mode) -->
-<Themes />
+<!-- <Themes /> -->
