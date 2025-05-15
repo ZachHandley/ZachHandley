@@ -8,8 +8,8 @@
     "/favicon.svg",
     "/files/*",
     "/fonts/*",
-    "/textures/*",
     "/sounds/*",
+    "/textures/*",
     "/models/*"
   ]
 }

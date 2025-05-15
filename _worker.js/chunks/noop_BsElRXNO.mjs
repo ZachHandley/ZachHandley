@@ -1,5 +1,5 @@
 globalThis.process ??= {}; globalThis.process.env ??= {};
-import { b as baseService } from './generic_D6ZEQbnC.mjs';
+import { b as baseService } from './generic_DAFBkvFs.mjs';
 
 const noopService = {
   ...baseService,

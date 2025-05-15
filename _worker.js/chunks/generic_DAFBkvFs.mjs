@@ -1,5 +1,5 @@
 import { j as joinPaths, i as isRemotePath } from './internal_DPJyyAwZ.mjs';
-import { A as AstroError, a9 as ExpectedImage, aa as LocalImageUsedWrongly, ab as MissingImageDimension, ac as UnsupportedImageFormat, ad as IncompatibleDescriptorOptions, ae as UnsupportedImageConversion, af as toStyleString, ag as NoImageMetadata, ah as FailedToFetchRemoteImageDimensions, ai as ExpectedImageOptions, aj as ExpectedNotESMImage, ak as InvalidImageService, c as createAstro, a as createComponent, al as ImageMissingAlt, m as maybeRenderHead, b as addAttribute, am as spreadAttributes, e as renderTemplate, an as ExperimentalFontsNotEnabled, ao as FontFamilyNotFound, ap as unescapeHTML } from './astro/server_B1EJ9TDe.mjs';
+import { A as AstroError, aa as ExpectedImage, ab as LocalImageUsedWrongly, ac as MissingImageDimension, ad as UnsupportedImageFormat, ae as IncompatibleDescriptorOptions, af as UnsupportedImageConversion, ag as toStyleString, ah as NoImageMetadata, ai as FailedToFetchRemoteImageDimensions, aj as ExpectedImageOptions, ak as ExpectedNotESMImage, al as InvalidImageService, c as createAstro, a as createComponent, am as ImageMissingAlt, m as maybeRenderHead, b as addAttribute, an as spreadAttributes, e as renderTemplate, ao as ExperimentalFontsNotEnabled, ap as FontFamilyNotFound, aq as unescapeHTML } from './astro/server_BxFlCYW6.mjs';
 import '../renderers.mjs';
 let baseService, page;
 let __tla = (async ()=>{
@@ -1239,7 +1239,7 @@ let __tla = (async ()=>{
     }
     async function getConfiguredImageService() {
         if (!globalThis?.astroAsset?.imageService) {
-            const { default: service } = await import('./noop_CrXY9vtL.mjs').catch((e)=>{
+            const { default: service } = await import('./noop_BsElRXNO.mjs').catch((e)=>{
                 const error = new AstroError(InvalidImageService);
                 error.cause = e;
                 throw error;

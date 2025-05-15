@@ -1,6 +1,6 @@
 import { renderers } from './renderers.mjs';
-import { c as createExports, s as serverEntrypointModule } from './chunks/_@astrojs-ssr-adapter_CYu0UJCJ.mjs';
-import { manifest } from './manifest_BPFA_38f.mjs';
+import { c as createExports, s as serverEntrypointModule } from './chunks/_@astrojs-ssr-adapter_MVJqQIeW.mjs';
+import { manifest } from './manifest_QEhvEamT.mjs';
 let __astrojsSsrVirtualEntry, pageMap;
 let __tla = (async ()=>{
     globalThis.process ??= {};
