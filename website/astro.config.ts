@@ -22,7 +22,7 @@ export default defineConfig({
     : "https://dev.zachhandley.com",
 
   server: {
-    port: import.meta.env.DEV ? 3000 : 4321,
+    port: import.meta.env.DEV ? 3000 : undefined,
   },
 
   vite: {
