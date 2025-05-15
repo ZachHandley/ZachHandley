@@ -1,0 +1,17 @@
+---
+
+---
+<script>
+    import Clarity from "@microsoft/clarity";
+  
+    // Wait for document to be ready since Clarity needs the DOM
+    document.addEventListener("astro:page-load", () => {
+      try {
+        Clarity.init("ri0em2d914");
+        // Explicitly set window.clarity for compatibility with existing code
+        window.ms_clarity = Clarity;
+      } catch (e) {
+        console.error("Failed to initialize Clarity:", e);
+      }
+    });
+  </script>
