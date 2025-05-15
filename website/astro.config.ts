@@ -15,6 +15,7 @@ import cloudflare from "@astrojs/cloudflare";
 
 // https://astro.build/config
 export default defineConfig({
+  trailingSlash: "ignore",
   output: "server",
   site: import.meta.env.DEV
     ? "http://localhost:3000"
