@@ -10,14 +10,18 @@ import svelte from "@astrojs/svelte";
 import tsConfigPaths from "vite-tsconfig-paths";
 import topLevelAwait from "vite-plugin-top-level-await";
 
+import cloudflare from "@astrojs/cloudflare";
+
 // https://astro.build/config
 export default defineConfig({
   site: import.meta.env.DEV
     ? "http://localhost:3000"
     : "https://dev.zachhandley.com",
+
   server: {
     port: import.meta.env.DEV ? 3000 : 4321,
   },
+
   vite: {
     plugins: [
       tailwindcss(),
@@ -36,6 +40,7 @@ export default defineConfig({
       target: "esnext",
     },
   },
+
   integrations: [
     vue({
       include: "src/components/vue/**/*.vue",
@@ -46,4 +51,8 @@ export default defineConfig({
       include: "**/**.svelte",
     }),
   ],
+
+  adapter: cloudflare({
+    imageService: "passthrough",
+  }),
 });
