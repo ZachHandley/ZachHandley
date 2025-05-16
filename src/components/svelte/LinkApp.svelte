@@ -194,7 +194,7 @@
       </div>
 
       <!-- Categories section - full width for everything -->
-      <div class="w-full">
+      <div class="w-full flex flex-col">
         <h2 class="text-lg sm:text-xl font-bold text-white mb-2">
           Explore My Work
         </h2>
@@ -258,6 +258,35 @@
             </p>
           </div>
         </div>
+        <!-- Toggle button -->
+         <div class="flex justify-center mt-4">
+           <button
+             class="bg-black/40 text-white py-1 px-3 rounded-full shadow-md hover:bg-black/60 transition-all flex items-center gap-1 backdrop-blur-sm border border-white/10 text-sm sm:text-lg"
+             onclick={toggleInfoPanel}
+             aria-label={showInfoPanel ? "Hide information" : "Show information"}
+           >
+             <span class="hidden sm:inline">
+               {showInfoPanel ? "Hide Info" : "Show Info"}
+             </span>
+             <svg
+               xmlns="http://www.w3.org/2000/svg"
+               width="16"
+               height="16"
+               viewBox="0 0 24 24"
+               fill="none"
+               stroke="currentColor"
+               stroke-width="2"
+               stroke-linecap="round"
+               stroke-linejoin="round"
+             >
+               {#if showInfoPanel}
+                 <polyline points="18 15 12 9 6 15"></polyline>
+               {:else}
+                 <polyline points="6 9 12 15 18 9"></polyline>
+               {/if}
+             </svg>
+           </button>
+         </div>
       </div>
     </div>
   </div>
