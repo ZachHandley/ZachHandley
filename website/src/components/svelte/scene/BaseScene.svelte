@@ -390,7 +390,7 @@
 </T.PerspectiveCamera>
 
 <!-- Lighting - simplified -->
-<T.DirectionalLight position={[0, 100, 100]} intensity={2} castShadow />
+<T.DirectionalLight position={[-5, 75, 100]} intensity={2} castShadow />
 
 <!-- Environment -->
 <T.Group scale={ENVIRONMENT_SCALE}>

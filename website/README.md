@@ -130,6 +130,12 @@ src/
 - Contact
 - About
 
+## TODO
+
+- [ ] Fix the HTML component in `CrateLink.svelte` from stopping the click / tap event from being passed to the crate
+- [ ] Fix the top text being responsive in size
+- [ ] Add links to the GitHub repository in the top / beautify the panel by overlaying it
+
 ## 🔮 Future Enhancements
 
 - [ ] Add interactive animations for the dragon

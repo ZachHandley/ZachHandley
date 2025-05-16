@@ -62,6 +62,14 @@
   // Combined categories for filtering
   const allCategories = [...leftCategories, ...rightCategories];
 
+  // Reactive state for device type
+  let isMobile = $state(false);
+
+  $effect(() => {
+    // Update mobile detection whenever size changes
+    isMobile = $size && $size.width < $size.height * 1.2;
+  });
+
   // UI State
   let selectedCategory = $state<string | null>(null);
   let categoryIcons = $state<Record<string, string>>({});
@@ -167,7 +175,7 @@
     return height * (cameraRef.aspect || 1);
   }
 
-  // Calculate grid layout for links
+  // Calculate grid layout for links with equidistant spacing and floor constraints
   function calculateGridLayout(links: LinkType[]) {
     if (!cameraRef || links.length === 0) {
       return { leftPositions: [], rightPositions: [], linkSize: 4 };
@@ -177,42 +185,127 @@
     const visibleHeight = visibleHeightAtZDepth(LINKS_Z_DEPTH);
     const visibleWidth = visibleWidthAtZDepth(LINKS_Z_DEPTH);
 
-    // Calculate link size based on visible area and number of links
-    const maxPerSide = Math.ceil(links.length / 2);
-    const linkSize = Math.min(
-      (visibleHeight * 0.6) / maxPerSide, // 60% of visible height
-      visibleWidth * 0.25, // 25% of visible width
-      2.5 // Maximum link size cap to prevent oversized links
-    );
-
-    // Calculate spacing between links
-    const spacing = Math.min(
-      linkSize * 1.5,
-      (visibleHeight * 0.5) / maxPerSide
-    );
-
-    // Calculate X position for left and right columns (30% from center)
-    const leftX = -visibleWidth * 0.3;
-    const rightX = visibleWidth * 0.3;
-
-    // Distribute links evenly between left and right
+    // Split links between left and right sides
     const leftLinks = links.slice(0, Math.ceil(links.length / 2));
     const rightLinks = links.slice(Math.ceil(links.length / 2));
+    const maxPerSide = Math.max(leftLinks.length, rightLinks.length);
 
-    // Calculate positions for left side
-    const leftPositions: [number, number, number][] = [];
-    for (let i = 0; i < Math.min(leftLinks.length, maxPerSide); i++) {
-      // Start from 10% below top instead of at the very top
-      const y = visibleHeight * 0.4 - i * spacing;
-      leftPositions.push([leftX, y, LINKS_Z_DEPTH]);
+    // Calculate dragon bounding box (adjust as needed based on your dragon model)
+    const DRAGON_WIDTH = 3; // Assuming ENVIRONMENT_SCALE from parent component
+    const DRAGON_CENTER_X = 0; // Assuming dragon is centered at x=0
+
+    // Calculate how far from center we should place the links
+    // On mobile: position links closer to screen edge to ensure visibility
+    const dragonEdgeX = DRAGON_CENTER_X + DRAGON_WIDTH / 2;
+    const screenEdgeX = visibleWidth / 2;
+    const availableSpace = screenEdgeX - dragonEdgeX;
+
+    const distanceFromCenter = dragonEdgeX + availableSpace * 0.5;
+
+    // Position links
+    let leftX = -distanceFromCenter;
+    let rightX = distanceFromCenter;
+    
+    // Check if positions are within screen bounds and adjust if necessary
+    // Account for link size in the check (using half the maxLinkSize for now)
+    const maxLinkSize = isMobile ? 2.5 : 4;
+    const linkRadius = maxLinkSize / 2;
+    
+    // Function to check if an object is on screen
+    function isOnScreen(x: number): boolean {
+      // Check if the object with its size/radius would be fully visible on screen
+      return Math.abs(x) + linkRadius < screenEdgeX;
+    }
+    
+    // Adjust positions if they would be off-screen
+    if (!isOnScreen(leftX)) {
+      // Move it inward so it's visible (with a small margin)
+      leftX = -screenEdgeX + linkRadius + 0.5; // 0.5 is margin
+      console.warn("Left links would be off-screen - adjusting X position");
+    }
+    
+    if (!isOnScreen(rightX)) {
+      // Move it inward so it's visible (with a small margin)
+      rightX = screenEdgeX - linkRadius - 0.5; // 0.5 is margin
+      console.warn("Right links would be off-screen - adjusting X position");
     }
 
-    // Calculate positions for right side
+    // Define vertical boundaries
+    const TOP_BOUNDARY = visibleHeight * 0.45; // Top 45% of screen
+    const BOTTOM_BOUNDARY = -0.85; // Floor level
+    const availableVerticalSpace = TOP_BOUNDARY - BOTTOM_BOUNDARY;
+
+    // Calculate link size based on available vertical space and device type
+    // Make links smaller on mobile
+    const linkSize = Math.min(
+      (availableVerticalSpace * 0.8) / Math.max(maxPerSide, 1), // Use 80% of available height
+      maxLinkSize // Maximum size cap (smaller on mobile)
+    );
+
+    // Calculate positions with equidistant spacing
+    const leftPositions: [number, number, number][] = [];
     const rightPositions: [number, number, number][] = [];
-    for (let i = 0; i < Math.min(rightLinks.length, maxPerSide); i++) {
-      // Start from 10% below top instead of at the very top
-      const y = visibleHeight * 0.4 - i * spacing;
-      rightPositions.push([rightX, y, LINKS_Z_DEPTH]);
+
+    if (leftLinks.length > 0) {
+      // Calculate spacing for left column
+      // For one link, it should be centered. For multiple links, they should be equidistant.
+      const leftTotalSpace = leftLinks.length * linkSize;
+      const leftSpacing =
+        (availableVerticalSpace - leftTotalSpace) / (leftLinks.length + 1);
+
+      // Position each link with equal spacing
+      for (let i = 0; i < leftLinks.length; i++) {
+        // Start from top boundary and work down with equal spacing
+        // TOP_BOUNDARY - (spacing for top) - (i * (link size + spacing between links)) - (half linkSize)
+        const y =
+          TOP_BOUNDARY -
+          leftSpacing -
+          i * (linkSize + leftSpacing) -
+          linkSize / 2;
+
+        // Ensure we're not going below the floor
+        if (y - linkSize / 2 < BOTTOM_BOUNDARY) {
+          console.warn("Link would be below floor - adjusting position");
+          // Position at floor level plus half link size to keep it above floor
+          leftPositions.push([
+            leftX,
+            BOTTOM_BOUNDARY + linkSize / 2,
+            LINKS_Z_DEPTH,
+          ]);
+        } else {
+          leftPositions.push([leftX, y, LINKS_Z_DEPTH]);
+        }
+      }
+    }
+
+    if (rightLinks.length > 0) {
+      // Calculate spacing for right column
+      const rightTotalSpace = rightLinks.length * linkSize;
+      const rightSpacing =
+        (availableVerticalSpace - rightTotalSpace) / (rightLinks.length + 1);
+
+      // Position each link with equal spacing
+      for (let i = 0; i < rightLinks.length; i++) {
+        // Start from top boundary and work down with equal spacing
+        const y =
+          TOP_BOUNDARY -
+          rightSpacing -
+          i * (linkSize + rightSpacing) -
+          linkSize / 2;
+
+        // Ensure we're not going below the floor
+        if (y - linkSize / 2 < BOTTOM_BOUNDARY) {
+          console.warn("Link would be below floor - adjusting position");
+          // Position at floor level plus half link size to keep it above floor
+          rightPositions.push([
+            rightX,
+            BOTTOM_BOUNDARY + linkSize / 2,
+            LINKS_Z_DEPTH,
+          ]);
+        } else {
+          rightPositions.push([rightX, y, LINKS_Z_DEPTH]);
+        }
+      }
     }
 
     return { leftPositions, rightPositions, linkSize };
@@ -292,29 +385,116 @@
     });
   });
 
-  // Calculate positions for category buttons - IMPROVED SPACING
+  // Calculate positions for category buttons with equidistant spacing
   function calculateCategoryPositions() {
     if (!cameraRef) return;
 
     const visHeight = visibleHeightAtZDepth(LINKS_Z_DEPTH);
     const visWidth = visibleWidthAtZDepth(LINKS_Z_DEPTH);
 
-    // Left categories - adjusted y spacing
-    leftCategories.forEach((cat, i) => {
-      const y = visHeight * 0.5 - i * visHeight * 0.35; // Increased base position from 0.3 to 0.5 to elevate off ground
-      categoryPositions[cat.id] = [-visWidth * 0.3, y, LINKS_Z_DEPTH];
-    });
+    // Calculate dragon bounding box width - adjust as needed based on your dragon model
+    const DRAGON_WIDTH = 6 * 1.5; // Assuming ENVIRONMENT_SCALE from parent component
+    const DRAGON_CENTER_X = 0; // Assuming dragon is centered at x=0
 
-    // Right categories - adjusted y spacing
-    rightCategories.forEach((cat, i) => {
-      const y = visHeight * 0.5 - i * visHeight * 0.35; // Increased base position from 0.3 to 0.5 to elevate off ground
-      categoryPositions[cat.id] = [visWidth * 0.3, y, LINKS_Z_DEPTH];
-    });
+    // Calculate how far from center we should place the categories
+    // On mobile: position categories closer to screen edge to ensure visibility
+    const dragonEdgeX = DRAGON_CENTER_X + DRAGON_WIDTH / 2;
+    const screenEdgeX = visWidth / 2;
+    const availableSpace = screenEdgeX - dragonEdgeX;
+
+    const distanceFromCenter = dragonEdgeX + availableSpace * (isMobile ? 0.75 : 0.5);
+
+    // Fixed size for category buttons - smaller on mobile
+    const categorySize = isMobile ? 3 : 4;
+    const categoryRadius = categorySize / 2;
+    
+    // Function to check if an object is on screen
+    function isOnScreen(x: number): boolean {
+      // Check if the object with its size/radius would be fully visible on screen
+      return Math.abs(x) + categoryRadius < screenEdgeX;
+    }
+    
+    // Calculate adjusted X positions for left and right categories
+    let leftX = -distanceFromCenter;
+    let rightX = distanceFromCenter;
+    
+    // Adjust positions if they would be off-screen
+    if (!isOnScreen(leftX)) {
+      // Move it inward so it's visible (with a small margin)
+      leftX = -screenEdgeX + categoryRadius + 0.5; // 0.5 is margin
+      console.warn("Left categories would be off-screen - adjusting X position");
+    }
+    
+    if (!isOnScreen(rightX)) {
+      // Move it inward so it's visible (with a small margin)
+      rightX = screenEdgeX - categoryRadius - 0.5; // 0.5 is margin
+      console.warn("Right categories would be off-screen - adjusting X position");
+    }
+
+    // Define vertical boundaries
+    const TOP_BOUNDARY = visHeight * 0.45; // Top 45% of screen
+    const BOTTOM_BOUNDARY = -1; // Floor level
+    const availableVerticalSpace = TOP_BOUNDARY - BOTTOM_BOUNDARY;
+
+    // Calculate positions for left categories with equal spacing
+    if (leftCategories.length > 0) {
+      const leftTotalSpace = leftCategories.length * categorySize;
+      const leftSpacing =
+        (availableVerticalSpace - leftTotalSpace) / (leftCategories.length + 1);
+
+      leftCategories.forEach((cat, i) => {
+        // Start from top boundary and work down
+        const y =
+          TOP_BOUNDARY -
+          leftSpacing -
+          i * (categorySize + leftSpacing) -
+          categorySize / 2;
+
+        // Ensure we're not going below the floor
+        if (y - categorySize / 2 < BOTTOM_BOUNDARY) {
+          categoryPositions[cat.id] = [
+            leftX,
+            BOTTOM_BOUNDARY + categorySize / 2,
+            LINKS_Z_DEPTH,
+          ];
+        } else {
+          categoryPositions[cat.id] = [leftX, y, LINKS_Z_DEPTH];
+        }
+      });
+    }
+
+    // Calculate positions for right categories with equal spacing
+    if (rightCategories.length > 0) {
+      const rightTotalSpace = rightCategories.length * categorySize;
+      const rightSpacing =
+        (availableVerticalSpace - rightTotalSpace) /
+        (rightCategories.length + 1);
+
+      rightCategories.forEach((cat, i) => {
+        // Start from top boundary and work down
+        const y =
+          TOP_BOUNDARY -
+          rightSpacing -
+          i * (categorySize + rightSpacing) -
+          categorySize / 2;
+
+        // Ensure we're not going below the floor
+        if (y - categorySize / 2 < BOTTOM_BOUNDARY) {
+          categoryPositions[cat.id] = [
+            rightX,
+            BOTTOM_BOUNDARY + categorySize / 2,
+            LINKS_Z_DEPTH,
+          ];
+        } else {
+          categoryPositions[cat.id] = [rightX, y, LINKS_Z_DEPTH];
+        }
+      });
+    }
   }
 
   // Update grid layout when filtered links change
   $effect(() => {
-    if (!showingCategories && filteredLinks.length > 0) {
+    if (!showingCategories && filteredLinks.length > 0 && size.current.width > 0) {
       gridLayout = calculateGridLayout(filteredLinks);
     }
   });
@@ -331,6 +511,7 @@
       cameraRef?.fov,
       $size?.width,
       $size?.height,
+      isMobile,
     ];
 
     if (showingCategories) {
@@ -373,8 +554,8 @@
           ]}
           index={i}
           columnKey="left"
-          width={4}
-          height={4}
+          width={isMobile ? 3 : 4}
+          height={isMobile ? 3 : 4}
           opacity={categoryOpacity}
           onLinkClick={(url, type, position, action) => {
             onLinkClick!(url, type, position, category.name, () =>
@@ -402,8 +583,8 @@
           ]}
           index={i}
           columnKey="right"
-          width={4}
-          height={4}
+          width={isMobile ? 3 : 4}
+          height={isMobile ? 3 : 4}
           opacity={categoryOpacity}
           onLinkClick={(url, type, position, action) => {
             onLinkClick!(url, type, position, category.name, () =>
@@ -459,13 +640,13 @@
         }}
         position={[
           0,
-          visibleHeightAtZDepth(LINKS_Z_DEPTH) * 0.1,
-          LINKS_Z_DEPTH + 6,
+          visibleHeightAtZDepth(LINKS_Z_DEPTH) * 0.05,
+          LINKS_Z_DEPTH + 3,
         ]}
         index={0}
         columnKey="bottom"
-        height={2}
-        width={3}
+        height={isMobile ? 1.5 : 2}
+        width={isMobile ? 2.5 : 3}
         opacity={backButtonOpacity}
         onLinkClick={(url, type, position, action) => {
           onLinkClick!(url, type, position, undefined, goBack);
