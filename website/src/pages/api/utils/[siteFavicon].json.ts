@@ -20,7 +20,7 @@ export const GET: APIRoute = async ({ params, request }) => {
     });
   }
 
-  await CryptoJSW.MD5.loadWasm();
+  await CryptoJSW.loadAllWasm();
 
   const cacheKey = CryptoJSW.MD5(siteDomain).toString();
   const now = Date.now();
