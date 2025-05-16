@@ -21,7 +21,7 @@ export const GET: APIRoute = async ({ params, request }) => {
   }
 
   console.log(`Loading Crypto WASM`);
-  await CryptoJSW.loadAllWasm();
+  await CryptoJSW.MD5.loadWasm();
 
   console.log(`Generating cache key for ${siteDomain}`);
   const cacheKey = CryptoJSW.MD5(siteDomain).toString();
