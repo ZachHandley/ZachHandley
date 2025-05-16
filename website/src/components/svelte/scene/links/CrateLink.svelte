@@ -1,13 +1,12 @@
 <script lang="ts">
-  import { T, useTask } from "@threlte/core";
-  import { HTML } from "@threlte/extras";
+  import { T, useTask, useThrelte } from "@threlte/core";
+  import { Text, useGltf } from "@threlte/extras";
   import * as THREE from "three";
   import { Spring } from "svelte/motion";
   import { onMount, onDestroy } from "svelte";
   import type { Link as LinkType } from "~/types/baseSchemas";
-  import type { Snippet } from "svelte";
   import { fetchIconData } from "~/utils/iconify";
-  import { useGltf } from "@threlte/extras";
+  import { createSvgMesh, calculateVisualScale } from "~/utils/svgUtils";
   import type { DRACOLoader } from "three/examples/jsm/Addons.js";
 
   // Props for the component
@@ -22,10 +21,10 @@
     height = 4,
     depth = 0.5,
     explodeDistance = 5,
-    explodeDuration = 1, // in seconds
-    resetDelay = 3000, // time before the crate rebuilds itself
+    explodeDuration = 1,
+    resetDelay = 3000,
     enableRotation = true,
-    autoReset = false, // whether to automatically reset after exploding
+    autoReset = false,
     onLinkClick,
     dracoLoader,
     opacity = 1,
@@ -56,14 +55,16 @@
     opacity?: number;
   } & { ref?: THREE.Group } = $props();
 
-  // Extract link properties for easier access
+  // Get Threlte context
+  const { camera } = useThrelte();
+
+  // Extract link properties
   const {
     url = "",
     name: title = "",
     type = "url",
     category,
     icon,
-    action,
   } = link || {};
 
   // Extract domain for icons
@@ -76,20 +77,21 @@
     }
   }
 
-  const domain = $derived(getDomain(url));
+  const domain = getDomain(url);
 
-  // Static color cache
+  // Color cache
   const colorCache = {
-    url: "#FFA726", // Orange
-    download: "#4CAF50", // Green
-    contact: "#2196F3", // Blue
-    urlHover: "#ffffff", // White for hover
+    url: "#FFA726",
+    download: "#4CAF50",
+    contact: "#2196F3",
+    urlHover: "#ffffff",
+    category: "#E91E63",
+    action: "#9C27B0",
   };
 
-  // Get link color based on type and hover state
   function getLinkColor(
     linkType: LinkType["type"] = "url",
-    hovered: boolean = false
+    hovered = false
   ): string {
     if (hovered) return colorCache.urlHover;
 
@@ -98,46 +100,64 @@
         return colorCache.download;
       case "contact":
         return colorCache.contact;
+      case "category":
+        return colorCache.category;
+      case "action":
+        return colorCache.action;
       default:
         return colorCache.url;
     }
   }
 
-  // Model dimensions - these will be calculated dynamically using bounding box
+  // Position and rotation
+  const positionArray = Array.isArray(position) ? position : [position, 0, 0];
+  const rotationArray = Array.isArray(rotation) ? rotation : [0, rotation, 0];
+
+  // States
+  let group = $state<THREE.Group>();
   let modelWidth = $state(1);
   let modelHeight = $state(1);
   let modelDepth = $state(1);
   let boundingBoxCalculated = $state(false);
+  let hovering = $state(false);
+  let isExploding = $state(false);
+  let isResetting = $state(false);
+  let contentVisible = $state(true);
+  let modelOpacity = $state(1);
+  let contentOpacity = $state(1);
+  let isLoadingIcon = $state(true);
+  let svgGroup = $state<THREE.Group | null>(null);
+  let faviconTexture = $state<THREE.Texture | null>(null);
+  let faviconLoaded = $state(false);
+  let faviconLoadFailed = $state(false);
+  let faviconAspectRatio = $state(1); // Default 1:1 aspect ratio
+  let resetTimeout: ReturnType<typeof setTimeout> | null = null;
 
-  // Convert any position format to array
-  const positionArray = $derived(
-    Array.isArray(position) ? position : [position, 0, 0]
-  );
+  // Content Z position - store as state instead of derived
+  let contentZOffset = $state(0.3);
 
-  // Convert any rotation format to array
-  const rotationArray = $derived(
-    Array.isArray(rotation) ? rotation : [0, rotation, 0]
-  );
+  // Content positions
+  let titleY = $state(0);
+  let iconY = $state(0);
+  let domainY = $state(0);
 
-  // Calculate scale based on measured bounding box and desired width/height
-  const calculatedScale = $derived.by(() => {
-    // If bounding box not yet calculated, return initial scale
-    if (!boundingBoxCalculated) {
-      return [1, 1, 1];
-    }
+  // Scale spring for hover effect
+  const scaleSpring = new Spring(1, {
+    stiffness: 0.1,
+    damping: 0.4,
+  });
+  let hoverScale = $state(1);
 
-    // Calculate scale factors
-    const scaleX = width / modelWidth;
-    const scaleY = height / modelHeight;
-    const scaleZ = depth / modelDepth;
-
-    return [scaleX, scaleY, scaleZ];
+  // Update hover scale when spring changes
+  $effect(() => {
+    hoverScale = scaleSpring.current;
   });
 
-  // Content Z position (how far in front of the crate the content should be)
-  const contentZOffset = $derived(modelDepth / 2 + 0.1);
+  // Create texture loader
+  const textureLoader = new THREE.TextureLoader();
 
-  type GLTFResult = {
+  // GLTF loader
+  const gltf = useGltf<{
     nodes: {
       Cube200: THREE.Mesh;
       Cube200_1: THREE.Mesh;
@@ -146,37 +166,105 @@
       Wood_Light: THREE.MeshStandardMaterial;
       Wood: THREE.MeshStandardMaterial;
     };
-  };
-
-  const gltf = useGltf<GLTFResult>("/models/Crate-transformed.glb", {
+  }>("/models/Crate-transformed.glb", {
     dracoLoader,
   });
 
-  // Define state for the component
-  let group = $state<THREE.Group>();
-  let boundingBoxTask = $state<ReturnType<typeof useTask> | null>(null);
-  let isExploding = $state(false);
-  let isResetting = $state(false); // Add state to track if we're resetting
-  let contentVisible = $state(true);
-  let resetTimeout = $state<ReturnType<typeof setTimeout> | null>(null);
-  let modelOpacity = $state(1);
-  let contentOpacity = $state(1);
+  // Calculate bounding box and content positions
+  const boundingBoxTask = useTask(() => {
+    if (!group || !$gltf) return true;
+    if (boundingBoxCalculated) return false;
 
-  // Scale animation for hover
-  const scaleSpring = new Spring(1, {
-    stiffness: 0.1,
-    damping: 0.4,
+    // Temporarily reset scale to measure
+    const originalScale = group.scale.clone();
+    group.scale.set(1, 1, 1);
+
+    // Calculate dimensions
+    const boundingBox = new THREE.Box3().setFromObject(group);
+    const size = boundingBox.getSize(new THREE.Vector3());
+
+    modelWidth = size.x;
+    modelHeight = size.y;
+    modelDepth = size.z;
+
+    // Ensure content appears in front of crate
+    contentZOffset = modelDepth / 2 + 0.3;
+
+    // Calculate content positions sequentially
+    calculateContentPositions();
+
+    // Restore scale
+    group.scale.copy(originalScale);
+    boundingBoxCalculated = true;
+
+    return false;
   });
-  let hoverScale = $derived(scaleSpring.current);
 
-  // Link state
-  let hovering = $state(false);
-  let isLoading = $state(true);
-  let iconSvgData = $state<string | null>(null);
-  let faviconFailed = $state(false);
+  // Calculate content positions based on crate dimensions
+  function calculateContentPositions() {
+    // Title position - top with 5% margin from top edge
+    titleY = height * 0.9; // 40% from center to top
 
+    // Icon position - centered vertically
+    iconY = height * 0.8;
+
+    // Domain position - bottom with 5% margin from bottom edge
+    domainY = height * 0.1; // 40% from center to bottom
+  }
+
+  // Animation task
+  const animationTask = useTask((delta) => {
+    if (!isExploding && !isResetting) return false;
+
+    const progress = Math.min(1, delta / explodeDuration);
+
+    if (isResetting) {
+      // Reset animation
+      if (progress < 0.5) {
+        modelOpacity = progress * 2;
+        contentOpacity = 0;
+      } else {
+        modelOpacity = 1;
+        contentVisible = true;
+        contentOpacity = (progress - 0.5) * 2;
+      }
+    } else {
+      // Explode animation
+      if (progress < 0.5) {
+        contentOpacity = 1 - progress * 2;
+      } else {
+        contentOpacity = 0;
+        contentVisible = progress < 0.51;
+        modelOpacity = 1 - (progress - 0.5) * 2;
+      }
+    }
+
+    // Apply opacity to materials
+    if ($gltf) {
+      $gltf.materials.Wood.opacity = modelOpacity;
+      $gltf.materials.Wood.transparent = true;
+      $gltf.materials.Wood_Light.opacity = modelOpacity;
+      $gltf.materials.Wood_Light.transparent = true;
+    }
+
+    // Animation completion
+    if (progress >= 1) {
+      if (isResetting) {
+        isResetting = false;
+        isExploding = false;
+      } else if (autoReset) {
+        resetTimeout = setTimeout(reset, resetDelay);
+      }
+      return false;
+    }
+
+    return true;
+  });
+
+  // Pointer events
   function onPointerEnter() {
     hovering = true;
+    scaleSpring.set(1.05);
     if (typeof document !== "undefined") {
       document.body.classList.add("cursor-pointer");
     }
@@ -184,111 +272,16 @@
 
   function onPointerLeave() {
     hovering = false;
+    scaleSpring.set(1);
     if (typeof document !== "undefined") {
       document.body.classList.remove("cursor-pointer");
     }
   }
 
-  $effect(() => {
-    if (hovering && !isExploding) {
-      scaleSpring.set(1.05);
-    } else if (!isExploding) {
-      scaleSpring.set(1);
-    }
-  });
-
-  // Calculate bounding box using useTask
-  boundingBoxTask = useTask(() => {
-    // Check if group and model are loaded - if not, continue running task
-    if (!group || !$gltf) return true;
-
-    // If we've already calculated the bounding box, stop the task
-    if (boundingBoxCalculated) return false;
-
-    // Temporarily reset scale to measure original dimensions
-    const originalScale = group.scale.clone();
-    group.scale.set(1, 1, 1);
-
-    // Create a bounding box
-    const boundingBox = new THREE.Box3().setFromObject(group);
-    const size = boundingBox.getSize(new THREE.Vector3());
-
-    // Store original dimensions
-    modelWidth = size.x;
-    modelHeight = size.y;
-    modelDepth = size.z;
-
-    // Restore original scale
-    group.scale.copy(originalScale);
-
-    boundingBoxCalculated = true;
-
-    // This is a one-time calculation, so stop the task
-    return false;
-  });
-
-  // Declare animationTask once, outside both functions
-  let animationTask = $state<ReturnType<typeof useTask> | null>(
-    useTask((delta) => {
-      // If not exploding or resetting, do nothing
-      if (!isExploding && !isResetting) return false;
-
-      const progress = Math.min(1, delta / explodeDuration);
-
-      if (isResetting) {
-        // Reset animation logic (fade in)
-        if (progress < 0.5) {
-          modelOpacity = progress * 2;
-          contentOpacity = 0;
-        } else {
-          modelOpacity = 1;
-          contentVisible = true;
-          contentOpacity = (progress - 0.5) * 2;
-        }
-      } else {
-        // Explode animation logic (fade out)
-        if (progress < 0.5) {
-          contentOpacity = 1 - progress * 2;
-        } else {
-          contentOpacity = 0;
-          contentVisible = progress < 0.51; // Hide content after fade out
-          modelOpacity = 1 - (progress - 0.5) * 2;
-        }
-      }
-
-      // Apply opacity to materials
-      if ($gltf) {
-        $gltf.materials.Wood.opacity = modelOpacity;
-        $gltf.materials.Wood.transparent = true;
-        $gltf.materials.Wood_Light.opacity = modelOpacity;
-        $gltf.materials.Wood_Light.transparent = true;
-      }
-
-      // If animation is complete
-      if (progress >= 1) {
-        if (isResetting) {
-          // Reset is complete
-          isResetting = false;
-          isExploding = false;
-        } else if (autoReset) {
-          // Set a timeout to reset the crate
-          resetTimeout = setTimeout(() => {
-            reset();
-          }, resetDelay);
-        }
-
-        return false; // Stop the animation
-      }
-
-      return true; // Continue the animation
-    })
-  );
-
-  // SIMPLIFIED: Instead of exploding with pieces, just fade out
+  // Explode animation
   function explode() {
     if (isExploding) return;
 
-    // Clear any pending reset timeout
     if (resetTimeout) {
       clearTimeout(resetTimeout);
       resetTimeout = null;
@@ -297,17 +290,15 @@
     isExploding = true;
     isResetting = false;
 
-    // Restart the animation task if it's not running
     if (animationTask && !animationTask.started) {
       animationTask.start();
     }
   }
 
-  // Reset the crate - fade back in
+  // Reset animation
   function reset() {
     if (!isExploding) return;
 
-    // Clear any pending reset timeout
     if (resetTimeout) {
       clearTimeout(resetTimeout);
       resetTimeout = null;
@@ -315,89 +306,345 @@
 
     isResetting = true;
 
-    // Restart the animation task if it's not running
     if (animationTask && !animationTask.started) {
       animationTask.start();
     }
   }
 
-  // Handle link click
+  // Click handlers
   function handleClick(event: any) {
     event.stopPropagation();
 
-    // Create position vector
     const positionVector = new THREE.Vector3(
       positionArray[0],
       positionArray[1] + height / 2,
       positionArray[2]
     );
 
-    // Don't pass onLinkClick directly - we'll explode first, then call it after
     onLinkClick?.(url, type, positionVector, category, explode);
   }
 
-  // Test explosion on double-click
   function handleDoubleClick(event: any) {
     event.stopPropagation();
     explode();
   }
 
-  // Handle favicon loading error
-  function handleFaviconError() {
-    faviconFailed = true;
+  // Update opacity on all materials in the SVG group
+  function updateSvgMaterials() {
+    if (!svgGroup) return;
+
+    // Recursively traverse all objects in the group
+    svgGroup.traverse((object) => {
+      if (object instanceof THREE.Mesh && object.material) {
+        if (Array.isArray(object.material)) {
+          // Handle multi-material meshes
+          object.material.forEach((mat) => {
+            if (mat instanceof THREE.MeshStandardMaterial) {
+              mat.transparent = true;
+              mat.opacity = contentOpacity * opacity;
+
+              // Make it emissive to ensure visibility
+              if ("emissive" in mat) {
+                mat.emissive = new THREE.Color(0xffffff);
+                mat.emissiveIntensity = 0.7;
+              } else {
+                // Replace with a material that supports emission if needed
+                const newMat = new THREE.MeshStandardMaterial({
+                  color: 0xffffff,
+                  emissive: 0xffffff,
+                  emissiveIntensity: 0.7,
+                  transparent: true,
+                  opacity: contentOpacity * opacity,
+                  side: THREE.DoubleSide,
+                });
+                object.material = newMat;
+              }
+
+              mat.needsUpdate = true;
+            }
+          });
+        } else if (object.material instanceof THREE.MeshStandardMaterial) {
+          // Handle single materials
+          object.material.transparent = true;
+          object.material.opacity = contentOpacity * opacity;
+
+          // Make it emissive to ensure visibility
+          if ("emissive" in object.material) {
+            object.material.emissive = new THREE.Color(0xffffff);
+            object.material.emissiveIntensity = 0.7;
+          } else {
+            // Replace with a material that supports emission
+            const newMat = new THREE.MeshStandardMaterial({
+              color: 0xffffff,
+              emissive: 0xffffff,
+              emissiveIntensity: 0.7,
+              transparent: true,
+              opacity: contentOpacity * opacity,
+              side: THREE.DoubleSide,
+            });
+            object.material = newMat;
+          }
+
+          object.material.needsUpdate = true;
+        }
+      }
+    });
   }
 
-  // Initialize component - FIXED: Only load icon if explicitly defined
+  // Load favicon using fetch to avoid CORS issues
+  async function loadFaviconWithFetch(
+    url: string
+  ): Promise<THREE.Texture | null> {
+    try {
+      // Use a proxy service or create a server-side proxy for CORS issues
+      // For local development/demo, we'll try a direct fetch but this often fails due to CORS
+      const response = await fetch(
+        `${import.meta.env.SITE}/api/utils/${encodeURIComponent(url)}.json`
+      );
+
+      if (!response.ok)
+        throw new Error(`HTTP error! status: ${response.status}`);
+
+      // Get the blob
+      const blob = await response.blob();
+
+      // Create a blob URL
+      const blobUrl = URL.createObjectURL(blob);
+
+      // Load the texture using the blob URL
+      return new Promise((resolve, reject) => {
+        textureLoader.load(
+          blobUrl,
+          (texture) => {
+            // Set proper filtering
+            texture.minFilter = THREE.LinearFilter;
+            texture.magFilter = THREE.LinearFilter;
+            texture.colorSpace = THREE.SRGBColorSpace;
+
+            // Clean up the blob URL after texture is loaded
+            URL.revokeObjectURL(blobUrl);
+
+            resolve(texture);
+          },
+          undefined,
+          (error) => {
+            URL.revokeObjectURL(blobUrl); // Clean up on error too
+            reject(error);
+          }
+        );
+      });
+    } catch (error) {
+      console.warn(`Failed to load favicon from ${url}:`, error);
+      return null;
+    }
+  }
+
+  // Try to load favicon from several sources
+  async function loadFavicon() {
+    if (!domain || type === "category" || type === "action") {
+      faviconLoadFailed = true;
+      return;
+    }
+
+    try {
+      const texture = await loadFaviconWithFetch(domain);
+      if (texture) {
+        faviconTexture = texture;
+        faviconLoaded = true;
+
+        // Calculate aspect ratio for proper scaling
+        if (texture.image) {
+          faviconAspectRatio =
+            texture.image.width / Math.max(texture.image.height, 1);
+        }
+
+        return; // Success, no need to try other URLs
+      }
+
+      // If all attempts failed, try a fallback approach using a browser image
+      // (this won't work in all environments but worth trying)
+      await loadFallbackFavicon();
+    } catch (error) {
+      console.error("Error loading favicon:", error);
+      faviconLoadFailed = true;
+    }
+  }
+
+  // Alternative approach using HTML Image element (may work in some environments)
+  async function loadFallbackFavicon() {
+    return new Promise<void>((resolve) => {
+      if (typeof window === "undefined") {
+        resolve();
+        return;
+      }
+
+      const img = new Image();
+      img.crossOrigin = "same-origin";
+
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height;
+
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0);
+
+          // Create texture from canvas
+          const texture = new THREE.Texture(canvas);
+          texture.needsUpdate = true;
+          faviconTexture = texture;
+          faviconLoaded = true;
+          faviconAspectRatio = img.width / Math.max(img.height, 1);
+        }
+
+        resolve();
+      };
+
+      img.onerror = () => {
+        faviconLoadFailed = true;
+        resolve();
+      };
+
+      // Try Google's service which often works
+      img.src = `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
+
+      // Set a timeout just in case
+      setTimeout(() => {
+        if (!faviconLoaded) {
+          faviconLoadFailed = true;
+          resolve();
+        }
+      }, 3000);
+    });
+  }
+
+  // One-time initialization
   onMount(async () => {
     try {
-      // Priority 1: Only try to get SVG data if icon is explicitly defined in the link
+      // First try to load icon specified in link
       if (link.icon) {
         const svgData = await fetchIconData(link);
         if (svgData) {
-          iconSvgData = svgData;
+          // Create SVG mesh with increased extrusion
+          svgGroup = createSvgMesh(svgData, {
+            color: "white",
+            fillColor: "white",
+            scale: 0.05,
+            center: true,
+            // Increased extrusion for better visibility
+            extrude: 0.2,
+          });
+
+          // Set materials to be emissive and properly visible
+          updateSvgMaterials();
+        } else if (type === "url" && domain) {
+          // If icon from link fails but it's a URL type, try favicon
+          await loadFavicon();
         }
-        // If SVG data fetch fails, we'll fall back to favicon or backup icon
+      } else if (type === "url" && domain) {
+        // No icon specified but we have a URL - try to load favicon
+        await loadFavicon();
+      } else {
+        // Try with default globe icon for URL types
+        if (type === "url") {
+          const defaultIcon = { prefix: "mdi", name: "earth" };
+          const svgData = await fetchIconData({ ...link, icon: defaultIcon });
+
+          if (svgData) {
+            svgGroup = createSvgMesh(svgData, {
+              color: "white",
+              fillColor: "white",
+              scale: 0.05,
+              center: true,
+              extrude: 0.2,
+            });
+
+            updateSvgMaterials();
+          }
+        }
       }
-      // If no icon defined, we don't fetch anything here
-      // We'll try favicon for URLs in the render section
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error loading icon:", error);
+      faviconLoadFailed = true;
     } finally {
-      isLoading = false;
+      isLoadingIcon = false;
     }
   });
 
-  // Clean up on component destruction
+  // Update SVG materials when opacity changes
+  $effect(() => {
+    updateSvgMaterials();
+  });
+
+  // Clean up on destroy
   onDestroy(() => {
-    if (animationTask) {
+    if (animationTask && animationTask.started) {
       animationTask.stop();
     }
 
-    if (boundingBoxTask) {
+    if (boundingBoxTask && boundingBoxTask.started) {
       boundingBoxTask.stop();
     }
 
     if (resetTimeout) {
       clearTimeout(resetTimeout);
     }
+
+    // Clean up textures
+    if (faviconTexture) {
+      faviconTexture.dispose();
+    }
   });
+
+  // Calculate scale based on bounding box
+  function getCalculatedScale() {
+    if (!boundingBoxCalculated) {
+      return [1, 1, 1];
+    }
+
+    const scaleX = width / modelWidth;
+    const scaleY = height / modelHeight;
+    const scaleZ = depth / modelDepth;
+
+    return [scaleX, scaleY, scaleZ];
+  }
+
+  // Recalculate positions when dimensions change
+  $effect(() => {
+    if (boundingBoxCalculated) {
+      calculateContentPositions();
+    }
+  });
+
+  // Get favicon scale to maintain aspect ratio
+  function getFaviconScale() {
+    const iconSize = height * 0.4; // Base icon size (40% of crate height)
+
+    // Ensure favicon maintains its aspect ratio
+    if (faviconAspectRatio > 1) {
+      // Wider than tall - constrain by width
+      return [iconSize, iconSize / faviconAspectRatio, 1.25];
+    } else {
+      // Taller than wide or square - constrain by height
+      return [iconSize * faviconAspectRatio, iconSize, 1.25];
+    }
+  }
 
   // Expose functions to parent
   export { explode, reset };
 </script>
 
-<!-- Main container - Position is passed directly to place in scene -->
+<!-- Main container -->
 <T.Group
   position={[positionArray[0], positionArray[1], positionArray[2]]}
   rotation={[rotationArray[0], rotationArray[1], rotationArray[2]]}
   name={`crate-link-${columnKey}-${index}`}
 >
-  <!-- Crate model container - Apply calculated scale once bounding box is measured -->
+  <!-- Crate model container -->
   <T.Group
     bind:ref={group}
-    scale={boundingBoxCalculated
-      ? [calculatedScale[0], calculatedScale[1], calculatedScale[2]]
-      : [1, 1, 1]}
+    scale={getCalculatedScale() as [number, number, number]}
     {height}
     {width}
     {depth}
@@ -424,7 +671,7 @@
         scale={[hoverScale, hoverScale, hoverScale]}
       />
     {:catch error}
-      <!-- Error state - fallback simple box -->
+      <!-- Error state - fallback box -->
       <T.Mesh
         castShadow
         receiveShadow
@@ -450,118 +697,106 @@
   {#if contentVisible}
     <T.Group
       position={[0, 0, contentZOffset]}
+      rotation={[0, 0, 0]}
       name={`crate-content-${columnKey}-${index}`}
+      onclick={handleClick}
+      scale={[hoverScale, hoverScale, hoverScale]}
     >
-      <!-- Title text -->
-      <T.Group
-        position={[0, height * 0.8, 0]}
-        name={`crate-title-${columnKey}-${index}`}
-      >
-        <HTML center occlude={false} pointerEvents="none" visible={true}>
-          <div
-            style="color: white; font-size: {Math.max(
-              12,
-              height * 4
-            )}px; text-align: center; font-weight: bold; opacity: {contentOpacity *
-              opacity}; width: {Math.max(80, height * 20)}px;"
-          >
-            {title}
-          </div>
-        </HTML>
+      <!-- Title text at top -->
+      <T.Group position={[0, titleY, 0]}>
+        <Text
+          text={title}
+          color="white"
+          fontSize={height * 0.15}
+          fontWeight="bold"
+          whiteSpace="nowrap"
+          anchorX="center"
+          anchorY="middle"
+          maxWidth={width * 0.9}
+          textAlign="center"
+          fillOpacity={contentOpacity * opacity}
+          transparent={true}
+        />
       </T.Group>
 
-      <!-- Icon area -->
-      <T.Group
-        position={[0, height * 0.5, 0]}
-        name={`crate-icon-${columnKey}-${index}`}
-      >
-        {#if isLoading}
-          <HTML center occlude={false} pointerEvents="none" visible={true}>
-            <div
-              style="color: white; font-size: 12px; text-align: center; opacity: {contentOpacity *
-                opacity};"
-            >
-              Loading...
-            </div>
-          </HTML>
+      <!-- Icon area in center -->
+      <T.Group position={[0, iconY, 0]}>
+        {#if isLoadingIcon}
+          <Text
+            text="..."
+            color="white"
+            fontSize={height * 0.15}
+            anchorX="center"
+            anchorY="middle"
+            fillOpacity={contentOpacity * opacity}
+            transparent={true}
+          />
+        {:else if svgGroup}
+          <!-- Use SVG icon if available -->
+          <T.Group scale={[height * 0.3, height * 0.3, 1]}>
+            <T is={svgGroup} />
+          </T.Group>
+        {:else if faviconLoaded && faviconTexture}
+          <!-- Use favicon texture with proper scaling -->
+          <T.Mesh
+            scale={[
+              getFaviconScale()[0],
+              getFaviconScale()[1],
+              getFaviconScale()[2],
+            ]}
+            position.y={-height / 3}
+          >
+            <T.PlaneGeometry args={[1, 1, 1]} />
+            <T.MeshStandardMaterial
+              map={faviconTexture}
+              roughness={0.1}
+              metalness={0.1}
+              transparent={true}
+              opacity={contentOpacity * opacity}
+              side={THREE.DoubleSide}
+            />
+          </T.Mesh>
         {:else}
-          <HTML center occlude={false} pointerEvents="none" visible={true}>
-            <div
-              style="display: flex; justify-content: center; align-items: center; width: {Math.max(
-                24,
-                height * 8
-              )}px; height: {Math.max(
-                24,
-                height * 8
-              )}px; position: relative; opacity: {contentOpacity * opacity};"
-            >
-              <!-- FIXED: Proper priority order for icons -->
-              {#if iconSvgData}
-                <!-- Priority 1: Icon provided with Link type -->
-                <div
-                  style="width: 100%; height: 100%; color: white;"
-                  class="icon-container"
-                >
-                  {@html `<svg viewBox="0 0 24 24">${iconSvgData}</svg>`}
-                </div>
-              {:else if type === "url" && !faviconFailed}
-                <!-- Priority 2: Favicon of website, if URL -->
-                <img
-                  src={`https://www.google.com/s2/favicons?domain=${domain}&sz=64`}
-                  alt={domain}
-                  width="100%"
-                  height="100%"
-                  style="object-fit: contain;"
-                  onerror={handleFaviconError}
-                />
-              {:else}
-                <!-- Priority 3: Backup icon -->
-                <div
-                  style="width: 100%; height: 100%; color: white;"
-                  class="icon-container"
-                >
-                  <!-- Simple default icon -->
-                  {@html `<svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>`}
-                </div>
-              {/if}
-            </div>
-          </HTML>
+          <!-- Fallback icon -->
+          <T.Mesh scale={[height * 0.25, height * 0.25, 1]}>
+            <T.CircleGeometry args={[1, 32]} />
+            <T.MeshBasicMaterial
+              color="white"
+              transparent={true}
+              opacity={contentOpacity * opacity}
+            />
+          </T.Mesh>
         {/if}
       </T.Group>
 
-      <!-- Domain text -->
+      <!-- Domain/category text at bottom -->
       {#if domain}
-        <T.Group position={[0, height * 0.1, 0]}>
-          <HTML center occlude={false} pointerEvents="none" visible={true}>
-            <div
-              style="color: white; font-size: {Math.max(
-                10,
-                height * 3
-              )}px; text-align: center; opacity: {contentOpacity *
-                opacity}; width: {Math.max(
-                80,
-                height * 20
-              )}px; overflow: hidden; text-overflow: ellipsis; background: transparent;"
-            >
-              {domain}
-            </div>
-          </HTML>
+        <T.Group position={[0, domainY, 0]}>
+          <Text
+            text={domain}
+            color="white"
+            fontSize={height * 0.1}
+            anchorX="center"
+            anchorY="middle"
+            maxWidth={width * 0.9}
+            fillOpacity={contentOpacity * opacity}
+            transparent={true}
+          />
+        </T.Group>
+      {:else if category}
+        <T.Group position={[0, domainY, 0]}>
+          <Text
+            text={category}
+            color="white"
+            fontSize={height * 0.1}
+            anchorX="center"
+            anchorY="middle"
+            maxWidth={width * 0.9}
+            fillOpacity={contentOpacity * opacity}
+            transparent={true}
+          />
         </T.Group>
       {/if}
     </T.Group>
   {/if}
 </T.Group>
-
-<style>
-  :global(.icon-container svg) {
-    width: 100% !important;
-    height: 100% !important;
-    fill: currentColor !important;
-  }
-
-  :global(.icon-container) {
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-  }
-</style>
