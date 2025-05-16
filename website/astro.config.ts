@@ -10,6 +10,7 @@ import svelte from "@astrojs/svelte";
 import tsConfigPaths from "vite-tsconfig-paths";
 import topLevelAwait from "vite-plugin-top-level-await";
 import removeConsole from "vite-plugin-remove-console";
+import { nodePolyfills} from "vite-plugin-node-polyfills";
 
 import cloudflare from "@astrojs/cloudflare";
 
@@ -29,6 +30,14 @@ export default defineConfig({
     plugins: [
       tailwindcss(),
       tsConfigPaths(),
+      nodePolyfills({
+        globals: {
+          Buffer: true,
+          global: true,
+          process: true,
+        },
+        protocolImports: true,
+      }),
       topLevelAwait({
         // The export name of top-level await promise for each chunk module
         promiseExportName: "__tla",

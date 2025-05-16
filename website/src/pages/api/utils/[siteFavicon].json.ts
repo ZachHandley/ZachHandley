@@ -20,11 +20,14 @@ export const GET: APIRoute = async ({ params, request }) => {
     });
   }
 
+  console.log(`Loading Crypto WASM`);
   await CryptoJSW.loadAllWasm();
 
+  console.log(`Generating cache key for ${siteDomain}`);
   const cacheKey = CryptoJSW.MD5(siteDomain).toString();
   const now = Date.now();
 
+  console.log(`Checking cache for ${siteDomain}`);
   // Check if we have a valid cached response
   if (CACHE[cacheKey] && now - CACHE[cacheKey].timestamp < CACHE_DURATION) {
     console.log(`Serving cached favicon for ${siteDomain}`);
