@@ -1,5 +1,5 @@
 import type { APIRoute } from "astro";
-import CryptoJSW from "@originjs/crypto-js-wasm";
+import { createHash } from "node:crypto";
 
 // In-memory cache with expiration
 const CACHE: Record<
@@ -20,14 +20,9 @@ export const GET: APIRoute = async ({ params, request }) => {
     });
   }
 
-  console.log(`Loading Crypto WASM`);
-  await CryptoJSW.MD5.loadWasm();
-
-  console.log(`Generating cache key for ${siteDomain}`);
-  const cacheKey = CryptoJSW.MD5(siteDomain).toString();
+  const cacheKey = createHash("md5").update(siteDomain).digest("hex");
   const now = Date.now();
 
-  console.log(`Checking cache for ${siteDomain}`);
   // Check if we have a valid cached response
   if (CACHE[cacheKey] && now - CACHE[cacheKey].timestamp < CACHE_DURATION) {
     console.log(`Serving cached favicon for ${siteDomain}`);
@@ -162,9 +157,7 @@ export const GET: APIRoute = async ({ params, request }) => {
     // Fallback to Google's favicon service if direct fetching fails
     console.log(`Falling back to Google's favicon service for ${siteDomain}`);
     const googleResponse = await fetch(
-      `https://www.google.com/s2/favicons?domain=${decodeURIComponent(
-        siteDomain
-      )}&sz=64`
+      `https://www.google.com/s2/favicons?domain=${decodeURIComponent(siteDomain)}&sz=64`
     );
 
     if (!googleResponse.ok) {
