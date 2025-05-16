@@ -17,6 +17,7 @@
     "@iconify/utils": "^2.3.0",
     "@microsoft/clarity": "^1.0.0",
     "@newkrok/three-particles": "^2.0.3",
+    "@originjs/crypto-js-wasm": "^1.1.1",
     "@tailwindcss/vite": "^4.1.6",
     "@threlte/core": "^8.0.4",
     "@threlte/extras": "^9.2.1",
