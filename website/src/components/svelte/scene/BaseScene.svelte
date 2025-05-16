@@ -409,7 +409,6 @@
 <!-- Stacked Links Component -->
 <StackedLinks
   links={links as Link[]}
-  {cameraRef}
   onLinkClick={handleLinkClick}
   visible={mounted}
 />

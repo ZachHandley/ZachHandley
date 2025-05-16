@@ -3,8 +3,7 @@
   import { HTML, interactivity, Text, useDraco } from "@threlte/extras";
   import * as THREE from "three";
   import type { Link as LinkType } from "~/types/baseSchemas";
-  import Link from "./links/Link.svelte";
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { Spring, Tween } from "svelte/motion";
   import { cubicInOut } from "svelte/easing";
   import CrateLink from "./links/CrateLink.svelte";
@@ -12,12 +11,10 @@
   // Props with proper TypeScript typing
   let {
     links,
-    cameraRef,
     onLinkClick,
     visible = true,
   }: {
     links: LinkType[];
-    cameraRef?: THREE.PerspectiveCamera;
     onLinkClick?: (
       url: string,
       type: LinkType["type"],
@@ -29,7 +26,7 @@
   } = $props();
 
   // Get Threlte context
-  const { size } = useThrelte();
+  const { size, camera } = useThrelte();
   const dracoLoader = useDraco();
 
   // Define categories with their Iconify icons - split for left/right sides
@@ -159,25 +156,38 @@
 
   // Dimensions are derived from camera - FIXED CALCULATION
   function visibleHeightAtZDepth(depth: number): number {
-    if (!cameraRef) return 10; // Default fallback
+    if (!camera.current) return 10; // Default fallback
 
     // Convert from z-depth to distance from camera
-    const distance = Math.abs(depth - cameraRef.position.z);
+    const distance = Math.abs(depth - camera.current.position.z);
 
     // Fixed calculation using proper formula
-    return 2 * Math.tan((cameraRef.fov * Math.PI) / 180 / 2) * distance;
+    return (
+      2 *
+      Math.tan(
+        ((camera.current as THREE.PerspectiveCamera).fov * Math.PI) / 180 / 2
+      ) *
+      distance
+    );
   }
 
   function visibleWidthAtZDepth(depth: number): number {
-    if (!cameraRef) return 10; // Default fallback
+    if (!camera.current) {
+      console.warn("Camera is not available when calculating width");
+      return 10; // Default fallback
+    }
 
     const height = visibleHeightAtZDepth(depth);
-    return height * (cameraRef.aspect || 1);
+    const aspect = (camera.current as THREE.PerspectiveCamera).aspect || 1;
+    console.log(
+      `Camera aspect: ${aspect}, Height: ${height}, Calculated width: ${height * aspect}`
+    );
+    return height * aspect;
   }
 
   // Calculate grid layout for links with equidistant spacing and floor constraints
   function calculateGridLayout(links: LinkType[]) {
-    if (!cameraRef || links.length === 0) {
+    if (!camera.current || links.length === 0 || !size) {
       return { leftPositions: [], rightPositions: [], linkSize: 4 };
     }
 
@@ -205,25 +215,25 @@
     // Position links
     let leftX = -distanceFromCenter;
     let rightX = distanceFromCenter;
-    
+
     // Check if positions are within screen bounds and adjust if necessary
     // Account for link size in the check (using half the maxLinkSize for now)
     const maxLinkSize = isMobile ? 2.5 : 4;
     const linkRadius = maxLinkSize / 2;
-    
+
     // Function to check if an object is on screen
     function isOnScreen(x: number): boolean {
       // Check if the object with its size/radius would be fully visible on screen
       return Math.abs(x) + linkRadius < screenEdgeX;
     }
-    
+
     // Adjust positions if they would be off-screen
     if (!isOnScreen(leftX)) {
       // Move it inward so it's visible (with a small margin)
       leftX = -screenEdgeX + linkRadius + 0.5; // 0.5 is margin
       console.warn("Left links would be off-screen - adjusting X position");
     }
-    
+
     if (!isOnScreen(rightX)) {
       // Move it inward so it's visible (with a small margin)
       rightX = screenEdgeX - linkRadius - 0.5; // 0.5 is margin
@@ -337,6 +347,9 @@
       backButtonOpacityTween.set(1),
     ]);
 
+    // Update grid layout
+    gridLayout = calculateGridLayout(filteredLinks);
+
     transitioning = false;
   }
 
@@ -354,6 +367,11 @@
     // Switch view
     selectedCategory = null;
     showingCategories = true;
+
+    await tick();
+    calculateCategoryPositions();
+    gridLayout.leftPositions = [];
+    gridLayout.rightPositions = [];
 
     // Fade in categories
     await categoryOpacityTween.set(1);
@@ -387,7 +405,7 @@
 
   // Calculate positions for category buttons with equidistant spacing
   function calculateCategoryPositions() {
-    if (!cameraRef) return;
+    if (!camera.current) return;
 
     const visHeight = visibleHeightAtZDepth(LINKS_Z_DEPTH);
     const visWidth = visibleWidthAtZDepth(LINKS_Z_DEPTH);
@@ -402,33 +420,38 @@
     const screenEdgeX = visWidth / 2;
     const availableSpace = screenEdgeX - dragonEdgeX;
 
-    const distanceFromCenter = dragonEdgeX + availableSpace * (isMobile ? 0.75 : 0.5);
+    const distanceFromCenter =
+      dragonEdgeX + availableSpace * (isMobile ? 0.75 : 0.5);
 
     // Fixed size for category buttons - smaller on mobile
     const categorySize = isMobile ? 3 : 4;
     const categoryRadius = categorySize / 2;
-    
+
     // Function to check if an object is on screen
     function isOnScreen(x: number): boolean {
       // Check if the object with its size/radius would be fully visible on screen
       return Math.abs(x) + categoryRadius < screenEdgeX;
     }
-    
+
     // Calculate adjusted X positions for left and right categories
     let leftX = -distanceFromCenter;
     let rightX = distanceFromCenter;
-    
+
     // Adjust positions if they would be off-screen
     if (!isOnScreen(leftX)) {
       // Move it inward so it's visible (with a small margin)
       leftX = -screenEdgeX + categoryRadius + 0.5; // 0.5 is margin
-      console.warn("Left categories would be off-screen - adjusting X position");
+      console.warn(
+        "Left categories would be off-screen - adjusting X position"
+      );
     }
-    
+
     if (!isOnScreen(rightX)) {
       // Move it inward so it's visible (with a small margin)
       rightX = screenEdgeX - categoryRadius - 0.5; // 0.5 is margin
-      console.warn("Right categories would be off-screen - adjusting X position");
+      console.warn(
+        "Right categories would be off-screen - adjusting X position"
+      );
     }
 
     // Define vertical boundaries
@@ -494,7 +517,11 @@
 
   // Update grid layout when filtered links change
   $effect(() => {
-    if (!showingCategories && filteredLinks.length > 0 && size.current.width > 0) {
+    if (
+      !showingCategories &&
+      filteredLinks.length > 0 &&
+      size.current.width > 0
+    ) {
       gridLayout = calculateGridLayout(filteredLinks);
     }
   });
@@ -502,13 +529,18 @@
   // Store category positions
   let categoryPositions = $state<Record<string, [number, number, number]>>({});
 
+  $effect(() => {
+    if (!$size || !camera.current) return;
+    calculateCategoryPositions();
+  });
+
   // Effect to update layout when window/camera changes
   $effect(() => {
     // Dependencies - any of these changing should trigger an update
     const _ = [
-      cameraRef?.aspect,
-      cameraRef?.position.z,
-      cameraRef?.fov,
+      (camera.current as THREE.PerspectiveCamera)?.aspect,
+      (camera.current as THREE.PerspectiveCamera)?.position.z,
+      (camera.current as THREE.PerspectiveCamera)?.fov,
       $size?.width,
       $size?.height,
       isMobile,
