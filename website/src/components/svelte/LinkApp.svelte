@@ -261,11 +261,11 @@
         <!-- Toggle button -->
          <div class="flex justify-center mt-4">
            <button
-             class="bg-black/40 text-white py-1 px-3 rounded-full shadow-md hover:bg-black/60 transition-all flex items-center gap-1 backdrop-blur-sm border border-white/10 text-sm sm:text-lg"
+             class="bg-black/40 text-white py-1 px-3 rounded-full shadow-md hover:bg-black/60 transition-all flex items-center gap-1 backdrop-blur-sm border border-white/10 text-lg"
              onclick={toggleInfoPanel}
              aria-label={showInfoPanel ? "Hide information" : "Show information"}
            >
-             <span class="hidden sm:inline">
+             <span>
                {showInfoPanel ? "Hide Info" : "Show Info"}
              </span>
              <svg
@@ -317,11 +317,11 @@
 
         <!-- Toggle button -->
         <button
-          class="bg-black/40 text-white py-1 px-3 rounded-full shadow-md hover:bg-black/60 transition-all flex items-center gap-1 backdrop-blur-sm border border-white/10 text-xs sm:text-sm"
+          class="bg-black/40 text-white py-1 px-3 rounded-full shadow-md hover:bg-black/60 transition-all flex items-center gap-1 backdrop-blur-sm border border-white/10 text-lg"
           onclick={toggleInfoPanel}
           aria-label={showInfoPanel ? "Hide information" : "Show information"}
         >
-          <span class="hidden sm:inline">
+          <span>
             {showInfoPanel ? "Hide Info" : "Show Info"}
           </span>
           <svg

@@ -14,7 +14,7 @@ interface Props {
 const {
   title,
   description,
-  image = "/og-image.jpg",
+  image = "/og-image.png",
   noindex = false,
 } = Astro.props;
 
@@ -49,7 +49,7 @@ const fullTitle = `${title} - ${siteName}`;
 <meta name="twitter:image" content={new URL(image, Astro.url)} />
 
 <!-- Favicon -->
-<link rel="icon" type="image/webp" href="/favicon.webp" />
+<link rel="icon" type="image/png" href="/favicon.png" />
 
 <!-- Theme Color -->
 <meta
