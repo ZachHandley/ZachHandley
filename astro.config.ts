@@ -61,7 +61,7 @@ export default defineConfig({
     partytown(),
     sitemap(),
     svelte({
-      include: "**/**.svelte",
+      include: ["**/**.svelte", "src/components/svelte/**/**.ts", "src/components/svelte/**/**.svelte"],
     }),
   ],
 

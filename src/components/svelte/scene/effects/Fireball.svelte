@@ -5,7 +5,7 @@
   import * as THREE from "three";
   import { AudioLoader } from "three";
   import FireAnimation from "../../models/FireAnimation.svelte";
-  import { degToRad } from "three/src/math/MathUtils.js";
+  import { type FireballGLTFResult } from "~/types/fireballTypes";
 
   let {
     startPosition,
@@ -13,12 +13,18 @@
     direction, // Accept direction vector from parent
     onComplete,
     id = 0,
+    preloadedAudio,
+    preloadedTexture,
+    preloadedModel,
   }: {
     startPosition: THREE.Vector3;
     endPosition: THREE.Vector3;
     direction?: THREE.Vector3; // Optional to maintain backward compatibility
     onComplete?: (id: number) => void;
     id?: number;
+    preloadedAudio?: AudioBuffer;
+    preloadedTexture?: THREE.Texture;
+    preloadedModel?: FireballGLTFResult;
   } = $props();
 
   // References and state
@@ -35,7 +41,7 @@
 
   // Load fireball and explosion sounds
   const { load } = useLoader(AudioLoader);
-  const fireballSound = load("/sounds/Fireball.wav");
+  const fireballSound = preloadedAudio || load("/sounds/Fireball.wav");
 
   // Animation parameters - smaller explosion scale
   const TRAVEL_DURATION = 1000; // ms
@@ -377,7 +383,12 @@
     ondestroy={cleanup}
   >
     <!-- Use FireAnimation with mode based on animation phase -->
-    <FireAnimation scale={[1.2, 1, 1.2]} mode={fireAnimationMode} />
+    <FireAnimation
+      scale={[1.2, 1, 1.2]}
+      mode={fireAnimationMode}
+      {preloadedModel}
+      {preloadedTexture}
+    />
 
     <!-- Point light that follows the fireball -->
     <T.PointLight
