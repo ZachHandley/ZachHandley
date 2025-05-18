@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { T, useThrelte, useTask } from "@threlte/core";
-  import { Sky, AudioListener, useThrelteAudio } from "@threlte/extras";
+  import { T, useThrelte, useTask, type CurrentWritable } from "@threlte/core";
+  import { Sky, AudioListener, useThrelteAudio, GLTF, useGltf, useDraco } from "@threlte/extras";
   import * as THREE from "three";
-  import { onDestroy, tick } from "svelte";
+  import { onDestroy, onMount, tick, type Component } from "svelte";
   import { Tween } from "svelte/motion";
   import { cubicInOut } from "svelte/easing";
   import Dragon from "../models/Dragon.svelte";
@@ -10,6 +10,9 @@
   import Fireball from "./effects/Fireball.svelte";
   import StackedLinks from "./StackedLinks.svelte";
   import type { Link } from "~/types/baseSchemas";
+  import FireAnimation from "../models/FireAnimation.svelte";
+  import { type FireballGLTFResult } from "~/types/fireballTypes";
+  import { AudioLoader, TextureLoader } from "three";
 
   let {
     handleDragonClick,
@@ -34,6 +37,79 @@
   let prevRendererSize = $state<{ width: number; height: number } | undefined>(
     undefined
   );
+
+  let preloadedAssets = $state<{
+    fireModel: FireballGLTFResult | undefined;
+    fireTexture: THREE.Texture | undefined;
+    fireballSound: AudioBuffer | undefined;
+    loading: boolean;
+  }>({
+    fireModel: undefined,
+    fireTexture: undefined,
+    fireballSound: undefined,
+    loading: false,
+  });
+
+  async function preloadFireAssets() {
+  if (preloadedAssets.loading || 
+      (preloadedAssets.fireModel && preloadedAssets.fireTexture && preloadedAssets.fireballSound)) {
+    return; // Already loading or loaded
+  }
+
+  preloadedAssets.loading = true;
+  console.log("Preloading fire assets in BaseScene");
+
+  try {
+    // Load GLTF model directly in BaseScene
+    const gltfPromise = useGltf<FireballGLTFResult>(
+      "/models/fire_animation-transformed.glb",
+      { dracoLoader: useDraco() }
+    );
+    
+    // Load texture directly in BaseScene
+    const texturePromise = new Promise<THREE.Texture>((resolve, reject) => {
+      new TextureLoader().load(
+        "/textures/flame.webp",
+        (texture) => {
+          texture.minFilter = THREE.LinearFilter;
+          texture.magFilter = THREE.LinearFilter;
+          resolve(texture);
+        },
+        undefined,
+        reject
+      );
+    });
+    
+    // Load sound directly in BaseScene
+    const soundPromise = new Promise<AudioBuffer>((resolve, reject) => {
+      new AudioLoader().load(
+        "/sounds/Fireball.wav",
+        resolve,
+        undefined,
+        (error) => {
+          console.warn("Could not load fireball sound:", error);
+          reject(error);
+        }
+      );
+    });
+    
+    // Wait for all to load
+    const [fireModel, fireTexture, fireballSound] = await Promise.all([
+      gltfPromise, texturePromise, soundPromise
+    ]);
+    
+    // Store the results
+    preloadedAssets.fireModel = fireModel;
+    preloadedAssets.fireTexture = fireTexture;
+    preloadedAssets.fireballSound = fireballSound;
+    
+    console.log("All assets preloaded successfully in BaseScene");
+  } catch (error) {
+    console.error("Failed to preload assets in BaseScene:", error);
+  } finally {
+    preloadedAssets.loading = false;
+  }
+}
 
   // Statically define these to avoid recreating them
   const ENVIRONMENT_SCALE = 1.5;
@@ -348,6 +424,10 @@
     console.log("Active category changed:", activeCategory);
   });
 
+  onMount(async () => {
+    await preloadFireAssets();
+  });
+
   // Firefox optimization: Clean up resources on component destruction
   onDestroy(() => {
     // Clear references to help Firefox's garbage collector
@@ -421,5 +501,10 @@
     endPosition={fireball.endPosition}
     direction={fireball.direction}
     onComplete={handleFireballComplete}
+    preloadedModel={preloadedAssets.fireModel}
+    preloadedTexture={preloadedAssets.fireTexture}
+    preloadedAudio={preloadedAssets.fireballSound}
   />
 {/each}
+
+<FireAnimation position={[-900, -900, -900]} />
