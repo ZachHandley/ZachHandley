@@ -18,6 +18,8 @@
     type Shape,
     type LifeTimeCurve,
   } from "@newkrok/three-particles";
+  import type { FireballGLTFResult } from "~/types/fireballTypes";
+  import { writable } from "svelte/store";
 
   const dracoLoader = useDraco();
 
@@ -31,6 +33,8 @@
     ref = $bindable(),
     mode = "travel", // "travel" or "explosion"
     scale = [1, 1, 1] as ScaleArray,
+    preloadedModel,
+    preloadedTexture,
     ...props
   }: Props<THREE.Group> & {
     ref?: THREE.Group;
@@ -39,20 +43,24 @@
     error?: Snippet<[{ error: Error }]>;
     mode?: "travel" | "explosion";
     scale?: ScaleArray;
+    preloadedModel?: FireballGLTFResult;
+    preloadedTexture?: THREE.Texture;
   } = $props();
 
+  // Ensure we have a valid group reference
   ref = new Group();
 
   // Create references for particles and state
   let particleRef = $state<THREE.Group | undefined>();
   let gltfRef = $state<THREE.Group | undefined>();
-  
+
   // Instead of a single instance, maintain two pre-created systems
   let fireballSystem = $state<THREE.Object3D | undefined>();
   let explosionSystem = $state<THREE.Object3D | undefined>();
-  
+
   let isActive = $state<boolean>(true);
   let systemsInitialized = $state<boolean>(false);
+  let textureLoading = $state<boolean>(false);
 
   // Type for our animation cycle data
   interface CycleData {
@@ -100,10 +108,12 @@
     };
   };
 
-  // Load the GLTF model
-  const gltf = useGltf<GLTFResult>("/models/fire_animation-transformed.glb", {
-    dracoLoader: dracoLoader,
-  });
+  // Load the GLTF model, preferring preloaded model
+  const gltf = preloadedModel
+    ? writable(preloadedModel)
+    : useGltf<GLTFResult>("/models/fire_animation-transformed.glb", {
+        dracoLoader: dracoLoader,
+      });
 
   // Set up animations
   export const { actions, mixer } = useGltfAnimations<ActionName>(gltf, ref);
@@ -288,58 +298,101 @@
     map: undefined, // Will be set after loading
   };
 
-  // Use the flame texture for particles
-  const textureLoader = new TextureLoader();
-  textureLoader.load(
-    "/textures/flame.webp", // Use the existing texture
-    (texture: THREE.Texture) => {
-      // Configure texture
-      texture.minFilter = THREE.LinearFilter;
-      texture.magFilter = THREE.LinearFilter;
+  // Use preloaded texture or load it through an $effect
+  $effect(() => {
+    // Prevent recursive updates and only run this effect when necessary
+    if (
+      particleRef &&
+      isActive &&
+      !systemsInitialized &&
+      !textureLoading &&
+      (!fireballEffect.map || !explosionEffect.map)
+    ) {
+      if (preloadedTexture) {
+        // Use the preloaded texture if available
+        fireballEffect.map = preloadedTexture;
+        explosionEffect.map = preloadedTexture;
 
-      // Apply to both effects
-      fireballEffect.map = texture;
-      explosionEffect.map = texture;
-
-      // Initialize particle systems if group exists
-      if (particleRef && isActive) {
+        // Initialize particle systems with preloaded texture
         initParticleSystems(particleRef);
+      } else if (!fireballEffect.map) {
+        // Set loading flag to prevent recursive entry
+        textureLoading = true;
+        console.log("Loading flame texture...");
+
+        // Only load if not already loaded
+        const textureLoader = new TextureLoader();
+        textureLoader.load(
+          "/textures/flame.webp",
+          (texture: THREE.Texture) => {
+            // Configure texture
+            texture.minFilter = THREE.LinearFilter;
+            texture.magFilter = THREE.LinearFilter;
+
+            // Apply to both effects
+            fireballEffect.map = texture;
+            explosionEffect.map = texture;
+
+            // Reset loading flag
+            textureLoading = false;
+
+            // Check if we should still initialize
+            if (particleRef && isActive && !systemsInitialized) {
+              console.log("Texture loaded, initializing particle systems");
+              initParticleSystems(particleRef);
+            }
+          },
+          undefined,
+          (err: unknown) => {
+            console.error("Error loading flame texture:", err);
+            textureLoading = false;
+          }
+        );
       }
-    },
-    undefined,
-    (err: unknown) => {
-      console.error("Error loading flame texture:", err);
     }
-  );
+  });
 
   // Pre-create both particle systems
   function initParticleSystems(group: THREE.Group): void {
-    if (!group || !isActive || systemsInitialized) return;
+    if (!group || !isActive || systemsInitialized || !fireballEffect.map) {
+      return;
+    }
 
     try {
+      console.log("Initializing particle systems");
       // Initialize cycleData
       cycleData.now = Date.now();
 
       // Create fireball system
-      if (fireballEffect.map) {
-        const fireballResult = createParticleSystem(fireballEffect as any, cycleData.now);
-        if (fireballResult && fireballResult.instance) {
-          fireballSystem = fireballResult.instance;
-          // Set initial state based on mode
-          fireballSystem.scale.set(mode === "travel" ? 1 : 0, mode === "travel" ? 1 : 0, mode === "travel" ? 1 : 0);
-          group.add(fireballSystem);
-        }
+      const fireballResult = createParticleSystem(
+        fireballEffect as any,
+        cycleData.now
+      );
+      if (fireballResult && fireballResult.instance) {
+        fireballSystem = fireballResult.instance;
+        // Set initial state based on mode
+        fireballSystem.scale.set(
+          mode === "travel" ? 1 : 0,
+          mode === "travel" ? 1 : 0,
+          mode === "travel" ? 1 : 0
+        );
+        group.add(fireballSystem);
       }
 
       // Create explosion system
-      if (explosionEffect.map) {
-        const explosionResult = createParticleSystem(explosionEffect as any, cycleData.now);
-        if (explosionResult && explosionResult.instance) {
-          explosionSystem = explosionResult.instance;
-          // Set initial state based on mode
-          explosionSystem.scale.set(mode === "explosion" ? 1 : 0, mode === "explosion" ? 1 : 0, mode === "explosion" ? 1 : 0);
-          group.add(explosionSystem);
-        }
+      const explosionResult = createParticleSystem(
+        explosionEffect as any,
+        cycleData.now
+      );
+      if (explosionResult && explosionResult.instance) {
+        explosionSystem = explosionResult.instance;
+        // Set initial state based on mode
+        explosionSystem.scale.set(
+          mode === "explosion" ? 1 : 0,
+          mode === "explosion" ? 1 : 0,
+          mode === "explosion" ? 1 : 0
+        );
+        group.add(explosionSystem);
       }
 
       // Update GLTF visibility based on mode
@@ -348,7 +401,10 @@
       }
 
       // Mark as initialized to prevent recreation
-      systemsInitialized = true;
+      if (fireballSystem && explosionSystem) {
+        systemsInitialized = true;
+        console.log("Particle systems initialized successfully");
+      }
     } catch (error) {
       console.error("Failed to initialize particle systems:", error);
     }
@@ -357,9 +413,9 @@
   // Update the particle system and GLTF model based on mode
   useTask((delta: number) => {
     if (!isActive || !systemsInitialized) return;
-    
+
     const isExplosionMode = mode === "explosion";
-    
+
     // Only update if both systems are available
     if (fireballSystem && explosionSystem) {
       // Toggle systems using scale instead of destroying/recreating
@@ -373,21 +429,23 @@
         fireballSystem.scale.set(1, 1, 1);
       }
     }
-    
+
     // Update GLTF visibility
     if (gltfRef) {
       gltfRef.visible = !isExplosionMode;
     }
-    
+
     // Update cycle data
     const rawDelta = clock.getDelta();
     cycleData.now = Date.now() - cycleData.totalPauseTime;
     cycleData.delta = rawDelta > 0.1 ? 0.1 : rawDelta;
     cycleData.elapsed = clock.getElapsedTime();
-    
+
     // Update particle systems - only need to call once for all systems
-    updateParticleSystems(cycleData);
-    
+    if (fireballSystem || explosionSystem) {
+      updateParticleSystems(cycleData);
+    }
+
     // Update GLTF animations
     if (mixer) {
       mixer.update(delta);
@@ -397,33 +455,45 @@
   // Cleanup when component is destroyed
   function cleanup(): void {
     isActive = false;
-    
+
     if (particleRef) {
       // Remove both systems
       if (fireballSystem) {
         particleRef.remove(fireballSystem);
         fireballSystem = undefined;
       }
-      
+
       if (explosionSystem) {
         particleRef.remove(explosionSystem);
         explosionSystem = undefined;
       }
     }
   }
+
+  // Helper function to safely check if a model/texture is available
+  function isModelAvailable() {
+    // Check if we have a pre-loaded model
+    if (preloadedModel && preloadedModel.nodes && preloadedModel.materials) {
+      return true;
+    }
+
+    // Check if gltf is loaded
+    if ($gltf && $gltf.nodes && $gltf.materials) {
+      return true;
+    }
+
+    return false;
+  }
 </script>
 
 <T is={ref} dispose={false} {...props}>
   <!-- Particle effects container -->
-  <T.Group
-    bind:ref={particleRef}
-    ondestroy={cleanup}
-  >
+  <T.Group bind:ref={particleRef} ondestroy={cleanup}>
     <!-- This group will contain the particle system -->
   </T.Group>
 
   <!-- GLTF Fire Animation Model - only visible during travel mode -->
-  {#if $gltf}
+  {#if isModelAvailable()}
     <T.Group
       bind:ref={gltfRef}
       name="Sketchfab_Scene"
@@ -441,159 +511,195 @@
         >
           <T.Group name="Object_2">
             <T.Group name="RootNode">
-              <T.Group name="flame01">
-                <T.Mesh
-                  name="flame01_phong2_0"
-                  castShadow
-                  receiveShadow
-                  geometry={$gltf.nodes.flame01_phong2_0.geometry}
-                  material={$gltf.materials.phong2}
-                />
-              </T.Group>
-              <T.Group name="flame02">
-                <T.Mesh
-                  name="flame02_phong2_0"
-                  castShadow
-                  receiveShadow
-                  geometry={$gltf.nodes.flame02_phong2_0.geometry}
-                  material={$gltf.materials.phong2}
-                />
-              </T.Group>
-              <T.Group name="flame03">
-                <T.Mesh
-                  name="flame03_phong2_0"
-                  castShadow
-                  receiveShadow
-                  geometry={$gltf.nodes.flame03_phong2_0.geometry}
-                  material={$gltf.materials.phong2}
-                />
-              </T.Group>
-              <T.Group name="flame04">
-                <T.Mesh
-                  name="flame04_phong2_0"
-                  castShadow
-                  receiveShadow
-                  geometry={$gltf.nodes.flame04_phong2_0.geometry}
-                  material={$gltf.materials.phong2}
-                />
-              </T.Group>
-              <T.Group name="flame05">
-                <T.Mesh
-                  name="flame05_phong2_0"
-                  castShadow
-                  receiveShadow
-                  geometry={$gltf.nodes.flame05_phong2_0.geometry}
-                  material={$gltf.materials.phong2}
-                />
-              </T.Group>
-              <T.Group name="flame06">
-                <T.Mesh
-                  name="flame06_phong2_0"
-                  castShadow
-                  receiveShadow
-                  geometry={$gltf.nodes.flame06_phong2_0.geometry}
-                  material={$gltf.materials.phong2}
-                />
-              </T.Group>
-              <T.Group name="flame07" scale={[1, 1, 1.06]}>
-                <T.Mesh
-                  name="flame07_phong2_0"
-                  castShadow
-                  receiveShadow
-                  geometry={$gltf.nodes.flame07_phong2_0.geometry}
-                  material={$gltf.materials.phong2}
-                />
-              </T.Group>
-              <T.Group name="flame08" scale={[1, 1, 1.12]}>
-                <T.Mesh
-                  name="flame08_phong2_0"
-                  castShadow
-                  receiveShadow
-                  geometry={$gltf.nodes.flame08_phong2_0.geometry}
-                  material={$gltf.materials.phong2}
-                />
-              </T.Group>
-              <T.Group name="flame09" scale={[1, 1, 1.14]}>
-                <T.Mesh
-                  name="flame09_phong2_0"
-                  castShadow
-                  receiveShadow
-                  geometry={$gltf.nodes.flame09_phong2_0.geometry}
-                  material={$gltf.materials.phong2}
-                />
-              </T.Group>
-              <T.Group name="flame10">
-                <T.Mesh
-                  name="flame10_phong2_0"
-                  castShadow
-                  receiveShadow
-                  geometry={$gltf.nodes.flame10_phong2_0.geometry}
-                  material={$gltf.materials.phong2}
-                />
-              </T.Group>
-              <T.Group name="flame11">
-                <T.Mesh
-                  name="flame11_phong2_0"
-                  castShadow
-                  receiveShadow
-                  geometry={$gltf.nodes.flame11_phong2_0.geometry}
-                  material={$gltf.materials.phong2}
-                />
-              </T.Group>
-              <T.Group name="flame12">
-                <T.Mesh
-                  name="flame12_phong2_0"
-                  castShadow
-                  receiveShadow
-                  geometry={$gltf.nodes.flame12_phong2_0.geometry}
-                  material={$gltf.materials.phong2}
-                />
-              </T.Group>
-              <T.Group name="flame13">
-                <T.Mesh
-                  name="flame13_phong2_0"
-                  castShadow
-                  receiveShadow
-                  geometry={$gltf.nodes.flame13_phong2_0.geometry}
-                  material={$gltf.materials.phong2}
-                />
-              </T.Group>
-              <T.Group name="flame14">
-                <T.Mesh
-                  name="flame14_phong2_0"
-                  castShadow
-                  receiveShadow
-                  geometry={$gltf.nodes.flame14_phong2_0.geometry}
-                  material={$gltf.materials.phong2}
-                />
-              </T.Group>
-              <T.Group name="flame16">
-                <T.Mesh
-                  name="flame16_phong2_0"
-                  castShadow
-                  receiveShadow
-                  geometry={$gltf.nodes.flame16_phong2_0.geometry}
-                  material={$gltf.materials.phong2}
-                />
-              </T.Group>
-              <T.Group name="flame15">
-                <T.Mesh
-                  name="flame15_phong2_0"
-                  castShadow
-                  receiveShadow
-                  geometry={$gltf.nodes.flame15_phong2_0.geometry}
-                  material={$gltf.materials.phong2}
-                />
-              </T.Group>
-              <T.Group name="flame17">
-                <T.Mesh
-                  name="flame17_phong2_0"
-                  castShadow
-                  receiveShadow
-                  geometry={$gltf.nodes.flame17_phong2_0.geometry}
-                  material={$gltf.materials.phong2}
-                />
-              </T.Group>
+              {#if preloadedModel?.nodes?.flame01_phong2_0?.geometry || $gltf?.nodes?.flame01_phong2_0?.geometry}
+                <T.Group name="flame01">
+                  <T.Mesh
+                    name="flame01_phong2_0"
+                    castShadow
+                    receiveShadow
+                    geometry={preloadedModel?.nodes?.flame01_phong2_0
+                      ?.geometry || $gltf?.nodes?.flame01_phong2_0?.geometry}
+                    material={preloadedModel?.materials?.phong2 ||
+                      $gltf?.materials?.phong2}
+                  />
+                </T.Group>
+                <T.Group name="flame02">
+                  <T.Mesh
+                    name="flame02_phong2_0"
+                    castShadow
+                    receiveShadow
+                    geometry={preloadedModel?.nodes?.flame02_phong2_0
+                      ?.geometry || $gltf?.nodes?.flame02_phong2_0?.geometry}
+                    material={preloadedModel?.materials?.phong2 ||
+                      $gltf?.materials?.phong2}
+                  />
+                </T.Group>
+                <T.Group name="flame03">
+                  <T.Mesh
+                    name="flame03_phong2_0"
+                    castShadow
+                    receiveShadow
+                    geometry={preloadedModel?.nodes?.flame03_phong2_0
+                      ?.geometry || $gltf?.nodes?.flame03_phong2_0?.geometry}
+                    material={preloadedModel?.materials?.phong2 ||
+                      $gltf?.materials?.phong2}
+                  />
+                </T.Group>
+                <T.Group name="flame04">
+                  <T.Mesh
+                    name="flame04_phong2_0"
+                    castShadow
+                    receiveShadow
+                    geometry={preloadedModel?.nodes?.flame04_phong2_0
+                      ?.geometry || $gltf?.nodes?.flame04_phong2_0?.geometry}
+                    material={preloadedModel?.materials?.phong2 ||
+                      $gltf?.materials?.phong2}
+                  />
+                </T.Group>
+                <T.Group name="flame05">
+                  <T.Mesh
+                    name="flame05_phong2_0"
+                    castShadow
+                    receiveShadow
+                    geometry={preloadedModel?.nodes?.flame05_phong2_0
+                      ?.geometry || $gltf?.nodes?.flame05_phong2_0?.geometry}
+                    material={preloadedModel?.materials?.phong2 ||
+                      $gltf?.materials?.phong2}
+                  />
+                </T.Group>
+                <T.Group name="flame06">
+                  <T.Mesh
+                    name="flame06_phong2_0"
+                    castShadow
+                    receiveShadow
+                    geometry={preloadedModel?.nodes?.flame06_phong2_0
+                      ?.geometry || $gltf?.nodes?.flame06_phong2_0?.geometry}
+                    material={preloadedModel?.materials?.phong2 ||
+                      $gltf?.materials?.phong2}
+                  />
+                </T.Group>
+                <T.Group name="flame07" scale={[1, 1, 1.06]}>
+                  <T.Mesh
+                    name="flame07_phong2_0"
+                    castShadow
+                    receiveShadow
+                    geometry={preloadedModel?.nodes?.flame07_phong2_0
+                      ?.geometry || $gltf?.nodes?.flame07_phong2_0?.geometry}
+                    material={preloadedModel?.materials?.phong2 ||
+                      $gltf?.materials?.phong2}
+                  />
+                </T.Group>
+                <T.Group name="flame08" scale={[1, 1, 1.12]}>
+                  <T.Mesh
+                    name="flame08_phong2_0"
+                    castShadow
+                    receiveShadow
+                    geometry={preloadedModel?.nodes?.flame08_phong2_0
+                      ?.geometry || $gltf?.nodes?.flame08_phong2_0?.geometry}
+                    material={preloadedModel?.materials?.phong2 ||
+                      $gltf?.materials?.phong2}
+                  />
+                </T.Group>
+                <T.Group name="flame09" scale={[1, 1, 1.14]}>
+                  <T.Mesh
+                    name="flame09_phong2_0"
+                    castShadow
+                    receiveShadow
+                    geometry={preloadedModel?.nodes?.flame09_phong2_0
+                      ?.geometry || $gltf?.nodes?.flame09_phong2_0?.geometry}
+                    material={preloadedModel?.materials?.phong2 ||
+                      $gltf?.materials?.phong2}
+                  />
+                </T.Group>
+                <T.Group name="flame10">
+                  <T.Mesh
+                    name="flame10_phong2_0"
+                    castShadow
+                    receiveShadow
+                    geometry={preloadedModel?.nodes?.flame10_phong2_0
+                      ?.geometry || $gltf?.nodes?.flame10_phong2_0?.geometry}
+                    material={preloadedModel?.materials?.phong2 ||
+                      $gltf?.materials?.phong2}
+                  />
+                </T.Group>
+                <T.Group name="flame11">
+                  <T.Mesh
+                    name="flame11_phong2_0"
+                    castShadow
+                    receiveShadow
+                    geometry={preloadedModel?.nodes?.flame11_phong2_0
+                      ?.geometry || $gltf?.nodes?.flame11_phong2_0?.geometry}
+                    material={preloadedModel?.materials?.phong2 ||
+                      $gltf?.materials?.phong2}
+                  />
+                </T.Group>
+                <T.Group name="flame12">
+                  <T.Mesh
+                    name="flame12_phong2_0"
+                    castShadow
+                    receiveShadow
+                    geometry={preloadedModel?.nodes?.flame12_phong2_0
+                      ?.geometry || $gltf?.nodes?.flame12_phong2_0?.geometry}
+                    material={preloadedModel?.materials?.phong2 ||
+                      $gltf?.materials?.phong2}
+                  />
+                </T.Group>
+                <T.Group name="flame13">
+                  <T.Mesh
+                    name="flame13_phong2_0"
+                    castShadow
+                    receiveShadow
+                    geometry={preloadedModel?.nodes?.flame13_phong2_0
+                      ?.geometry || $gltf?.nodes?.flame13_phong2_0?.geometry}
+                    material={preloadedModel?.materials?.phong2 ||
+                      $gltf?.materials?.phong2}
+                  />
+                </T.Group>
+                <T.Group name="flame14">
+                  <T.Mesh
+                    name="flame14_phong2_0"
+                    castShadow
+                    receiveShadow
+                    geometry={preloadedModel?.nodes?.flame14_phong2_0
+                      ?.geometry || $gltf?.nodes?.flame14_phong2_0?.geometry}
+                    material={preloadedModel?.materials?.phong2 ||
+                      $gltf?.materials?.phong2}
+                  />
+                </T.Group>
+                <T.Group name="flame16">
+                  <T.Mesh
+                    name="flame16_phong2_0"
+                    castShadow
+                    receiveShadow
+                    geometry={preloadedModel?.nodes?.flame16_phong2_0
+                      ?.geometry || $gltf?.nodes?.flame16_phong2_0?.geometry}
+                    material={preloadedModel?.materials?.phong2 ||
+                      $gltf?.materials?.phong2}
+                  />
+                </T.Group>
+                <T.Group name="flame15">
+                  <T.Mesh
+                    name="flame15_phong2_0"
+                    castShadow
+                    receiveShadow
+                    geometry={preloadedModel?.nodes?.flame15_phong2_0
+                      ?.geometry || $gltf?.nodes?.flame15_phong2_0?.geometry}
+                    material={preloadedModel?.materials?.phong2 ||
+                      $gltf?.materials?.phong2}
+                  />
+                </T.Group>
+                <T.Group name="flame17">
+                  <T.Mesh
+                    name="flame17_phong2_0"
+                    castShadow
+                    receiveShadow
+                    geometry={preloadedModel?.nodes?.flame17_phong2_0
+                      ?.geometry || $gltf?.nodes?.flame17_phong2_0?.geometry}
+                    material={preloadedModel?.materials?.phong2 ||
+                      $gltf?.materials?.phong2}
+                  />
+                </T.Group>
+              {/if}
             </T.Group>
           </T.Group>
         </T.Group>
