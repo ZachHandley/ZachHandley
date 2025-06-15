@@ -1,5 +1,13 @@
 import type { APIRoute } from "astro";
-import { createHash } from "node:crypto";
+
+// Use Web Crypto API for Cloudflare Workers compatibility
+async function createSHA256Hash(input: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(input);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 // In-memory cache with expiration
 const CACHE: Record<
@@ -20,7 +28,7 @@ export const GET: APIRoute = async ({ params, request }) => {
     });
   }
 
-  const cacheKey = createHash("md5").update(siteDomain).digest("hex");
+  const cacheKey = await createSHA256Hash(siteDomain);
   const now = Date.now();
 
   // Check if we have a valid cached response

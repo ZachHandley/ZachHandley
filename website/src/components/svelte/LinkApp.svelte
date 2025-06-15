@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Canvas } from "@threlte/core";
   import BaseScene from "./scene/BaseScene.svelte";
+  import LoadingScreen from "./ui/LoadingScreen.svelte";
   import type { Link } from "~/types/baseSchemas";
   import { onMount } from "svelte";
   import Icon from "@iconify/svelte";
@@ -29,6 +30,17 @@
 
   // For keyboard navigation
   let keyboardMode = $state(false);
+
+  // Loading state
+  let isLoading = $state(true);
+  let loadingProgress = $state(0);
+  let loadingMessage = $state("Initializing medieval realm...");
+
+  function handleLoadingStateChange(loading: boolean, progress: number, message: string) {
+    isLoading = loading;
+    loadingProgress = progress;
+    loadingMessage = message;
+  }
 
   onMount(() => {
     // Set up keyboard listeners for accessibility
@@ -150,41 +162,35 @@
   class="w-screen relative max-w-screen h-screen overflow-hidden bg-gray-900"
 >
   <!-- 3D Canvas with the scene -->
-  <div class="h-full w-full" style="padding-top: 45px;">
+  <div class="h-full w-full pt-16 md:pt-11">
     <Canvas toneMapping={undefined}>
       <BaseScene
         {handleDragonClick}
         {links}
         {handleInteract}
         {activeCategory}
+        onLoadingStateChange={handleLoadingStateChange}
+        screenWidth={innerWidth}
+        screenHeight={innerHeight}
       />
     </Canvas>
   </div>
 
   <!-- Sliding info panel - slides down from the top -->
   <div
-    class="absolute top-0 left-0 right-0 z-10 transition-all duration-300 ease-in-out"
-    style="transform: translateY({showInfoPanel ? '45px' : '-100%'}); 
-           height: {innerWidth < 768
-      ? showInfoPanel
-        ? 'calc(100vh - 45px)'
-        : '0'
-      : showInfoPanel
-        ? '40vh'
-        : '0'}; 
-           background-color: rgba(0,0,0,0.85); 
-           backdrop-filter: blur(8px);
-           overflow: hidden;"
+    class="absolute top-16 md:top-11 left-0 right-0 z-10 transition-all duration-500 ease-in-out bg-gradient-to-b from-orange-900/30 via-black/40 to-black/50 backdrop-blur-xl border-b border-orange-500/20 shadow-2xl shadow-orange-500/20"
+    style="transform: translateY({showInfoPanel ? '0' : '-100%'}); 
+           height: {showInfoPanel ? 'auto' : '0'}; 
+           min-height: {showInfoPanel ? 'auto' : '0'};
+           overflow: {showInfoPanel ? 'visible' : 'hidden'};"
   >
-    <div class="w-full h-full px-4">
-      <!-- EVERYTHING is full width now -->
-
+    <div class="w-full px-4 md:px-6 py-4 md:py-6 max-h-[calc(100vh-8rem)] md:max-h-none overflow-y-auto">
       <!-- Bio section -->
-      <div class="w-full pt-3 mb-4">
-        <h2 class="text-lg sm:text-xl md:text-2xl font-bold text-white mb-2">
+      <div class="mb-6 md:mb-8">
+        <h2 class="text-lg sm:text-xl md:text-2xl lg:text-3xl font-bold mb-3 md:mb-4 text-white">
           About Me
         </h2>
-        <p class="text-sm sm:text-base text-white/90">
+        <p class="text-sm sm:text-base md:text-lg text-gray-100 leading-relaxed">
           I'm Zach Handley, a software engineer, full-stack developer, and AI
           specialist based in Los Angeles. At Black Leaf Digital, I create
           innovative web, mobile, and AI solutions with expertise in Azure and
@@ -193,131 +199,60 @@
         </p>
       </div>
 
-      <!-- Categories section - full width for everything -->
-      <div class="w-full flex flex-col">
-        <h2 class="text-lg sm:text-xl font-bold text-white mb-2">
+      <!-- Categories section -->
+      <div class="w-full flex flex-col mb-4 md:mb-6">
+        <h2 class="text-lg sm:text-xl md:text-2xl font-bold mb-3 md:mb-4 text-white">
           Explore My Work
         </h2>
-        <p class="text-sm text-white/80 mb-3">
+        <p class="text-sm md:text-base text-gray-200 mb-4 md:mb-6">
           Click on the crates in the 3D space to explore different categories of
           links.
         </p>
 
-        <!-- Full-width grid with responsive columns -->
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <!-- All boxes in a single row on larger screens -->
-          <div
-            class="bg-black/30 p-3 rounded-lg border border-white/10 hover:bg-black/40 transition-colors"
-          >
-            <h3
-              class="text-base sm:text-lg font-semibold text-white capitalize mb-1"
-            >
+        <!-- Category cards grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+          <div class="group relative bg-gradient-to-b from-orange-900/20 via-orange-900/10 to-black/30 hover:from-orange-800/30 hover:via-orange-900/20 hover:to-black/40 p-3 md:p-4 rounded-lg border border-orange-500/20 hover:border-orange-400/40 transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-orange-500/20 backdrop-blur-sm">
+            <h3 class="text-base md:text-lg font-semibold text-orange-200 capitalize mb-1 md:mb-2 group-hover:text-orange-100 transition-colors">
               Personal
             </h3>
-            <p class="text-xs sm:text-sm text-white/70">
+            <p class="text-xs md:text-sm text-orange-100/80 group-hover:text-orange-50 transition-colors leading-relaxed">
               {categoryDescriptions.personal}
             </p>
           </div>
 
-          <div
-            class="bg-black/30 p-3 rounded-lg border border-white/10 hover:bg-black/40 transition-colors"
-          >
-            <h3
-              class="text-base sm:text-lg font-semibold text-white capitalize mb-1"
-            >
+          <div class="group relative bg-gradient-to-b from-orange-900/20 via-orange-900/10 to-black/30 hover:from-orange-800/30 hover:via-orange-900/20 hover:to-black/40 p-3 md:p-4 rounded-lg border border-orange-500/20 hover:border-orange-400/40 transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-orange-500/20 backdrop-blur-sm">
+            <h3 class="text-base md:text-lg font-semibold text-orange-200 capitalize mb-1 md:mb-2 group-hover:text-orange-100 transition-colors">
               Professional
             </h3>
-            <p class="text-xs sm:text-sm text-white/70">
+            <p class="text-xs md:text-sm text-orange-100/80 group-hover:text-orange-50 transition-colors leading-relaxed">
               {categoryDescriptions.professional}
             </p>
           </div>
 
-          <div
-            class="bg-black/30 p-3 rounded-lg border border-white/10 hover:bg-black/40 transition-colors"
-          >
-            <h3
-              class="text-base sm:text-lg font-semibold text-white capitalize mb-1"
-            >
+          <div class="group relative bg-gradient-to-b from-orange-900/20 via-orange-900/10 to-black/30 hover:from-orange-800/30 hover:via-orange-900/20 hover:to-black/40 p-3 md:p-4 rounded-lg border border-orange-500/20 hover:border-orange-400/40 transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-orange-500/20 backdrop-blur-sm">
+            <h3 class="text-base md:text-lg font-semibold text-orange-200 capitalize mb-1 md:mb-2 group-hover:text-orange-100 transition-colors">
               Projects
             </h3>
-            <p class="text-xs sm:text-sm text-white/70">
+            <p class="text-xs md:text-sm text-orange-100/80 group-hover:text-orange-50 transition-colors leading-relaxed">
               {categoryDescriptions.projects}
             </p>
           </div>
 
-          <div
-            class="bg-black/30 p-3 rounded-lg border border-white/10 hover:bg-black/40 transition-colors"
-          >
-            <h3
-              class="text-base sm:text-lg font-semibold text-white capitalize mb-1"
-            >
+          <div class="group relative bg-gradient-to-b from-orange-900/20 via-orange-900/10 to-black/30 hover:from-orange-800/30 hover:via-orange-900/20 hover:to-black/40 p-3 md:p-4 rounded-lg border border-orange-500/20 hover:border-orange-400/40 transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-orange-500/20 backdrop-blur-sm">
+            <h3 class="text-base md:text-lg font-semibold text-orange-200 capitalize mb-1 md:mb-2 group-hover:text-orange-100 transition-colors">
               Downloads
             </h3>
-            <p class="text-xs sm:text-sm text-white/70">
+            <p class="text-xs md:text-sm text-orange-100/80 group-hover:text-orange-50 transition-colors leading-relaxed">
               {categoryDescriptions.downloads}
             </p>
           </div>
         </div>
-        <!-- Toggle button -->
-         <div class="flex justify-center mt-4">
-           <button
-             class="bg-black/40 text-white py-1 px-3 rounded-full shadow-md hover:bg-black/60 transition-all flex items-center gap-1 backdrop-blur-sm border border-white/10 text-lg"
-             onclick={toggleInfoPanel}
-             aria-label={showInfoPanel ? "Hide information" : "Show information"}
-           >
-             <span>
-               {showInfoPanel ? "Hide Info" : "Show Info"}
-             </span>
-             <svg
-               xmlns="http://www.w3.org/2000/svg"
-               width="16"
-               height="16"
-               viewBox="0 0 24 24"
-               fill="none"
-               stroke="currentColor"
-               stroke-width="2"
-               stroke-linecap="round"
-               stroke-linejoin="round"
-             >
-               {#if showInfoPanel}
-                 <polyline points="18 15 12 9 6 15"></polyline>
-               {:else}
-                 <polyline points="6 9 12 15 18 9"></polyline>
-               {/if}
-             </svg>
-           </button>
-         </div>
       </div>
-    </div>
-  </div>
 
-  <!-- Always visible title bar at top -->
-  <div
-    class="absolute top-0 left-0 right-0 z-20"
-    style="background-color: rgba(0,0,0,0.75); backdrop-filter: blur(5px); border-bottom: 1px solid rgba(255,255,255,0.1);"
-  >
-    <div class="py-2 px-4 flex justify-between items-center h-11">
-      <h1
-        class="text-xl sm:text-2xl md:text-3xl font-bold text-white text-shadow-lg"
-      >
-        ZachHandley's Site
-      </h1>
-
-      <div class="flex items-center gap-3">
-        <!-- GitHub icon link -->
-        <a
-          href="https://github.com/zachhandley/zachhandley"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="text-white hover:text-white/80 transition-colors"
-          aria-label="Visit Zach's GitHub profile"
-        >
-          <Icon icon="simple-icons:github" width="20" height="20" />
-        </a>
-
-        <!-- Toggle button -->
+      <!-- Toggle button -->
+      <div class="flex justify-center pt-3 md:pt-4">
         <button
-          class="bg-black/40 text-white py-1 px-3 rounded-full shadow-md hover:bg-black/60 transition-all flex items-center gap-1 backdrop-blur-sm border border-white/10 text-lg"
+          class="bg-gradient-to-r from-orange-900/30 to-black/40 hover:from-orange-800/40 hover:to-orange-900/30 text-orange-100 py-2 px-4 rounded-full shadow-lg hover:shadow-orange-500/30 transition-all duration-300 flex items-center gap-2 backdrop-blur-sm border border-orange-500/30 hover:border-orange-400/50 text-sm md:text-base hover:scale-105"
           onclick={toggleInfoPanel}
           aria-label={showInfoPanel ? "Hide information" : "Show information"}
         >
@@ -334,14 +269,107 @@
             stroke-width="2"
             stroke-linecap="round"
             stroke-linejoin="round"
+            class="transition-transform duration-300"
+            style="transform: {showInfoPanel ? 'rotate(180deg)' : 'rotate(0deg)'}"
           >
-            {#if showInfoPanel}
-              <polyline points="18 15 12 9 6 15"></polyline>
-            {:else}
-              <polyline points="6 9 12 15 18 9"></polyline>
-            {/if}
+            <polyline points="6 9 12 15 18 9"></polyline>
           </svg>
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Always visible title bar at top -->
+  <div
+    class="absolute top-0 left-0 right-0 z-20 bg-gradient-to-r from-orange-900/40 via-black/60 to-orange-900/40 backdrop-blur-lg border-b border-orange-500/20 shadow-lg shadow-orange-500/10"
+  >
+    <!-- Mobile: Two-row layout -->
+    <div class="md:hidden">
+      <!-- Row 1: Title -->
+      <div class="py-2 px-4 text-center">
+        <h1 class="text-base font-bold text-orange-100 drop-shadow-lg">
+          ZachHandley's Portfolio
+        </h1>
+      </div>
+      <!-- Row 2: Controls -->
+      <div class="pb-2 px-4 flex justify-center items-center gap-4">
+        <a
+          href="https://github.com/zachhandley/zachhandley"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="text-orange-200 hover:text-orange-100 transition-all duration-300 hover:scale-110 hover:drop-shadow-lg hover:drop-shadow-orange-500/50"
+          aria-label="Visit Zach's GitHub profile"
+        >
+          <Icon icon="simple-icons:github" width="18" height="18" />
+        </a>
+        <button
+          class="bg-gradient-to-r from-orange-800/30 to-orange-900/40 hover:from-orange-700/40 hover:to-orange-800/50 text-orange-100 py-1 px-3 rounded-full shadow-lg shadow-orange-500/20 hover:shadow-orange-500/40 transition-all duration-300 flex items-center gap-1 backdrop-blur-sm border border-orange-500/30 hover:border-orange-400/50 text-sm hover:scale-105"
+          onclick={toggleInfoPanel}
+          aria-label={showInfoPanel ? "Hide information" : "Show information"}
+        >
+          <span>
+            {showInfoPanel ? "Hide" : "Info"}
+          </span>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            class="transition-transform duration-300"
+            style="transform: {showInfoPanel ? 'rotate(180deg)' : 'rotate(0deg)'}"
+          >
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Desktop: Single-row layout -->
+    <div class="hidden md:block">
+      <div class="py-2 px-4 flex justify-between items-center h-11">
+        <h1 class="text-xl md:text-2xl lg:text-3xl font-bold text-orange-100 drop-shadow-lg whitespace-nowrap">
+          ZachHandley's Portfolio
+        </h1>
+        <div class="flex items-center gap-3">
+          <a
+            href="https://github.com/zachhandley/zachhandley"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-orange-200 hover:text-orange-100 transition-all duration-300 hover:scale-110 hover:drop-shadow-lg hover:drop-shadow-orange-500/50"
+            aria-label="Visit Zach's GitHub profile"
+          >
+            <Icon icon="simple-icons:github" width="20" height="20" />
+          </a>
+          <button
+            class="bg-gradient-to-r from-orange-800/30 to-orange-900/40 hover:from-orange-700/40 hover:to-orange-800/50 text-orange-100 py-1 px-3 rounded-full shadow-lg shadow-orange-500/20 hover:shadow-orange-500/40 transition-all duration-300 flex items-center gap-1 backdrop-blur-sm border border-orange-500/30 hover:border-orange-400/50 text-lg hover:scale-105"
+            onclick={toggleInfoPanel}
+            aria-label={showInfoPanel ? "Hide information" : "Show information"}
+          >
+            <span>
+              {showInfoPanel ? "Hide Info" : "Show Info"}
+            </span>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="transition-transform duration-300"
+              style="transform: {showInfoPanel ? 'rotate(180deg)' : 'rotate(0deg)'}"
+            >
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -349,15 +377,13 @@
   <!-- Category description tooltip -->
   {#if activeCategory && !showInfoPanel}
     <div
-      class="absolute bottom-8 left-0 right-0 text-center pointer-events-none"
+      class="absolute bottom-8 left-0 right-0 text-center pointer-events-none z-30"
     >
-      <div
-        class="bg-black/70 backdrop-blur-sm py-2 px-4 rounded-lg inline-block max-w-xs mx-auto shadow-lg border border-white/10"
-      >
-        <h3 class="text-sm font-semibold text-white capitalize mb-1">
+      <div class="bg-gradient-to-r from-orange-900/40 via-black/70 to-orange-900/40 backdrop-blur-lg py-3 px-6 rounded-xl inline-block max-w-xs mx-auto shadow-2xl shadow-orange-500/30 border border-orange-500/30">
+        <h3 class="text-sm font-semibold capitalize mb-1 text-orange-200">
           {activeCategory}
         </h3>
-        <p class="text-xs text-white/80">
+        <p class="text-xs text-orange-100/90">
           {categoryDescriptions[activeCategory.toLowerCase()] ||
             "Explore this category."}
         </p>
@@ -455,6 +481,13 @@
       {/each}
     </nav>
   </div>
+
+  <!-- Loading Screen -->
+  <LoadingScreen 
+    visible={isLoading}
+    progress={loadingProgress}
+    message={loadingMessage}
+  />
 </div>
 
 <style>
@@ -462,10 +495,6 @@
     overflow: hidden;
     margin: 0;
     padding: 0;
-  }
-
-  .text-shadow-lg {
-    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
   }
 
   /* Accessibility styles */

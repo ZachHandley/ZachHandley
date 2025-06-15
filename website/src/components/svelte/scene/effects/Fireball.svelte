@@ -16,6 +16,12 @@
     preloadedAudio,
     preloadedTexture,
     preloadedModel,
+    preloadedFireballParticles,
+    preloadedExplosionParticles,
+    getParticleSystemFromPool,
+    returnParticleSystemToPool,
+    createParticleSystemAsync,
+    particlePoolContainer,
   }: {
     startPosition: THREE.Vector3;
     endPosition: THREE.Vector3;
@@ -25,6 +31,12 @@
     preloadedAudio?: AudioBuffer;
     preloadedTexture?: THREE.Texture;
     preloadedModel?: FireballGLTFResult;
+    preloadedFireballParticles?: THREE.Object3D;
+    preloadedExplosionParticles?: THREE.Object3D;
+    getParticleSystemFromPool?: (type: 'fireball' | 'explosion') => THREE.Object3D | null;
+    returnParticleSystemToPool?: (system: THREE.Object3D, type: 'fireball' | 'explosion') => void;
+    createParticleSystemAsync?: (type: 'fireball' | 'explosion') => Promise<THREE.Object3D | null>;
+    particlePoolContainer?: THREE.Group | null | undefined;
   } = $props();
 
   // References and state
@@ -44,7 +56,7 @@
   const fireballSound = preloadedAudio || load("/sounds/Fireball.wav");
 
   // Animation parameters - smaller explosion scale
-  const TRAVEL_DURATION = 1000; // ms
+  const TRAVEL_DURATION = 750; // ms
   const EXPLOSION_DURATION = 400; // ms - slightly reduced
   const FADEOUT_DURATION = 250; // ms - slightly reduced
 
@@ -388,6 +400,12 @@
       mode={fireAnimationMode}
       {preloadedModel}
       {preloadedTexture}
+      {preloadedFireballParticles}
+      {preloadedExplosionParticles}
+      {getParticleSystemFromPool}
+      {returnParticleSystemToPool}
+      {createParticleSystemAsync}
+      {particlePoolContainer}
     />
 
     <!-- Point light that follows the fireball -->
