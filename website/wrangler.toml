@@ -12,3 +12,6 @@ directory = "./dist"
 # kv_namespaces = [
 #     { binding = "SESSION", id = "" },
 # ]
+
+[vars]
+NODE_VERSION = "22.11.0"
