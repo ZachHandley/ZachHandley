@@ -7,12 +7,18 @@
   import { Spring, Tween } from "svelte/motion";
   import { cubicInOut } from "svelte/easing";
   import CrateLink from "./links/CrateLink.svelte";
+  import CrateLinkExplode from "./links/CrateLinkExplode.svelte";
 
   // Props with proper TypeScript typing
   let {
     links,
     onLinkClick,
     visible = true,
+    useExplodingCrates = false,
+    onExplodeRequest,
+    sceneController,
+    screenWidth,
+    screenHeight,
   }: {
     links: LinkType[];
     onLinkClick?: (
@@ -20,9 +26,15 @@
       type: LinkType["type"],
       position: THREE.Vector3,
       category?: string,
-      action?: () => void | Promise<void>
+      action?: () => void | Promise<void>,
+      crateId?: string
     ) => void;
     visible?: boolean;
+    useExplodingCrates?: boolean;
+    onExplodeRequest?: (crateId: string) => Promise<void>;
+    sceneController?: any;
+    screenWidth: number;
+    screenHeight: number;
   } = $props();
 
   // Get Threlte context
@@ -59,13 +71,8 @@
   // Combined categories for filtering
   const allCategories = [...leftCategories, ...rightCategories];
 
-  // Reactive state for device type
-  let isMobile = $state(false);
-
-  $effect(() => {
-    // Update mobile detection whenever size changes
-    isMobile = $size && $size.width < $size.height * 1.2;
-  });
+  // Reactive state for device type - using passed screenWidth for consistency
+  let isMobile = $derived(screenWidth < 768);
 
   // UI State
   let selectedCategory = $state<string | null>(null);
@@ -137,22 +144,27 @@
     }
   }
 
-  // Filtered links based on selected category
-  let filteredLinks = $state<LinkType[]>([]);
-
-  $effect(() => {
-    if (!selectedCategory) {
-      filteredLinks = [];
-    } else {
-      // Filter links directly by their category property
-      filteredLinks = allLinks.filter(
-        (link) => link.category === selectedCategory
-      );
+  // Filtered links based on selected category - using $derived to prevent infinite loops
+  let filteredLinks = $derived.by(() => {
+    // Only filter when we have a selected category and not transitioning
+    if (!selectedCategory || transitioning) {
+      return [];
     }
+    
+    // Filter links directly by their category property
+    const filtered = allLinks.filter(
+      (link) => link.category === selectedCategory
+    );
+    
+    console.log(`📦 Filtered ${filtered.length} links for "${selectedCategory}":`, $state.snapshot(filtered).map(l => l.name));
+    return filtered;
   });
 
   // Z depth for links and UI - in front of the dragon
   const LINKS_Z_DEPTH = 6;
+  
+  // Consistent back button Y position for both component types (using $derived)
+  let backButtonYPosition = $derived(visibleHeightAtZDepth(LINKS_Z_DEPTH) * 0.05);
 
   // Dimensions are derived from camera - FIXED CALCULATION
   function visibleHeightAtZDepth(depth: number): number {
@@ -330,27 +342,57 @@
 
   // Handle category selection
   async function selectCategory(categoryId: string) {
-    if (transitioning) return;
+    console.log(`🎯 selectCategory called with categoryId: "${categoryId}"`);
+    console.log(`🎯 Current state: transitioning=${$state.snapshot(transitioning)}, selectedCategory="${$state.snapshot(selectedCategory)}", showingCategories=${$state.snapshot(showingCategories)}`);
+    
+    // Prevent infinite loops and re-entry
+    if (transitioning) {
+      console.log(`🚫 selectCategory blocked - already transitioning`);
+      return;
+    }
+    
+    if (selectedCategory === categoryId && !showingCategories) {
+      console.log(`🚫 selectCategory blocked - already showing this category`);
+      return;
+    }
+    
+    // Allow execution from any view state to support fireball navigation
+    console.log(`✅ selectCategory proceeding from any view state`);
+    
     transitioning = true;
+    console.log(`🔒 Transition started for category: "${categoryId}"`);
 
-    selectedCategory = categoryId;
-
-    // Fade out categories
+    // Fade out categories first
     await categoryOpacityTween.set(0);
+    console.log(`🌫️ Categories faded out`);
 
-    // Switch view
+    // Update category and view state simultaneously  
+    selectedCategory = categoryId;
     showingCategories = false;
+    console.log(`📝 State updated: selectedCategory="${$state.snapshot(selectedCategory)}", showingCategories=${$state.snapshot(showingCategories)}`);
+
+    // Wait for reactive effects to process
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    // Wait for reactive systems to update grid layout
+    await tick();
+    console.log(`📊 Grid layout will be calculated by reactive system for category "${categoryId}"`);
 
     // Fade in links and back button
     await Promise.all([
       linksOpacityTween.set(1),
       backButtonOpacityTween.set(1),
     ]);
+    console.log(`✨ Links and back button faded in`);
 
-    // Update grid layout
-    gridLayout = calculateGridLayout(filteredLinks);
+    // Reset back button to default state when entering links view
+    const backButtonComponent = crateComponents["back-button"];
+    if (backButtonComponent && backButtonComponent.resetToDefault) {
+      backButtonComponent.resetToDefault();
+    }
 
     transitioning = false;
+    console.log(`✅ Category selection complete for "${categoryId}"`);
   }
 
   // Handle back button
@@ -372,6 +414,26 @@
     calculateCategoryPositions();
     gridLayout.leftPositions = [];
     gridLayout.rightPositions = [];
+
+    // Reset all category crates to default state when returning to category view
+    console.log(`🔄 Resetting category crates to default state`);
+    leftCategories.forEach((category) => {
+      const leftCrateId = `category-left-${category.id}`;
+      const leftComponent = crateComponents[leftCrateId];
+      if (leftComponent && leftComponent.resetToDefault) {
+        console.log(`🔄 Resetting left crate: ${leftCrateId}`);
+        leftComponent.resetToDefault();
+      }
+    });
+    
+    rightCategories.forEach((category) => {
+      const rightCrateId = `category-right-${category.id}`;
+      const rightComponent = crateComponents[rightCrateId];
+      if (rightComponent && rightComponent.resetToDefault) {
+        console.log(`🔄 Resetting right crate: ${rightCrateId}`);
+        rightComponent.resetToDefault();
+      }
+    });
 
     // Fade in categories
     await categoryOpacityTween.set(1);
@@ -515,29 +577,92 @@
     }
   }
 
-  // Update grid layout when filtered links change
-  $effect(() => {
+  // Calculate grid layout reactively using $derived
+  let calculatedGridLayout = $derived.by(() => {
+    // Only calculate when showing links, not transitioning, and have filtered links
     if (
-      !showingCategories &&
-      filteredLinks.length > 0 &&
-      size.current.width > 0
+      transitioning ||
+      showingCategories ||
+      filteredLinks.length === 0 ||
+      !$size ||
+      $size.width <= 0
     ) {
-      gridLayout = calculateGridLayout(filteredLinks);
+      return { leftPositions: [], rightPositions: [], linkSize: 4 };
     }
+    
+    console.log(`🔧 Calculating grid layout for ${$state.snapshot(filteredLinks).length} links`);
+    const layout = calculateGridLayout(filteredLinks);
+    console.log(`🔧 New grid layout:`, layout);
+    return layout;
+  });
+  
+  // Update gridLayout when calculatedGridLayout changes
+  $effect(() => {
+    gridLayout = calculatedGridLayout;
   });
 
-  // Store category positions
+  // Store category positions with validation
   let categoryPositions = $state<Record<string, [number, number, number]>>({});
+  
+  // Default/fallback positions for when calculations aren't ready
+  const defaultPositions = {
+    personal: [-6, 2, LINKS_Z_DEPTH] as [number, number, number],
+    professional: [-6, 0, LINKS_Z_DEPTH] as [number, number, number],
+    projects: [6, 2, LINKS_Z_DEPTH] as [number, number, number],
+    downloads: [6, 0, LINKS_Z_DEPTH] as [number, number, number],
+  };
+  
+  // Function to get safe position with fallback
+  function getSafePosition(categoryId: string): [number, number, number] {
+    const calculated = categoryPositions[categoryId];
+    const fallback = defaultPositions[categoryId as keyof typeof defaultPositions];
+    
+    if (calculated && calculated.every(coord => isFinite(coord))) {
+      return calculated;
+    }
+    
+    console.warn(`⚠️ Using fallback position for category: ${categoryId}`);
+    return fallback || [0, 0, LINKS_Z_DEPTH];
+  }
+  
+  // Function to get safe link position with fallback
+  function getSafeLinkPosition(positions: [number, number, number][], index: number): [number, number, number] | null {
+    const position = positions[index];
+    
+    if (position && position.every(coord => isFinite(coord))) {
+      return position;
+    }
+    
+    console.warn(`⚠️ Link position at index ${index} is invalid:`, position);
+    return null;
+  }
 
+  // Registry for exploding crate components
+  let crateComponents = $state<Record<string, { explodeCrate: () => void; resetCrate: () => void; resetToDefault: () => void; explodeWithAction: (action?: () => void) => Promise<void> }>>({});
+
+  // Function to trigger explosion on a specific crate
+  export async function triggerCrateExplosion(crateId: string): Promise<void> {
+    const crate = crateComponents[crateId];
+    if (crate && crate.explodeCrate) {
+      crate.explodeCrate();
+      // Wait for explosion animation to complete
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+
+  // Initialize category positions when camera and size are available
   $effect(() => {
-    if (!$size || !camera.current) return;
+    if (!$size || !camera.current || transitioning) return;
+    
+    console.log(`📍 Calculating category positions...`);
     calculateCategoryPositions();
   });
 
-  // Effect to update layout when window/camera changes
+  // Throttled effect to update layout when window/camera changes
+  let lastLayoutUpdate = 0;
   $effect(() => {
     // Dependencies - any of these changing should trigger an update
-    const _ = [
+    const deps = [
       (camera.current as THREE.PerspectiveCamera)?.aspect,
       (camera.current as THREE.PerspectiveCamera)?.position.z,
       (camera.current as THREE.PerspectiveCamera)?.fov,
@@ -546,10 +671,137 @@
       isMobile,
     ];
 
+    // Prevent layout updates during transitions
+    if (transitioning) return;
+    
+    // Throttle updates to prevent excessive recalculations
+    const now = performance.now();
+    if (now - lastLayoutUpdate < 200) return;
+    lastLayoutUpdate = now;
+
     if (showingCategories) {
       calculateCategoryPositions();
-    } else if (filteredLinks.length > 0) {
-      gridLayout = calculateGridLayout(filteredLinks);
+    }
+    // Note: gridLayout is now handled by the derived value above
+  });
+
+  // Register crates with SceneController - split into separate effects to prevent loops
+  
+  // Register category crates when positions and components are ready
+  $effect(() => {
+    if (!sceneController || transitioning || !showingCategories) return;
+    
+    console.log(`🎯 Registering category crates...`);
+    
+    // Register left category crates
+    leftCategories.forEach((category) => {
+      const leftCrateId = `category-left-${category.id}`;
+      const leftComponent = crateComponents[leftCrateId];
+      
+      if (leftComponent) {
+        const safePosition = getSafePosition(category.id);
+        const positionVector = new THREE.Vector3(...safePosition);
+        
+        console.log(`🎯 Registering left category ${category.id} at position:`, safePosition);
+        
+        sceneController.registerCrate(leftCrateId, {
+          explode: () => {
+            console.log(`💥 Registry explosion for left category: ${category.id}`);
+            if (leftComponent?.explodeWithAction) {
+              leftComponent.explodeWithAction(() => selectCategory(category.id));
+            }
+          },
+          reset: () => leftComponent.resetCrate?.()
+        }, positionVector);
+      }
+    });
+    
+    // Register right category crates  
+    rightCategories.forEach((category) => {
+      const rightCrateId = `category-right-${category.id}`;
+      const rightComponent = crateComponents[rightCrateId];
+      
+      if (rightComponent) {
+        const safePosition = getSafePosition(category.id);
+        const positionVector = new THREE.Vector3(...safePosition);
+        
+        console.log(`🎯 Registering right category ${category.id} at position:`, safePosition);
+        
+        sceneController.registerCrate(rightCrateId, {
+          explode: () => {
+            console.log(`💥 Registry explosion for right category: ${category.id}`);
+            if (rightComponent?.explodeWithAction) {
+              rightComponent.explodeWithAction(() => selectCategory(category.id));
+            }
+          },
+          reset: () => rightComponent.resetCrate?.()
+        }, positionVector);
+      }
+    });
+  });
+  
+  // Register link crates when in links view
+  $effect(() => {
+    if (!sceneController || transitioning || showingCategories || filteredLinks.length === 0) return;
+    
+    console.log(`🎯 Registering ${$state.snapshot(filteredLinks).length} link crates...`);
+    
+    // Register link crates
+    filteredLinks.forEach((link, i) => {
+      const isLeftSide = i < Math.ceil(filteredLinks.length / 2);
+      const leftIndex = i;
+      const rightIndex = i - Math.ceil(filteredLinks.length / 2);
+      
+      if (isLeftSide) {
+        // Left side link
+        const leftCrateId = `link-left-${link.name}-${i}`;
+        const leftComponent = crateComponents[leftCrateId];
+        const safePosition = getSafeLinkPosition(gridLayout.leftPositions, leftIndex);
+        
+        if (leftComponent && safePosition) {
+          const positionVector = new THREE.Vector3(...safePosition);
+          console.log(`🎯 Registering left link ${link.name} at position:`, safePosition);
+          
+          sceneController.registerCrate(leftCrateId, {
+            explode: () => leftComponent.explodeCrate?.(),
+            reset: () => leftComponent.resetCrate?.()
+          }, positionVector);
+        } else {
+          console.warn(`⚠️ Cannot register left link ${link.name}: component=${!!leftComponent}, position=${!!safePosition}`);
+        }
+      } else {
+        // Right side link
+        const rightCrateId = `link-right-${link.name}-${rightIndex}`;
+        const rightComponent = crateComponents[rightCrateId];
+        const safePosition = getSafeLinkPosition(gridLayout.rightPositions, rightIndex);
+        
+        if (rightComponent && safePosition) {
+          const positionVector = new THREE.Vector3(...safePosition);
+          console.log(`🎯 Registering right link ${link.name} at position:`, safePosition);
+          
+          sceneController.registerCrate(rightCrateId, {
+            explode: () => rightComponent.explodeCrate?.(),
+            reset: () => rightComponent.resetCrate?.()
+          }, positionVector);
+        } else {
+          console.warn(`⚠️ Cannot register right link ${link.name}: component=${!!rightComponent}, position=${!!safePosition}`);
+        }
+      }
+    });
+    
+    // Register back button
+    const backButtonComponent = crateComponents["back-button"];
+    if (backButtonComponent) {
+      const backButtonPosition = new THREE.Vector3(0, backButtonYPosition, LINKS_Z_DEPTH + 3);
+      sceneController.registerCrate("back-button", {
+        explode: () => {
+          console.log(`💥 Registry explosion for back button`);
+          if (backButtonComponent?.explodeWithAction) {
+            backButtonComponent.explodeWithAction(() => goBack());
+          }
+        },
+        reset: () => backButtonComponent.resetCrate?.()
+      }, backButtonPosition);
     }
   });
 
@@ -571,59 +823,107 @@
       <!-- Left side categories as Link components -->
       {#each leftCategories as category, i}
         <!-- Category link object -->
-        <CrateLink
-          {dracoLoader}
-          link={{
-            name: category.name,
-            type: "category" as any,
-            icon: category.icon,
-            category: category.name,
-          }}
-          position={categoryPositions[category.id] || [
-            -4,
-            2 - i * 2,
-            LINKS_Z_DEPTH,
-          ]}
-          index={i}
-          columnKey="left"
-          width={isMobile ? 3 : 4}
-          height={isMobile ? 3 : 4}
-          opacity={categoryOpacity}
-          onLinkClick={(url, type, position, action) => {
-            onLinkClick!(url, type, position, category.name, () =>
-              selectCategory(category.id)
-            );
-          }}
-        />
+        {#if useExplodingCrates}
+          <CrateLinkExplode
+            {dracoLoader}
+            {screenWidth}
+            link={{
+              name: category.name,
+              type: "category" as any,
+              icon: category.icon,
+              category: category.name,
+            }}
+            position={getSafePosition(category.id)}
+            index={i}
+            columnKey="left"
+            width={isMobile ? 3 : 4}
+            height={isMobile ? 3 : 4}
+            opacity={categoryOpacity}
+            crateId={`category-left-${category.id}`}
+            bind:this={crateComponents[`category-left-${category.id}`]}
+            onLinkClick={(url, type, position, action) => {
+              // Use fireball system with immediate action execution for categories
+              onLinkClick!(url, type, position, category.name, () =>
+                selectCategory(category.id), `category-left-${category.id}`
+              );
+            }}
+          />
+        {:else}
+          <CrateLink
+            {dracoLoader}
+            link={{
+              name: category.name,
+              type: "category" as any,
+              icon: category.icon,
+              category: category.name,
+            }}
+            position={getSafePosition(category.id)}
+            index={i}
+            columnKey="left"
+            width={isMobile ? 3 : 4}
+            height={isMobile ? 3 : 4}
+            opacity={categoryOpacity}
+            onLinkClick={(url, type, position, action) => {
+              // Use fireball system with immediate action execution for categories
+              onLinkClick!(url, type, position, category.name, () =>
+                selectCategory(category.id), `category-left-${category.id}`
+              );
+            }}
+          />
+        {/if}
       {/each}
 
       <!-- Right side categories as Link components -->
       {#each rightCategories as category, i}
         <!-- Category link object -->
-        <CrateLink
-          {dracoLoader}
-          link={{
-            name: category.name,
-            type: "category" as any,
-            icon: category.icon,
-            category: category.name,
-          }}
-          position={categoryPositions[category.id] || [
-            4,
-            2 - i * 2,
-            LINKS_Z_DEPTH,
-          ]}
-          index={i}
-          columnKey="right"
-          width={isMobile ? 3 : 4}
-          height={isMobile ? 3 : 4}
-          opacity={categoryOpacity}
-          onLinkClick={(url, type, position, action) => {
-            onLinkClick!(url, type, position, category.name, () =>
-              selectCategory(category.id)
-            );
-          }}
-        />
+        {#if useExplodingCrates}
+          <CrateLinkExplode
+            {dracoLoader}
+            {screenWidth}
+            link={{
+              name: category.name,
+              type: "category" as any,
+              icon: category.icon,
+              category: category.name,
+            }}
+            position={getSafePosition(category.id)}
+            index={i}
+            columnKey="right"
+            width={isMobile ? 3 : 4}
+            height={isMobile ? 3 : 4}
+            opacity={categoryOpacity}
+            crateId={`category-right-${category.id}`}
+            bind:this={crateComponents[`category-right-${category.id}`]}
+            onLinkClick={(url, type, position, action) => {
+              // Use fireball system with immediate action execution for categories
+              onLinkClick!(url, type, position, category.name, () =>
+                selectCategory(category.id), `category-right-${category.id}`
+              );
+            }}
+          />
+        {:else}
+          <CrateLink
+            {dracoLoader}
+            link={{
+              name: category.name,
+              type: "category" as any,
+              icon: category.icon,
+              category: category.name,
+            }}
+            position={getSafePosition(category.id)}
+            index={i}
+            columnKey="right"
+            width={isMobile ? 3 : 4}
+            height={isMobile ? 3 : 4}
+            opacity={categoryOpacity}
+            onLinkClick={(url, type, position, action) => {
+              // Use fireball system with immediate action execution for categories
+              onLinkClick!(url, type, position, category.name, () =>
+                selectCategory(category.id), `category-right-${category.id}`
+              );
+            }}
+          />
+        {/if}
       {/each}
     </T.Group>
   {:else}
@@ -631,59 +931,124 @@
       <!-- Left side links -->
       {#each filteredLinks.slice(0, Math.ceil(filteredLinks.length / 2)) as link, i}
         {#if i < gridLayout.leftPositions.length}
-          <CrateLink
-            {dracoLoader}
-            {link}
-            position={gridLayout.leftPositions[i]}
-            index={i}
-            columnKey="left"
-            width={gridLayout.linkSize}
-            height={gridLayout.linkSize}
-            {onLinkClick}
-            opacity={linksOpacity}
-          />
+          {#if useExplodingCrates}
+            <CrateLinkExplode
+              {dracoLoader}
+              {screenWidth}
+              {link}
+              position={gridLayout.leftPositions[i]}
+              index={i}
+              columnKey="left"
+              width={gridLayout.linkSize}
+              height={gridLayout.linkSize}
+              onLinkClick={onLinkClick}
+              opacity={linksOpacity}
+              crateId={`link-left-${link.name}-${i}`}
+              bind:this={crateComponents[`link-left-${link.name}-${i}`]}
+            />
+          {:else}
+            <CrateLink
+              {dracoLoader}
+              {link}
+              position={gridLayout.leftPositions[i]}
+              index={i}
+              columnKey="left"
+              width={gridLayout.linkSize}
+              height={gridLayout.linkSize}
+              {onLinkClick}
+              opacity={linksOpacity}
+            />
+          {/if}
         {/if}
       {/each}
 
       <!-- Right side links -->
       {#each filteredLinks.slice(Math.ceil(filteredLinks.length / 2)) as link, i}
         {#if i < gridLayout.rightPositions.length}
-          <CrateLink
-            {dracoLoader}
-            {link}
-            position={gridLayout.rightPositions[i]}
-            index={i + Math.ceil(filteredLinks.length / 2)}
-            columnKey="right"
-            width={gridLayout.linkSize}
-            height={gridLayout.linkSize}
-            {onLinkClick}
-            opacity={linksOpacity}
-          />
+          {#if useExplodingCrates}
+            <CrateLinkExplode
+              {dracoLoader}
+              {screenWidth}
+              {link}
+              position={gridLayout.rightPositions[i]}
+              index={i + Math.ceil(filteredLinks.length / 2)}
+              columnKey="right"
+              width={gridLayout.linkSize}
+              height={gridLayout.linkSize}
+              onLinkClick={onLinkClick}
+              opacity={linksOpacity}
+              crateId={`link-right-${link.name}-${i}`}
+              bind:this={crateComponents[`link-right-${link.name}-${i}`]}
+            />
+          {:else}
+            <CrateLink
+              {dracoLoader}
+              {link}
+              position={gridLayout.rightPositions[i]}
+              index={i + Math.ceil(filteredLinks.length / 2)}
+              columnKey="right"
+              width={gridLayout.linkSize}
+              height={gridLayout.linkSize}
+              {onLinkClick}
+              opacity={linksOpacity}
+            />
+          {/if}
         {/if}
       {/each}
 
       <!-- Back button - positioned at the bottom -->
-      <CrateLink
-        {dracoLoader}
-        link={{
-          name: "Back",
-          type: "action",
-          icon: "mdi:arrow-left",
-        }}
-        position={[
-          0,
-          visibleHeightAtZDepth(LINKS_Z_DEPTH) * 0.05,
-          LINKS_Z_DEPTH + 3,
-        ]}
-        index={0}
-        columnKey="bottom"
-        height={isMobile ? 1.5 : 2}
-        width={isMobile ? 2.5 : 3}
-        opacity={backButtonOpacity}
-        onLinkClick={(url, type, position, action) => {
-          onLinkClick!(url, type, position, undefined, goBack);
-        }}
-      />
+      {#if useExplodingCrates}
+        <CrateLinkExplode
+          {dracoLoader}
+          {screenWidth}
+          link={{
+            name: "Back",
+            type: "action",
+            icon: "mdi:arrow-left",
+            inlineIcon: true,
+          }}
+          position={[
+            0,
+            backButtonYPosition,
+            LINKS_Z_DEPTH + 2,
+          ]}
+          index={0}
+          columnKey="bottom"
+          height={isMobile ? 1.5 : 2}
+          width={isMobile ? 2.5 : 3}
+          opacity={backButtonOpacity}
+          crateId="back-button"
+          bind:this={crateComponents["back-button"]}
+          onLinkClick={(url, type, position, action) => {
+            // Use fireball system with immediate action execution for back button
+            onLinkClick!(url, type, position, undefined, goBack, "back-button");
+          }}
+        />
+      {:else}
+        <CrateLink
+          {dracoLoader}
+          link={{
+            name: "Back",
+            type: "action",
+            icon: "mdi:arrow-left",
+            inlineIcon: true,
+          }}
+          position={[
+            0,
+            backButtonYPosition,
+            LINKS_Z_DEPTH + 4,
+          ]}
+          index={0}
+          columnKey="bottom"
+          height={isMobile ? 1.5 : 2}
+          width={isMobile ? 2.5 : 3}
+          opacity={backButtonOpacity}
+          onLinkClick={(url, type, position, action) => {
+            // Use fireball system with immediate action execution for back button
+            onLinkClick!(url, type, position, undefined, goBack);
+          }}
+        />
+      {/if}
     </T.Group>
   {/if}
 {/if}

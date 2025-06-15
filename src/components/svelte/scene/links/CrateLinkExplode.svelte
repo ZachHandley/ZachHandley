@@ -1,8 +1,10 @@
 <script lang="ts">
-  import { T, useTask, useThrelte } from "@threlte/core";
+  import { T, useThrelte } from "@threlte/core";
   import { Text, useGltf } from "@threlte/extras";
+  import CrateExplode from "../../models/CrateExplode.svelte";
   import * as THREE from "three";
-  import { Spring } from "svelte/motion";
+  import { Spring, Tween } from "svelte/motion";
+  import { cubicInOut } from "svelte/easing";
   import { onMount, onDestroy } from "svelte";
   import type { Link as LinkType } from "~/types/baseSchemas";
   import { fetchIconData } from "~/utils/iconify";
@@ -22,12 +24,15 @@
     depth = 0.5,
     explodeDistance = 5,
     explodeDuration = 1,
-    resetDelay = 3000,
+    resetDelay = 1500,
+    resetDuration = 0.6,
     enableRotation = true,
     autoReset = false,
     onLinkClick,
     dracoLoader,
     opacity = 1,
+    crateId = "",
+    screenWidth = 1024,
     ref = $bindable(),
   }: {
     link: LinkType;
@@ -42,6 +47,7 @@
     explodeDistance?: number;
     explodeDuration?: number;
     resetDelay?: number;
+    resetDuration?: number;
     enableRotation?: boolean;
     autoReset?: boolean;
     onLinkClick?: (
@@ -49,14 +55,20 @@
       type: LinkType["type"],
       position: THREE.Vector3,
       category?: string,
-      action?: () => void
+      action?: () => void,
+      crateId?: string
     ) => void;
     dracoLoader: DRACOLoader;
     opacity?: number;
+    crateId?: string;
+    screenWidth?: number;
   } & { ref?: THREE.Group } = $props();
 
   // Get Threlte context
-  const { camera } = useThrelte();
+  const { size, camera } = useThrelte();
+
+  // Mobile detection based on screenWidth
+  let isMobile = $derived(screenWidth < 768);
 
   // Extract link properties
   const {
@@ -121,10 +133,25 @@
   let boundingBoxCalculated = $state(false);
   let hovering = $state(false);
   let isExploding = $state(false);
+  let isExploded = $state(false);
+  let isFadingOut = $state(false);
   let isResetting = $state(false);
+  let isReassembling = $state(false);
   let contentVisible = $state(true);
-  let modelOpacity = $state(1);
-  let contentOpacity = $state(1);
+  
+  // Tweens for smooth opacity animations
+  const modelOpacityTween = new Tween(1, {
+    duration: 500,
+    easing: cubicInOut,
+  });
+  const contentOpacityTween = new Tween(1, {
+    duration: 300,
+    easing: cubicInOut,
+  });
+  
+  // Reactive opacity values from tweens
+  let modelOpacity = $derived(modelOpacityTween.current);
+  let contentOpacity = $derived(contentOpacityTween.current * opacity);
   let isLoadingIcon = $state(true);
   let svgGroup = $state<THREE.Group | null>(null);
   let faviconTexture = $state<THREE.Texture | null>(null);
@@ -132,9 +159,14 @@
   let faviconLoadFailed = $state(false);
   let faviconAspectRatio = $state(1); // Default 1:1 aspect ratio
   let resetTimeout: ReturnType<typeof setTimeout> | null = null;
+  let actualAnimationDuration = $state(explodeDuration);
 
   // Content Z position - store as state instead of derived
   let contentZOffset = $state(0.3);
+  
+  // Dynamic container offsets based on crate dimensions (using $derived for reactive computation)
+  let containerYOffset = $derived(height * -0.7);  // Scale with height instead of hardcoded -2.95
+  let containerZOffset = $derived(depth * 0.4);    // Scale with depth instead of hardcoded +0.2
 
   // Content positions
   let titleY = $state(0);
@@ -156,24 +188,26 @@
   // Create texture loader
   const textureLoader = new THREE.TextureLoader();
 
-  // GLTF loader
-  const gltf = useGltf<{
-    nodes: {
-      Cube200: THREE.Mesh;
-      Cube200_1: THREE.Mesh;
-    };
-    materials: {
-      Wood_Light: THREE.MeshStandardMaterial;
-      Wood: THREE.MeshStandardMaterial;
-    };
-  }>("/models/Crate-transformed.glb", {
+  // Simple GLTF type for bounding box calculations only
+  type GLTFResult = {
+    nodes: Record<string, THREE.Mesh>;
+    materials: Record<string, THREE.MeshStandardMaterial>;
+  };
+
+  // Load GLTF only for bounding box calculations
+  const gltf = useGltf<GLTFResult>("/models/CrateExplode-transformed.glb", {
     dracoLoader,
   });
 
-  // Calculate bounding box and content positions
-  const boundingBoxTask = useTask(() => {
-    if (!group || !$gltf) return true;
-    if (boundingBoxCalculated) return false;
+  // CrateExplode component reference for animations
+  let crateExplodeRef: any = null;
+  
+
+  // Calculate bounding box and content positions reactively
+  $effect(() => {
+    if (!group || !$gltf) return;
+    
+    if (boundingBoxCalculated) return;
 
     // Temporarily reset scale to measure
     const originalScale = group.scale.clone();
@@ -188,8 +222,9 @@
     modelDepth = size.z;
 
     // Ensure content appears in front of crate
+    // Compensate for container Z offset (dynamic based on containerZOffset)
     // Reduced base offset from 0.3 to 0.15 to bring text closer to crate
-    contentZOffset = modelDepth / 2 + 0.15;
+    contentZOffset = modelDepth / 2 + 0.15 - containerZOffset;
 
     // Calculate content positions sequentially
     calculateContentPositions();
@@ -198,15 +233,27 @@
     group.scale.copy(originalScale);
     boundingBoxCalculated = true;
 
-    return false;
+    // Use default animation duration for timing
+    actualAnimationDuration = explodeDuration;
+  });
+
+  // React to screen size changes by recalculating content positions
+  $effect(() => {
+    if (boundingBoxCalculated && $size) {
+      calculateContentPositions();
+    }
   });
 
   // Calculate content positions based on crate dimensions
   function calculateContentPositions() {
+    // Compensate for container being moved down by containerYOffset
+    // Since containerYOffset is negative (down), compensation is positive (up)
+    const yCompensation = Math.abs(containerYOffset);
+    
     // Perspective compensation for crates below camera level
     // Get dynamic camera position from Threlte context
     const cameraY = camera.current?.position.y || 7.5; // fallback to 7.5
-    const crateWorldY = positionArray[1];
+    const crateWorldY = positionArray[1] + containerYOffset;
     const perspectiveOffset = crateWorldY < cameraY ? (cameraY - crateWorldY) * 0.03 : 0;
     
     // Improve positioning for small crates to prevent text from going off-screen
@@ -215,63 +262,68 @@
     const iconPercent = isSmallCrate ? 0.5 : 0.8;
     const domainPercent = isSmallCrate ? 0.25 : 0.1;
     
-    // Title position - top with perspective compensation
-    titleY = height * titlePercent + perspectiveOffset;
+    // Apply all compensations (container offset + perspective)
+    const totalYOffset = yCompensation + perspectiveOffset;
+    
+    // Title position - top with all compensations
+    titleY = height * titlePercent + totalYOffset;
 
-    // Icon position - centered vertically with perspective compensation
-    iconY = height * iconPercent + perspectiveOffset;
+    // Icon position - centered vertically with all compensations
+    iconY = height * iconPercent + totalYOffset;
 
-    // Domain position - bottom with perspective compensation
-    domainY = height * domainPercent + perspectiveOffset;
+    // Domain position - bottom with all compensations
+    domainY = height * domainPercent + totalYOffset;
   }
 
-  // Animation task
-  const animationTask = useTask((delta) => {
-    if (!isExploding && !isResetting) return false;
-
-    const progress = Math.min(1, delta / explodeDuration);
-
-    if (isResetting) {
-      // Reset animation
-      if (progress < 0.5) {
-        modelOpacity = progress * 2;
-        contentOpacity = 0;
-      } else {
-        modelOpacity = 1;
-        contentVisible = true;
-        contentOpacity = (progress - 0.5) * 2;
-      }
+  // Simple animation functions using CrateExplode component
+  function playExplosion() {
+    console.log(`🎬 playExplosion called for '${title}' - crateExplodeRef:`, crateExplodeRef);
+    if (crateExplodeRef && typeof crateExplodeRef.explode === 'function') {
+      console.log(`🎬 Calling crateExplodeRef.explode() for '${title}'`);
+      crateExplodeRef.explode();
     } else {
-      // Explode animation
-      if (progress < 0.5) {
-        contentOpacity = 1 - progress * 2;
+      console.warn(`🎬 Cannot call explode - ref not available for '${title}'`);
+    }
+  }
+
+  function playReassembly() {
+    if (crateExplodeRef && typeof crateExplodeRef.reset === 'function') {
+      crateExplodeRef.reset();
+    }
+  }
+
+  // Handle opacity animations with proper timing coordination
+  $effect(() => {
+    const isNavigationLink = type === "category" || type === "action";
+    
+    if (isExploding) {
+      if (isNavigationLink) {
+        // Navigation links: Keep everything at normal opacity (view transition will handle fade via parent opacity)
+        contentVisible = true;
+        modelOpacityTween.set(1);
+        contentOpacityTween.set(1); // Keep content at full opacity - parent opacity will fade it
       } else {
-        contentOpacity = 0;
-        contentVisible = progress < 0.51;
-        modelOpacity = 1 - (progress - 0.5) * 2;
+        // Regular links: Fade out content during explosion
+        contentOpacityTween.set(0);
+        contentVisible = false;
+        modelOpacityTween.set(1); // Keep model visible during explosion
       }
+    } else if (isReassembling) {
+      // Start with everything hidden, will fade in during reassembly
+      contentOpacityTween.set(0);
+      contentVisible = false;
+      modelOpacityTween.set(0);
+    } else if (isFadingOut) {
+      // Fade out exploded pieces (only for regular links)
+      modelOpacityTween.set(0);
+      contentOpacityTween.set(0);
+      contentVisible = false;
+    } else if (!isExploded) {
+      // Normal state - fade everything in
+      contentOpacityTween.set(1);
+      contentVisible = true;
+      modelOpacityTween.set(1);
     }
-
-    // Apply opacity to materials
-    if ($gltf) {
-      $gltf.materials.Wood.opacity = modelOpacity;
-      $gltf.materials.Wood.transparent = true;
-      $gltf.materials.Wood_Light.opacity = modelOpacity;
-      $gltf.materials.Wood_Light.transparent = true;
-    }
-
-    // Animation completion
-    if (progress >= 1) {
-      if (isResetting) {
-        isResetting = false;
-        isExploding = false;
-      } else if (autoReset) {
-        resetTimeout = setTimeout(reset, resetDelay);
-      }
-      return false;
-    }
-
-    return true;
   });
 
   // Pointer events
@@ -291,41 +343,103 @@
     }
   }
 
-  // Explode animation
-  function explode() {
-    if (isExploding) return;
-
-    if (resetTimeout) {
-      clearTimeout(resetTimeout);
-      resetTimeout = null;
+  // Explode animation - simplified approach
+  async function explodeCrate(): Promise<void> {
+    console.log(`🧨 EXPLODE CALLED for '${title}' (${type}) - Current state: exploding=${isExploding}, exploded=${isExploded}`);
+    
+    if (isExploding || isResetting || isReassembling || isExploded || isFadingOut) {
+      console.log(`🚫 EXPLODE BLOCKED for '${title}' due to current state`);
+      return;
     }
-
+    
+    if (resetTimeout) clearTimeout(resetTimeout);
+    resetTimeout = null;
+    
     isExploding = true;
     isResetting = false;
-
-    if (animationTask && !animationTask.started) {
-      animationTask.start();
+    isReassembling = false;
+    isFadingOut = false;
+    
+    // State change triggers the $effect for opacity management
+    
+    console.log(`🎬 Starting explosion animation for '${title}'`);
+    
+    // Phase 1: Simple explosion animation
+    playExplosion();
+    
+    // Wait for animation to complete (use actual duration from boundingBoxTask)
+    console.log(`⏱️ Waiting ${actualAnimationDuration} seconds for explosion to complete`);
+    await new Promise(resolve => setTimeout(resolve, actualAnimationDuration * 1000));
+    
+    isExploding = false;
+    isExploded = true;
+    console.log(`✅ Explosion complete for '${title}'`);
+    
+    // Phase 2: Fade out the exploded pieces
+    isFadingOut = true;
+    
+    console.log(`🌫️ Starting fade out for '${title}'`);
+    // Wait for fade out to complete (1.5 seconds for smoother transition)
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    
+    isFadingOut = false;
+    console.log(`👻 Fade out complete for '${title}'`);
+    
+    // Smart reset logic based on link type
+    if (type === "category" || type === "action") {
+      console.log(`🚪 Navigation link '${title}' exploded - staying hidden until view changes`);
+      // Category and action links stay exploded/hidden - they reset when view changes
+    } else {
+      // Regular links (url, download, contact) auto-reset after delay
+      console.log(`🔄 Auto-reset scheduled for '${title}' in ${resetDelay}ms`);
+      resetTimeout = setTimeout(resetCrate, resetDelay);
     }
   }
 
-  // Reset animation
-  function reset() {
-    if (!isExploding) return;
+  // Reset animation - faster with better timing
+  async function resetCrate(): Promise<void> {
+    if (isExploding || isResetting || isReassembling || isFadingOut || !isExploded) return;
+    if (resetTimeout) clearTimeout(resetTimeout);
+    resetTimeout = null;
 
-    if (resetTimeout) {
-      clearTimeout(resetTimeout);
-      resetTimeout = null;
-    }
+    console.log(`CrateLink '${title}': Starting fast reset sequence`);
 
-    isResetting = true;
+    isReassembling = true;
+    isResetting = false;
+    isExploding = false;
+    isFadingOut = false;
 
-    if (animationTask && !animationTask.started) {
-      animationTask.start();
-    }
+    // Play reverse animation
+    playReassembly();
+
+    // Start fading back in early for smoother transition (25% into animation)
+    setTimeout(() => {
+      if (isReassembling) {
+        modelOpacityTween.set(1);
+        contentOpacityTween.set(1);
+        contentVisible = true;
+      }
+    }, (resetDuration * 1000) / 4);
+
+    // Wait for faster reassembly animation to complete
+    await new Promise(resolve => setTimeout(resolve, resetDuration * 1000));
+
+    // Animation reset is handled by CrateExplode component
+
+    isExploded = false;
+    isReassembling = false;
+    console.log(`CrateLink '${title}': Reassembled successfully in ${resetDuration}s.`);
   }
 
   // Click handlers
   function handleClick(event: any) {
+    console.log(`🖱️ CLICK on '${title}' (${type}) - Current state: exploding=${isExploding}, exploded=${isExploded}`);
+    
+    if (isExploded || isExploding || isResetting || isReassembling || isFadingOut) {
+      console.log(`🚫 CLICK BLOCKED on '${title}' due to current state`);
+      return;
+    }
+    
     event.stopPropagation();
 
     const positionVector = new THREE.Vector3(
@@ -334,12 +448,95 @@
       positionArray[2]
     );
 
-    onLinkClick?.(url, type, positionVector, category, explode);
+    console.log(`📡 Calling parent onLinkClick for '${title}' (${type}), passing action callback`);
+
+    // Create a coordinated action function that handles regular link types after visual sequence
+    const coordinatedAction = () => {
+      console.log(`🎯 Coordinated action executing for '${title}' (${type})`);
+      
+      if (type === "url") {
+        console.log(`🔗 URL action for '${title}': ${url}`);
+        // For URL links: open the URL
+        if (url) {
+          const a = document.createElement('a');
+          a.href = url;
+          a.rel = 'noopener noreferrer';
+          a.target = '_blank';
+          a.setAttribute('data-user-initiated', 'true');
+          document.body.appendChild(a);
+          setTimeout(() => {
+            a.click();
+            document.body.removeChild(a);
+          }, 50);
+        }
+      } else if (type === "download") {
+        console.log(`📥 Download action for '${title}': ${url}`);
+        // For download links: trigger download
+        if (url) {
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = url.split('/').pop() || 'download';
+          a.target = '_self';
+          document.body.appendChild(a);
+          setTimeout(() => {
+            a.click();
+            document.body.removeChild(a);
+          }, 50);
+        }
+      } else if (type === "contact") {
+        console.log(`📧 Contact action for '${title}': ${url}`);
+        // For contact links: trigger contact file download
+        if (url) {
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'contact.vcf';
+          a.target = '_self';
+          document.body.appendChild(a);
+          setTimeout(() => {
+            a.click();
+            document.body.removeChild(a);
+          }, 50);
+        }
+      }
+      // Note: category and action types will have their actions passed separately by the parent
+    };
+
+    // Pass the coordinated action function to the parent
+    onLinkClick?.(url, type, positionVector, category, coordinatedAction, crateId);
   }
 
-  function handleDoubleClick(event: any) {
-    event.stopPropagation();
-    explode();
+  // Visual-only explosion for navigation links (no fade-out, no auto-reset)
+  async function explodeVisualOnly(): Promise<void> {
+    console.log(`🎨 VISUAL-ONLY EXPLODE for navigation link '${title}'`);
+    
+    if (isExploding || isResetting || isReassembling || isExploded || isFadingOut) {
+      console.log(`🚫 VISUAL EXPLODE BLOCKED for '${title}' due to current state`);
+      return;
+    }
+    
+    if (resetTimeout) clearTimeout(resetTimeout);
+    resetTimeout = null;
+    
+    isExploding = true;
+    isResetting = false;
+    isReassembling = false;
+    isFadingOut = false;
+    
+    console.log(`🎬 Starting visual explosion animation for '${title}'`);
+    
+    // Phase 1: Explosion animation only
+    playExplosion();
+    
+    // Wait for explosion to complete
+    await new Promise(resolve => setTimeout(resolve, actualAnimationDuration * 1000));
+    
+    isExploding = false;
+    isExploded = true;
+    
+    console.log(`🎨 Visual explosion complete for '${title}' - staying exploded until view changes`);
+    
+    // Navigation links stay exploded and hidden - they will be reset when view changes
+    // No fade-out animation, no auto-reset - the view transition handles all fading
   }
 
   // Update opacity on all materials in the SVG group
@@ -590,19 +787,36 @@
     updateSvgMaterials();
   });
 
+  // Update crate model materials opacity
+  $effect(() => {
+    if (!group || !$gltf) return;
+    
+    // Traverse all meshes in the group and update their material opacity
+    group.traverse((object) => {
+      if (object instanceof THREE.Mesh && object.material) {
+        if (Array.isArray(object.material)) {
+          object.material.forEach((mat) => {
+            if (mat instanceof THREE.MeshStandardMaterial) {
+              mat.transparent = modelOpacity < 1;
+              mat.opacity = modelOpacity;
+              mat.needsUpdate = true;
+            }
+          });
+        } else if (object.material instanceof THREE.MeshStandardMaterial) {
+          object.material.transparent = modelOpacity < 1;
+          object.material.opacity = modelOpacity;
+          object.material.needsUpdate = true;
+        }
+      }
+    });
+  });
+
   // Clean up on destroy
   onDestroy(() => {
-    if (animationTask && animationTask.started) {
-      animationTask.stop();
-    }
-
-    if (boundingBoxTask && boundingBoxTask.started) {
-      boundingBoxTask.stop();
-    }
-
     if (resetTimeout) {
       clearTimeout(resetTimeout);
     }
+    
 
     // Clean up textures
     if (faviconTexture) {
@@ -644,13 +858,60 @@
     }
   }
 
+  // External reset function for view changes (immediate, no animation)
+  function resetToDefault(): void {
+    console.log(`🔄 Resetting '${title}' to default state (view change)`);
+    
+    // Clear any pending timeouts
+    if (resetTimeout) {
+      clearTimeout(resetTimeout);
+      resetTimeout = null;
+    }
+    
+    // Reset all states to default
+    isExploding = false;
+    isExploded = false;
+    isFadingOut = false;
+    isResetting = false;
+    isReassembling = false;
+    contentVisible = true;
+    
+    // Reset opacity tweens to full
+    modelOpacityTween.set(1);
+    contentOpacityTween.set(1);
+    
+    // Reset the CrateExplode component if available
+    if (crateExplodeRef && typeof crateExplodeRef.reset === 'function') {
+      crateExplodeRef.reset();
+    }
+  }
+
+  // Explosion function that can be called from registry with action
+  function explodeWithAction(actionFunction?: () => void): Promise<void> {
+    console.log(`🎯 explodeWithAction called for '${title}' with action:`, !!actionFunction);
+    
+    if (type === "category" || type === "action") {
+      console.log(`🔄 Navigation link - triggering action immediately for '${title}'`);
+      // For navigation links: trigger action IMMEDIATELY
+      if (actionFunction) {
+        actionFunction();
+      }
+      // Start explosion animation (visual feedback only, no fade-out)
+      return explodeVisualOnly();
+    } else {
+      console.log(`🔗 Regular link - normal explosion for '${title}'`);
+      // For regular links: normal explosion with auto-reset
+      return explodeCrate();
+    }
+  }
+
   // Expose functions to parent
-  export { explode, reset };
+  export { explodeCrate, resetCrate, resetToDefault, explodeVisualOnly, explodeWithAction };
 </script>
 
 <!-- Main container -->
 <T.Group
-  position={[positionArray[0], positionArray[1], positionArray[2]]}
+  position={[positionArray[0], positionArray[1] + containerYOffset, positionArray[2] + containerZOffset]}
   rotation={[rotationArray[0], rotationArray[1], rotationArray[2]]}
   name={`crate-link-${columnKey}-${index}`}
 >
@@ -662,54 +923,20 @@
     {width}
     {depth}
   >
-    {#await gltf}
-      <!-- Loading state -->
-    {:then gltfData}
-      <T.Mesh
-        castShadow
-        receiveShadow
-        geometry={gltfData.nodes.Cube200.geometry}
-        material={gltfData.materials.Wood_Light}
-        scale={[hoverScale, hoverScale, hoverScale]}
-        onclick={handleClick}
-        ondblclick={handleDoubleClick}
-        onpointerenter={onPointerEnter}
-        onpointerleave={onPointerLeave}
-      />
-      <T.Mesh
-        castShadow
-        receiveShadow
-        geometry={gltfData.nodes.Cube200_1.geometry}
-        material={gltfData.materials.Wood}
-        scale={[hoverScale, hoverScale, hoverScale]}
-      />
-    {:catch error}
-      <!-- Error state - fallback box -->
-      <T.Mesh
-        castShadow
-        receiveShadow
-        scale={[hoverScale, hoverScale, hoverScale]}
-        onclick={handleClick}
-        ondblclick={handleDoubleClick}
-        onpointerenter={onPointerEnter}
-        onpointerleave={onPointerLeave}
-      >
-        <T.BoxGeometry args={[width, height, depth]} />
-        <T.MeshStandardMaterial
-          color={hovering ? colorCache.urlHover : getLinkColor(type)}
-          emissive={getLinkColor(type)}
-          emissiveIntensity={hovering ? 0.5 : 0}
-          transparent={true}
-          opacity={modelOpacity * opacity}
-        />
-      </T.Mesh>
-    {/await}
+    <!-- Use CrateExplode component for animation -->
+    <CrateExplode 
+      bind:this={crateExplodeRef}
+      onclick={handleClick}
+      onpointerenter={onPointerEnter}
+      onpointerleave={onPointerLeave}
+      scale={[hoverScale, hoverScale, hoverScale]}
+    />
   </T.Group>
 
   <!-- Content Container -->
   {#if contentVisible}
     <T.Group
-      position={[0, 0, contentZOffset]}
+      position={[link.inlineIcon ? 0 : (positionArray[0] > 0 ? -modelWidth / (isMobile ? 10 : 4) : modelWidth / (isMobile ? 10 : 4)), 0, contentZOffset]}
       rotation={[0, 0, 0]}
       name={`crate-content-${columnKey}-${index}`}
       onclick={handleClick}
@@ -717,17 +944,17 @@
     >
       {#if link.inlineIcon && svgGroup}
         <!-- Inline icon + text layout for buttons like "← Back" -->
-        <T.Group position={[0, iconY, 0]}>
-          <!-- Icon positioned close to left of center -->
-          <T.Group position={[-0.25, 0.05, 0]} scale={[height * 0.2, height * 0.2, 1]}>
+        <T.Group position={[0, height * 1.2, 0]}>
+          <!-- Icon positioned to left of center, adjusted for text baseline alignment -->
+          <T.Group position={[-0.5, isMobile ? 0.85 : 1, 0]} scale={[height * 0.25, height * 0.25, 1]}>
             <T is={svgGroup} />
           </T.Group>
-          <!-- Text positioned close to icon -->
-          <T.Group position={[0.1, 0, 0]}>
+          <!-- Text positioned to right of icon -->
+          <T.Group position={[-0.15, 0.4, 0]}>
             <Text
               text={title}
               color="white"
-              fontSize={height * 0.16}
+              fontSize={height * 0.2}
               fontWeight="bold"
               whiteSpace="nowrap"
               anchorX="left"
