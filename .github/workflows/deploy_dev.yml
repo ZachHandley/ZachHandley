@@ -1,10 +1,10 @@
 # Workflow for deploying ZachHandley.com
-name: Frontend Deployment
+name: Dev Deployment (For CF Preview)
 
 on:
   push:
     branches:
-      - main
+      - dev
   # Runs on release publish
   release:
     types: [published]
@@ -19,7 +19,7 @@ permissions:
 
 # Allow one concurrent deployment
 concurrency:
-  group: "frontend-deploy"
+  group: "dev-frontend-deploy"
   cancel-in-progress: true
 
 jobs:
