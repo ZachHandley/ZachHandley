@@ -1,9 +1,11 @@
 name = "zachhandley"
 compatibility_flags = [ "nodejs_compat" ]
-compatibility_date = "2024-09-23"
+compatibility_date = "2025-06-15"
 workers_dev = false
 '$schema' = "node_modules/wrangler/config-schema.json"
 main = "dist/_worker.js/index.js"
+pages_build_output_dir = "dist"
+
 [assets]
 binding = "ASSETS"
 directory = "./dist"
