@@ -34,6 +34,5 @@ jobs:
         env:
           REPO: self
           BRANCH: deploy
-          FOLDER: website
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MESSAGE: "Deploy: {sha} - {msg}"
