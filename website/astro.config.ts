@@ -20,7 +20,7 @@ export default defineConfig({
   output: "server",
   site: import.meta.env.DEV
     ? "http://localhost:3000"
-    : "https://dev.zachhandley.com",
+    : "https://zachhandley.com",
 
   server: {
     port: import.meta.env.DEV ? 3000 : undefined,
