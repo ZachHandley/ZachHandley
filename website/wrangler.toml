@@ -6,9 +6,9 @@ workers_dev = false
 main = "dist/_worker.js/index.js"
 pages_build_output_dir = "dist"
 
-[assets]
-binding = "ASSETS"
-directory = "./dist"
+# [assets]
+# binding = "ASSETS"
+# directory = "./dist"
 
 # Not using Astro Sessions rn
 # kv_namespaces = [
