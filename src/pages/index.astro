@@ -1,0 +1,11 @@
+---
+export const prerender = true;
+import Layout from '../layouts/Layout.astro';
+import LinkApp from '~/components/svelte/LinkApp.svelte';
+---
+
+<Layout title="Home" description="Use Steve the dragon to navigate my site">
+  <main class="w-full min-h-screen min-w-screen relative bg-gray-900">
+    <LinkApp client:only="svelte" />
+  </main>
+</Layout>

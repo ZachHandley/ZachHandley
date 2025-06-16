@@ -1,0 +1,45 @@
+{
+  "name": "website",
+  "type": "module",
+  "version": "0.0.1",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/cloudflare": "^12.5.4",
+    "@astrojs/partytown": "^2.1.4",
+    "@astrojs/sitemap": "^3.4.1",
+    "@astrojs/svelte": "^7.1.0",
+    "@astrojs/vue": "^5.1.0",
+    "@iconify/utils": "^2.3.0",
+    "@microsoft/clarity": "^1.0.0",
+    "@newkrok/three-particles": "^2.0.3",
+    "@tailwindcss/vite": "^4.1.6",
+    "@threlte/core": "^8.0.4",
+    "@threlte/extras": "^9.2.1",
+    "@threlte/flex": "^2.0.3",
+    "@threlte/studio": "^0.1.7",
+    "@types/three": "^0.176.0",
+    "astro": "^5.9.3",
+    "sharp": "^0.34.1",
+    "svelte": "^5.28.2",
+    "tailwindcss": "^4.1.6",
+    "three": "^0.176.0",
+    "typescript": "^5.8.3",
+    "vue": "^3.5.13",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "@iconify/svelte": "^5.0.0",
+    "astro-themes": "^0.2.6",
+    "prettier-plugin-svelte": "^3.3.3",
+    "vite-plugin-node-polyfills": "^0.23.0",
+    "vite-plugin-remove-console": "^2.2.0",
+    "vite-plugin-top-level-await": "^1.5.0",
+    "vite-tsconfig-paths": "^5.1.4",
+    "wrangler": "^4.15.1"
+  }
+}
