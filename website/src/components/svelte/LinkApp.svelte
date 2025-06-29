@@ -2,6 +2,7 @@
   import { Canvas } from "@threlte/core";
   import BaseScene from "./scene/BaseScene.svelte";
   import LoadingScreen from "./ui/LoadingScreen.svelte";
+  import ModalManager from "./ui/ModalManager.svelte";
   import type { Link } from "~/types/baseSchemas";
   import { onMount } from "svelte";
   import Icon from "@iconify/svelte";
@@ -35,6 +36,12 @@
   let isLoading = $state(true);
   let loadingProgress = $state(0);
   let loadingMessage = $state("Initializing medieval realm...");
+
+  // Modal state for 2D overlay
+  let modalManager = $state<{ showModal: (link: Link, x: number, y: number) => void; hideModal: () => void } | null>(null);
+  let modalVisible = $state(false);
+  let modalLink = $state<Link | null>(null);
+  let modalClickPosition = $state<{ x: number; y: number } | null>(null);
 
   function handleLoadingStateChange(loading: boolean, progress: number, message: string) {
     isLoading = loading;
@@ -172,6 +179,7 @@
         onLoadingStateChange={handleLoadingStateChange}
         screenWidth={innerWidth}
         screenHeight={innerHeight}
+        {modalManager}
       />
     </Canvas>
   </div>
@@ -487,6 +495,14 @@
     visible={isLoading}
     progress={loadingProgress}
     message={loadingMessage}
+  />
+
+  <!-- 2D Modal Overlay (positioned outside 3D canvas) -->
+  <ModalManager 
+    bind:this={modalManager}
+    bind:isVisible={modalVisible}
+    bind:currentLink={modalLink}
+    bind:clickPosition={modalClickPosition}
   />
 </div>
 

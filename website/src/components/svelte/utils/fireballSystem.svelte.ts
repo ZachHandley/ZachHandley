@@ -229,18 +229,7 @@ export class FireballSystem {
           console.error('Error executing stored action:', error);
         }
       } else {
-        // Fallback to old behavior for links without stored actions
-        // Handle category interactions
-        if (type === 'category' && onCategoryInteraction) {
-          console.log(`🔄 Fallback category interaction for ${type}`);
-          onCategoryInteraction(category);
-        }
-
-        // Handle URL navigation for regular links
-        if (url && type !== 'category' && type !== 'action' && onUrlNavigation) {
-          console.log(`🔗 Fallback URL navigation for ${type}: ${url}`);
-          onUrlNavigation(url, type);
-        }
+        console.warn(`⚠️ No stored action found for ${type} link: ${url}`);
       }
 
     } catch (error) {

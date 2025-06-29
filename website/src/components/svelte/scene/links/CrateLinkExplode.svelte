@@ -25,7 +25,7 @@
     explodeDistance = 5,
     explodeDuration = 1,
     resetDelay = 1500,
-    resetDuration = 0.6,
+    resetDuration = 0.27,
     enableRotation = true,
     autoReset = false,
     onLinkClick,
@@ -33,6 +33,7 @@
     opacity = 1,
     crateId = "",
     screenWidth = 1024,
+    modalManager,
     ref = $bindable(),
   }: {
     link: LinkType;
@@ -62,6 +63,7 @@
     opacity?: number;
     crateId?: string;
     screenWidth?: number;
+    modalManager?: { showModal: (link: LinkType, x: number, y: number) => void; hideModal: () => void } | null;
   } & { ref?: THREE.Group } = $props();
 
   // Get Threlte context
@@ -138,6 +140,9 @@
   let isResetting = $state(false);
   let isReassembling = $state(false);
   let contentVisible = $state(true);
+  let actionExecuted = $state(false); // Flag to prevent duplicate coordinatedAction execution
+  let materialsCloned = $state(false); // Flag to track if materials have been cloned for this instance
+  let clonedMaterials = $state<THREE.Material[]>([]); // Store cloned materials for this instance
   
   // Tweens for smooth opacity animations
   const modelOpacityTween = new Tween(1, {
@@ -229,6 +234,31 @@
     // Calculate content positions sequentially
     calculateContentPositions();
 
+    // Clone materials for this instance to prevent shared material issues
+    if (!materialsCloned) {
+      console.log(`🎨 Cloning materials for '${title}' to prevent shared opacity issues`);
+      group.traverse((object) => {
+        if (object instanceof THREE.Mesh && object.material) {
+          if (Array.isArray(object.material)) {
+            // Clone each material in the array
+            const clonedMaterialArray = object.material.map(mat => {
+              const cloned = mat.clone();
+              clonedMaterials.push(cloned);
+              return cloned;
+            });
+            object.material = clonedMaterialArray;
+          } else {
+            // Clone single material
+            const cloned = object.material.clone();
+            clonedMaterials.push(cloned);
+            object.material = cloned;
+          }
+        }
+      });
+      materialsCloned = true;
+      console.log(`✅ Cloned ${clonedMaterials.length} materials for '${title}'`);
+    }
+
     // Restore scale
     group.scale.copy(originalScale);
     boundingBoxCalculated = true;
@@ -298,23 +328,29 @@
     
     if (isExploding) {
       if (isNavigationLink) {
-        // Navigation links: Keep everything at normal opacity (view transition will handle fade via parent opacity)
+        // Navigation links: Keep content/model visible during explosion for visual feedback
+        // The actual view transition will handle overall fading via parent opacity
         contentVisible = true;
         modelOpacityTween.set(1);
-        contentOpacityTween.set(1); // Keep content at full opacity - parent opacity will fade it
+        contentOpacityTween.set(1);
       } else {
-        // Regular links: Fade out content during explosion
+        // Regular links: Hide content during explosion, keep model visible to show explosion
         contentOpacityTween.set(0);
         contentVisible = false;
         modelOpacityTween.set(1); // Keep model visible during explosion
       }
     } else if (isReassembling) {
-      // Start with everything hidden, will fade in during reassembly
+      // During reassembly: Hide content, let CrateExplode component handle its own opacity
       contentOpacityTween.set(0);
       contentVisible = false;
-      modelOpacityTween.set(0);
+      modelOpacityTween.set(1); // Let CrateExplode handle individual piece opacity
     } else if (isFadingOut) {
-      // Fade out exploded pieces (only for regular links)
+      // Fade out exploded pieces after explosion completes
+      modelOpacityTween.set(0);
+      contentOpacityTween.set(0);
+      contentVisible = false;
+    } else if (isExploded && !isFadingOut && !isReassembling) {
+      // Exploded and faded out - stay hidden until reassembly
       modelOpacityTween.set(0);
       contentOpacityTween.set(0);
       contentVisible = false;
@@ -343,9 +379,10 @@
     }
   }
 
-  // Explode animation - simplified approach
+  // Explode animation - no automatic reassembly, modal system handles timing
   async function explodeCrate(): Promise<void> {
-    console.log(`🧨 EXPLODE CALLED for '${title}' (${type}) - Current state: exploding=${isExploding}, exploded=${isExploded}`);
+    console.log(`🧨 EXPLODE CALLED for '${title}' (${type}) with crateId='${crateId}' - Current state: exploding=${isExploding}, exploded=${isExploded}`);
+    console.log(`🧨 EXPLODE DEBUG: title='${title}', type='${type}', crateId='${crateId}', position=${JSON.stringify(positionArray)}`);
     
     if (isExploding || isResetting || isReassembling || isExploded || isFadingOut) {
       console.log(`🚫 EXPLODE BLOCKED for '${title}' due to current state`);
@@ -360,14 +397,12 @@
     isReassembling = false;
     isFadingOut = false;
     
-    // State change triggers the $effect for opacity management
-    
     console.log(`🎬 Starting explosion animation for '${title}'`);
     
-    // Phase 1: Simple explosion animation
+    // Phase 1: Explosion animation
     playExplosion();
     
-    // Wait for animation to complete (use actual duration from boundingBoxTask)
+    // Wait for explosion animation to complete
     console.log(`⏱️ Waiting ${actualAnimationDuration} seconds for explosion to complete`);
     await new Promise(resolve => setTimeout(resolve, actualAnimationDuration * 1000));
     
@@ -375,65 +410,85 @@
     isExploded = true;
     console.log(`✅ Explosion complete for '${title}'`);
     
-    // Phase 2: Fade out the exploded pieces
-    isFadingOut = true;
+    // Phase 2: Immediate reassembly for regular links
+    const isNavigationLink = type === "category" || type === "action";
     
-    console.log(`🌫️ Starting fade out for '${title}'`);
-    // Wait for fade out to complete (1.5 seconds for smoother transition)
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    isFadingOut = false;
-    console.log(`👻 Fade out complete for '${title}'`);
-    
-    // Smart reset logic based on link type
-    if (type === "category" || type === "action") {
-      console.log(`🚪 Navigation link '${title}' exploded - staying hidden until view changes`);
-      // Category and action links stay exploded/hidden - they reset when view changes
+    if (!isNavigationLink) {
+      // Regular links: start reassembly immediately after explosion
+      console.log(`🔄 Starting immediate reassembly for '${title}' after explosion`);
+      await startReassembly();
     } else {
-      // Regular links (url, download, contact) auto-reset after delay
-      console.log(`🔄 Auto-reset scheduled for '${title}' in ${resetDelay}ms`);
-      resetTimeout = setTimeout(resetCrate, resetDelay);
+      // Navigation links: stay exploded until view changes (no auto-reassembly)
+      console.log(`🚪 Navigation link '${title}' exploded - staying visible until view changes`);
     }
   }
 
-  // Reset animation - faster with better timing
-  async function resetCrate(): Promise<void> {
-    if (isExploding || isResetting || isReassembling || isFadingOut || !isExploded) return;
+  // Reassembly animation - plays reverse explosion with fade-in (mixer-based timing)
+  async function startReassembly(): Promise<void> {
+    if (isResetting || isReassembling) {
+      console.log(`🚫 Reassembly blocked for '${title}' - already resetting/reassembling`);
+      return;
+    }
     if (resetTimeout) clearTimeout(resetTimeout);
     resetTimeout = null;
 
-    console.log(`CrateLink '${title}': Starting fast reset sequence`);
+    console.log(`🔄 Starting reassembly sequence for '${title}'`);
 
     isReassembling = true;
     isResetting = false;
     isExploding = false;
     isFadingOut = false;
 
-    // Play reverse animation
-    playReassembly();
-
-    // Start fading back in early for smoother transition (25% into animation)
-    setTimeout(() => {
-      if (isReassembling) {
-        modelOpacityTween.set(1);
-        contentOpacityTween.set(1);
-        contentVisible = true;
+    return new Promise((resolve) => {
+      // Set callback for when animation actually completes
+      if (crateExplodeRef && crateExplodeRef.setReassemblyCallback) {
+        crateExplodeRef.setReassemblyCallback(() => {
+          console.log(`🎬 Animation mixer reports reassembly complete for '${title}'`);
+          
+          // Fade in the solid crate model and content after pieces have reassembled
+          modelOpacityTween.set(1);
+          contentOpacityTween.set(1);
+          contentVisible = true;
+          
+          isExploded = false;
+          isReassembling = false;
+          
+          console.log(`✅ Reassembly complete for '${title}' (mixer-based timing)`);
+          resolve();
+        });
+      } else {
+        console.warn(`⚠️ No crateExplodeRef available for '${title}' - falling back to timer`);
+        // Fallback to timer if ref not available
+        setTimeout(() => {
+          modelOpacityTween.set(1);
+          contentOpacityTween.set(1);
+          contentVisible = true;
+          isExploded = false;
+          isReassembling = false;
+          resolve();
+        }, resetDuration * 1000);
       }
-    }, (resetDuration * 1000) / 4);
+      
+      // Start the reassembly animation
+      playReassembly();
+    });
+  }
 
-    // Wait for faster reassembly animation to complete
-    await new Promise(resolve => setTimeout(resolve, resetDuration * 1000));
-
-    // Animation reset is handled by CrateExplode component
-
-    isExploded = false;
-    isReassembling = false;
-    console.log(`CrateLink '${title}': Reassembled successfully in ${resetDuration}s.`);
+  // Legacy reset function for external calls (e.g., modal triggers)
+  async function resetCrate(): Promise<void> {
+    console.log(`🔄 External reset called for '${title}' - delegating to startReassembly`);
+    return startReassembly();
   }
 
   // Click handlers
   function handleClick(event: any) {
     console.log(`🖱️ CLICK on '${title}' (${type}) - Current state: exploding=${isExploding}, exploded=${isExploded}`);
+    console.log(`🖱️ Modal manager available for '${title}':`, {
+      hasModalManager: !!modalManager,
+      modalManagerType: typeof modalManager,
+      linkType: type,
+      shouldShowModal: (type === "url" || type === "download" || type === "contact") && !!modalManager && !!url
+    });
     
     if (isExploded || isExploding || isResetting || isReassembling || isFadingOut) {
       console.log(`🚫 CLICK BLOCKED on '${title}' due to current state`);
@@ -441,6 +496,9 @@
     }
     
     event.stopPropagation();
+    
+    // Reset the action executed flag for new click
+    actionExecuted = false;
 
     const positionVector = new THREE.Vector3(
       positionArray[0],
@@ -450,62 +508,101 @@
 
     console.log(`📡 Calling parent onLinkClick for '${title}' (${type}), passing action callback`);
 
-    // Create a coordinated action function that handles regular link types after visual sequence
+    // Modal-based navigation with fallback for accessibility/reliability
     const coordinatedAction = () => {
-      console.log(`🎯 Coordinated action executing for '${title}' (${type})`);
-      
-      if (type === "url") {
-        console.log(`🔗 URL action for '${title}': ${url}`);
-        // For URL links: open the URL
-        if (url) {
-          const a = document.createElement('a');
-          a.href = url;
-          a.rel = 'noopener noreferrer';
-          a.target = '_blank';
-          a.setAttribute('data-user-initiated', 'true');
-          document.body.appendChild(a);
-          setTimeout(() => {
-            a.click();
-            document.body.removeChild(a);
-          }, 50);
-        }
-      } else if (type === "download") {
-        console.log(`📥 Download action for '${title}': ${url}`);
-        // For download links: trigger download
-        if (url) {
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = url.split('/').pop() || 'download';
-          a.target = '_self';
-          document.body.appendChild(a);
-          setTimeout(() => {
-            a.click();
-            document.body.removeChild(a);
-          }, 50);
-        }
-      } else if (type === "contact") {
-        console.log(`📧 Contact action for '${title}': ${url}`);
-        // For contact links: trigger contact file download
-        if (url) {
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = 'contact.vcf';
-          a.target = '_self';
-          document.body.appendChild(a);
-          setTimeout(() => {
-            a.click();
-            document.body.removeChild(a);
-          }, 50);
-        }
+      // Prevent duplicate execution (fireball system calls this again)
+      if (actionExecuted) {
+        console.log(`🚫 Coordinated action already executed for '${title}' - skipping duplicate`);
+        return;
       }
-      // Note: category and action types will have their actions passed separately by the parent
+      
+      actionExecuted = true;
+      console.log(`🎯 Coordinated action executing for '${title}' (${type}) - Modal system with fallback`);
+      console.log(`📋 Debug info:`, {
+        type,
+        hasModalManager: !!modalManager,
+        hasUrl: !!url,
+        url,
+        isModalType: type === "url" || type === "download" || type === "contact"
+      });
+      
+      // For regular navigation links, show modal if available
+      if ((type === "url" || type === "download" || type === "contact") && modalManager && url) {
+        console.log(`✅ Modal conditions met - proceeding with modal display`);
+        
+        try {
+          // Convert 3D crate position to screen coordinates for modal positioning
+          if (camera.current && $size) {
+            console.log(`📐 Converting 3D position to screen coordinates...`);
+            console.log(`📐 Input data:`, {
+              cameraAvailable: !!camera.current,
+              sizeAvailable: !!$size,
+              size: $size,
+              positionArray,
+              height
+            });
+            
+            const screenPosition = new THREE.Vector3();
+            screenPosition.copy(new THREE.Vector3(
+              positionArray[0],
+              positionArray[1] + height / 2,
+              positionArray[2]
+            ));
+            screenPosition.project(camera.current);
+            
+            // Convert from normalized device coordinates to screen coordinates
+            const screenX = ((screenPosition.x + 1) * $size.width) / 2;
+            const screenY = ((-screenPosition.y + 1) * $size.height) / 2;
+            
+            console.log(`🌟 Calculated screen position:`, { 
+              normalizedPosition: { x: screenPosition.x, y: screenPosition.y },
+              screenX, 
+              screenY,
+              isFinite: isFinite(screenX) && isFinite(screenY)
+            });
+            
+            // Validate coordinates and show modal
+            if (isFinite(screenX) && isFinite(screenY)) {
+              console.log(`🚀 Calling modalManager.showModal() with:`, { link: link.name, screenX, screenY });
+              modalManager.showModal(link, screenX, screenY);
+            } else {
+              console.warn(`⚠️ Invalid coordinates, using center fallback`);
+              modalManager.showModal(link, screenWidth / 2, (screenWidth * 0.6));
+            }
+          } else {
+            console.warn(`⚠️ Camera or size not available:`, { 
+              camera: !!camera.current, 
+              size: !!$size,
+              screenWidth 
+            });
+            // Use center of screen as fallback
+            console.log(`🚀 Calling modalManager.showModal() with fallback position`);
+            modalManager.showModal(link, screenWidth / 2, (screenWidth * 0.6));
+          }
+          
+          // DO NOT reset immediately after modal - let the explosion/fade cycle complete naturally
+          console.log(`🎬 Modal displayed - letting explosion animation complete naturally`);
+          
+        } catch (error) {
+          console.error(`❌ Modal positioning failed:`, error);
+        }
+      } else {
+        console.log(`❌ Modal conditions NOT met:`, {
+          correctType: type === "url" || type === "download" || type === "contact",
+          hasModalManager: !!modalManager,
+          hasUrl: !!url,
+          linkType: type
+        });
+      }
+      
     };
 
     // Pass the coordinated action function to the parent
+    console.log(`🚀 Calling onLinkClick with crateId: '${crateId}' for '${title}'`);
     onLinkClick?.(url, type, positionVector, category, coordinatedAction, crateId);
   }
 
-  // Visual-only explosion for navigation links (no fade-out, no auto-reset)
+  // Visual-only explosion for navigation links (no fade-out, no auto-reassembly)
   async function explodeVisualOnly(): Promise<void> {
     console.log(`🎨 VISUAL-ONLY EXPLODE for navigation link '${title}'`);
     
@@ -535,8 +632,8 @@
     
     console.log(`🎨 Visual explosion complete for '${title}' - staying exploded until view changes`);
     
-    // Navigation links stay exploded and hidden - they will be reset when view changes
-    // No fade-out animation, no auto-reset - the view transition handles all fading
+    // Navigation links stay exploded and visible - they will be reset when view changes
+    // No fade-out animation, no auto-reassembly - the view transition handles cleanup
   }
 
   // Update opacity on all materials in the SVG group
@@ -787,13 +884,23 @@
     updateSvgMaterials();
   });
 
-  // Update crate model materials opacity
+  // Update crate model materials opacity (now using cloned materials per instance)
   $effect(() => {
-    if (!group || !$gltf) return;
+    if (!group || !$gltf || !materialsCloned) return;
+    
+    // Log opacity changes for debugging
+    console.log(`🎨 Updating opacity for '${title}': modelOpacity=${modelOpacity.toFixed(2)}, isReassembling=${isReassembling}`);
     
     // Traverse all meshes in the group and update their material opacity
+    // Skip main body meshes (Cube001, Cube001_1) as CrateExplode handles their opacity
+    // Since materials are now cloned per instance, this only affects this component
     group.traverse((object) => {
       if (object instanceof THREE.Mesh && object.material) {
+        // Skip main body meshes - let CrateExplode handle their opacity
+        if (object.name === "Cube001" || object.name === "Cube001_1" || object.name === "Cube.002") {
+          return;
+        }
+        
         if (Array.isArray(object.material)) {
           object.material.forEach((mat) => {
             if (mat instanceof THREE.MeshStandardMaterial) {
@@ -817,6 +924,11 @@
       clearTimeout(resetTimeout);
     }
     
+    // Clean up cloned materials to prevent memory leaks
+    clonedMaterials.forEach(material => {
+      material.dispose();
+    });
+    clonedMaterials = [];
 
     // Clean up textures
     if (faviconTexture) {
@@ -875,6 +987,7 @@
     isResetting = false;
     isReassembling = false;
     contentVisible = true;
+    actionExecuted = false; // Reset action flag
     
     // Reset opacity tweens to full
     modelOpacityTween.set(1);
@@ -885,28 +998,34 @@
       crateExplodeRef.reset();
     }
   }
+  
+  // Function for modal system to call when modal is closed - triggers reassembly
+  function onModalClosed(): Promise<void> {
+    console.log(`🖼️ Modal closed for '${title}' - triggering reassembly`);
+    return startReassembly();
+  }
 
   // Explosion function that can be called from registry with action
   function explodeWithAction(actionFunction?: () => void): Promise<void> {
-    console.log(`🎯 explodeWithAction called for '${title}' with action:`, !!actionFunction);
+    console.log(`🎯 explodeWithAction called for '${title}' (crateId='${crateId}') with action:`, !!actionFunction);
     
     if (type === "category" || type === "action") {
       console.log(`🔄 Navigation link - triggering action immediately for '${title}'`);
-      // For navigation links: trigger action IMMEDIATELY
+      // For navigation links: trigger action IMMEDIATELY before explosion
       if (actionFunction) {
         actionFunction();
       }
-      // Start explosion animation (visual feedback only, no fade-out)
+      // Start explosion animation (visual feedback only, no fade-out, no auto-reassembly)
       return explodeVisualOnly();
     } else {
-      console.log(`🔗 Regular link - normal explosion for '${title}'`);
-      // For regular links: normal explosion with auto-reset
+      console.log(`🔗 Regular link - normal explosion with auto-reassembly for '${title}'`);
+      // For regular links: normal explosion with automatic reassembly
       return explodeCrate();
     }
   }
 
   // Expose functions to parent
-  export { explodeCrate, resetCrate, resetToDefault, explodeVisualOnly, explodeWithAction };
+  export { explodeCrate, resetCrate, startReassembly, resetToDefault, explodeVisualOnly, explodeWithAction, onModalClosed };
 </script>
 
 <!-- Main container -->
