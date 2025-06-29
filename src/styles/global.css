@@ -1,1 +1,14 @@
 @import "tailwindcss";
+
+/* Icon container styles for StackedLinks */
+.icon-container svg {
+  width: 100% !important;
+  height: 100% !important;
+  fill: currentColor !important;
+}
+
+.icon-container {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}

@@ -19,6 +19,7 @@
     sceneController,
     screenWidth,
     screenHeight,
+    modalManager,
   }: {
     links: LinkType[];
     onLinkClick?: (
@@ -35,6 +36,7 @@
     sceneController?: any;
     screenWidth: number;
     screenHeight: number;
+    modalManager?: { showModal: (link: LinkType, x: number, y: number) => void; hideModal: () => void } | null;
   } = $props();
 
   // Get Threlte context
@@ -827,9 +829,10 @@
           <CrateLinkExplode
             {dracoLoader}
             {screenWidth}
+            {modalManager}
             link={{
               name: category.name,
-              type: "category" as any,
+              type: "category" as LinkType["type"],
               icon: category.icon,
               category: category.name,
             }}
@@ -853,7 +856,7 @@
             {dracoLoader}
             link={{
               name: category.name,
-              type: "category" as any,
+              type: "category" as LinkType["type"],
               icon: category.icon,
               category: category.name,
             }}
@@ -880,9 +883,10 @@
           <CrateLinkExplode
             {dracoLoader}
             {screenWidth}
+            {modalManager}
             link={{
               name: category.name,
-              type: "category" as any,
+              type: "category" as LinkType["type"],
               icon: category.icon,
               category: category.name,
             }}
@@ -906,7 +910,7 @@
             {dracoLoader}
             link={{
               name: category.name,
-              type: "category" as any,
+              type: "category" as LinkType["type"],
               icon: category.icon,
               category: category.name,
             }}
@@ -927,7 +931,7 @@
       {/each}
     </T.Group>
   {:else}
-    <T.Group visible={true}>
+    <T.Group visible={linksOpacity > 0.01}>
       <!-- Left side links -->
       {#each filteredLinks.slice(0, Math.ceil(filteredLinks.length / 2)) as link, i}
         {#if i < gridLayout.leftPositions.length}
@@ -935,6 +939,7 @@
             <CrateLinkExplode
               {dracoLoader}
               {screenWidth}
+              {modalManager}
               {link}
               position={gridLayout.leftPositions[i]}
               index={i}
@@ -942,7 +947,8 @@
               width={gridLayout.linkSize}
               height={gridLayout.linkSize}
               onLinkClick={onLinkClick}
-              opacity={linksOpacity}
+              opacity={1}
+              autoReset={true}
               crateId={`link-left-${link.name}-${i}`}
               bind:this={crateComponents[`link-left-${link.name}-${i}`]}
             />
@@ -955,8 +961,8 @@
               columnKey="left"
               width={gridLayout.linkSize}
               height={gridLayout.linkSize}
-              {onLinkClick}
-              opacity={linksOpacity}
+              onLinkClick={onLinkClick}
+              opacity={1}
             />
           {/if}
         {/if}
@@ -969,6 +975,7 @@
             <CrateLinkExplode
               {dracoLoader}
               {screenWidth}
+              {modalManager}
               {link}
               position={gridLayout.rightPositions[i]}
               index={i + Math.ceil(filteredLinks.length / 2)}
@@ -976,7 +983,8 @@
               width={gridLayout.linkSize}
               height={gridLayout.linkSize}
               onLinkClick={onLinkClick}
-              opacity={linksOpacity}
+              opacity={1}
+              autoReset={true}
               crateId={`link-right-${link.name}-${i}`}
               bind:this={crateComponents[`link-right-${link.name}-${i}`]}
             />
@@ -990,7 +998,7 @@
               width={gridLayout.linkSize}
               height={gridLayout.linkSize}
               {onLinkClick}
-              opacity={linksOpacity}
+              opacity={1}
             />
           {/if}
         {/if}
@@ -1053,16 +1061,3 @@
   {/if}
 {/if}
 
-<style>
-  :global(.icon-container svg) {
-    width: 100% !important;
-    height: 100% !important;
-    fill: currentColor !important;
-  }
-
-  :global(.icon-container) {
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-  }
-</style>
