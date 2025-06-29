@@ -1,6 +1,6 @@
 <script lang="ts">
   import { T, useThrelte, useTask } from "@threlte/core";
-  import { Sky, AudioListener } from "@threlte/extras";
+  import { Sky, AudioListener, HTML } from "@threlte/extras";
   import * as THREE from "three";
   import { onDestroy, onMount } from "svelte";
   import { Tween } from "svelte/motion";
@@ -9,6 +9,7 @@
   import Ground from "./Ground.svelte";
   import Fireball from "./effects/Fireball.svelte";
   import StackedLinks from "./StackedLinks.svelte";
+  import ModalManager from "../ui/ModalManager.svelte";
   import type { Link } from "~/types/baseSchemas";
   import CrateExplode from "../models/CrateExplode.svelte";
   import { SceneController } from "~/components/svelte/utils/sceneController.svelte.ts";
@@ -21,6 +22,7 @@
     onLoadingStateChange,
     screenWidth,
     screenHeight,
+    modalManager,
   }: {
     handleDragonClick: () => void;
     handleInteract?: (category?: string) => void;
@@ -29,6 +31,7 @@
     onLoadingStateChange?: (loading: boolean, progress: number, message: string) => void;
     screenWidth: number;
     screenHeight: number;
+    modalManager?: { showModal: (link: Link, x: number, y: number) => void; hideModal: () => void } | null;
   } = $props();
 
   const { size: rendererSize } = useThrelte();
@@ -42,6 +45,14 @@
   let testCrateRef = $state<{ explode: () => void; reset: () => void } | null>(null);
   let prevRendererSize = $state<{ width: number; height: number } | undefined>(undefined);
   let particlePoolContainer = $state<THREE.Group | undefined>(undefined);
+
+  // Debug modal manager binding
+  $effect(() => {
+    console.log(`🎮 BaseScene: modalManager binding status:`, {
+      hasModalManager: !!modalManager,
+      modalManagerType: typeof modalManager
+    });
+  });
 
   // Statically define these to avoid recreating them
   const ENVIRONMENT_SCALE = 1.5;
@@ -286,6 +297,7 @@
   sceneController={sceneController}
   {screenWidth}
   {screenHeight}
+  {modalManager}
 />
 
 <!-- Particle Pool Container - holds all pre-warmed systems off-screen -->
@@ -310,3 +322,5 @@
     particlePoolContainer={particlePoolContainer}
   />
 {/each}
+
+<!-- Modal system moved to 2D overlay in parent component -->
