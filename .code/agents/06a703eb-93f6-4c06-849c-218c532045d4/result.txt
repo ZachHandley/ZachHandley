@@ -1,0 +1,790 @@
+Now I'll create a comprehensive plan for implementing Appwrite-based link management with admin authentication.
+
+# Appwrite Integration Plan for ZachHandley Portfolio
+
+## Executive Summary
+Refactor the hardcoded links system to use Appwrite as a backend database with admin-only authentication. This maintains SSR security, enables dynamic link management, and provides a minimal admin dashboard while preserving the existing 3D medieval experience.
+
+## Critical Security Issue - Immediate Fix Required
+
+**CRITICAL**: The `APPWRITE_API_KEY` in `website/src/env.ts` is currently exposed with `access: "public"`. This must be changed to `access: "secret"` immediately to prevent client-side exposure of privileged credentials.
+
+## Architecture Overview
+
+```
+┌─────────────┐     ┌──────────────┐     ┌─────────────┐
+│   Browser   │────▶│ Astro SSR    │────▶│  Appwrite   │
+│  (Svelte)   │     │ (Server API) │     │  Database   │
+└─────────────┘     └──────────────┘     └─────────────┘
+      │                    │                     │
+      │                    ├── /api/auth/*      │
+      │                    ├── /admin/*         │
+      └── LinkApp.svelte   └── appwriteServer   │
+          (display only)       (node-appwrite)  │
+                                                 │
+                              Collections:       │
+                              - links (public read)
+                              - sessions (admin only)
+```
+
+## Step-by-Step Implementation Plan
+
+### Phase 1: Security & Schema Updates
+
+#### Step 1.1: Fix Environment Security
+**File**: `website/src/env.ts`
+```typescript
+// Change line 24 from:
+access: "public",
+// To:
+access: "secret",
+```
+**Rationale**: API keys must never be exposed to clients. This ensures the key remains server-side only.
+
+#### Step 1.2: Update Appwrite Collection Schema
+**File**: `website/appwrite.config.json`
+```json
+{
+  "collections": [
+    {
+      "$id": "links",
+      "name": "Links",
+      "$permissions": [
+        "read(\"any\")",  // Public can read
+        "create(\"label:admin\")",
+        "update(\"label:admin\")",
+        "delete(\"label:admin\")"
+      ],
+      "documentSecurity": true,
+      "attributes": [
+        // Existing attributes...
+        {
+          "key": "name",  // Rename from "title"
+          "type": "string",
+          "size": 256,
+          "required": true
+        },
+        {
+          "key": "url",
+          "type": "string",
+          "size": 2048,
+          "required": false  // Optional for actions
+        },
+        {
+          "key": "type",
+          "type": "string",
+          "size": 20,
+          "required": true,
+          "default": "url"
+        },
+        {
+          "key": "category",
+          "type": "string",
+          "size": 50,
+          "required": false
+        },
+        {
+          "key": "active",
+          "type": "boolean",
+          "required": true,
+          "default": true
+        },
+        {
+          "key": "order",
+          "type": "integer",
+          "required": true,
+          "default": 0
+        }
+      ],
+      "indexes": [
+        {
+          "key": "idx_active_order",
+          "type": "key",
+          "attributes": ["active", "order"],
+          "orders": ["ASC", "ASC"]
+        },
+        {
+          "key": "idx_category",
+          "type": "key",
+          "attributes": ["category"],
+          "orders": ["ASC"]
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Phase 2: Server-Side Infrastructure
+
+#### Step 2.1: Create Appwrite Server Helper
+**New File**: `website/src/lib/appwriteServer.ts`
+```typescript
+import { Client, Databases, Account, Query, type Models } from 'node-appwrite';
+import { env } from 'astro:env/server';
+import type { Link } from '~/types/baseSchemas';
+
+class AppwriteServer {
+  private client: Client;
+  private databases: Databases;
+  private account: Account;
+  
+  constructor() {
+    this.client = new Client()
+      .setEndpoint(env.APPWRITE_ENDPOINT)
+      .setProject(env.APPWRITE_PROJECT_ID)
+      .setKey(env.APPWRITE_API_KEY);
+    
+    this.databases = new Databases(this.client);
+    this.account = new Account(this.client);
+  }
+
+  // Transform Appwrite document to Link type
+  private documentToLink(doc: Models.Document): Link {
+    return {
+      id: doc.$id,
+      name: doc.name,
+      url: doc.url,
+      type: doc.type,
+      category: doc.category,
+      icon: doc.icon,
+      active: doc.active,
+      order: doc.order
+    };
+  }
+
+  async getPublishedLinks(): Promise<Link[]> {
+    const response = await this.databases.listDocuments(
+      'default', // database ID
+      'links',
+      [
+        Query.equal('active', true),
+        Query.orderAsc('order'),
+        Query.limit(100)
+      ]
+    );
+    return response.documents.map(doc => this.documentToLink(doc));
+  }
+
+  async getAllLinks(): Promise<Link[]> {
+    const response = await this.databases.listDocuments(
+      'default',
+      'links',
+      [
+        Query.orderAsc('order'),
+        Query.limit(100)
+      ]
+    );
+    return response.documents.map(doc => this.documentToLink(doc));
+  }
+
+  async toggleLinkActive(linkId: string): Promise<void> {
+    const doc = await this.databases.getDocument('default', 'links', linkId);
+    await this.databases.updateDocument(
+      'default',
+      'links',
+      linkId,
+      { active: !doc.active }
+    );
+  }
+
+  async updateLinkOrder(linkId: string, order: number): Promise<void> {
+    await this.databases.updateDocument(
+      'default',
+      'links',
+      linkId,
+      { order }
+    );
+  }
+
+  async createLink(link: Partial<Link>): Promise<void> {
+    await this.databases.createDocument(
+      'default',
+      'links',
+      'unique()',
+      link
+    );
+  }
+
+  async updateLink(linkId: string, updates: Partial<Link>): Promise<void> {
+    await this.databases.updateDocument(
+      'default',
+      'links',
+      linkId,
+      updates
+    );
+  }
+
+  async deleteLink(linkId: string): Promise<void> {
+    await this.databases.deleteDocument('default', 'links', linkId);
+  }
+
+  // Admin authentication helpers
+  async createAdminSession(email: string, password: string): Promise<Models.Session> {
+    const session = await this.account.createEmailPasswordSession(email, password);
+    return session;
+  }
+
+  async verifyAdminSession(sessionId: string): Promise<boolean> {
+    try {
+      const session = await this.account.getSession(sessionId);
+      // Check if user has admin label
+      const user = await this.account.get();
+      return user.labels?.includes('admin') ?? false;
+    } catch {
+      return false;
+    }
+  }
+
+  async deleteSession(sessionId: string): Promise<void> {
+    await this.account.deleteSession(sessionId);
+  }
+}
+
+export const appwriteServer = new AppwriteServer();
+```
+
+### Phase 3: Authentication Infrastructure
+
+#### Step 3.1: Admin Login Endpoint
+**New File**: `website/src/pages/api/auth/login.ts`
+```typescript
+import type { APIRoute } from 'astro';
+import { appwriteServer } from '~/lib/appwriteServer';
+
+export const POST: APIRoute = async ({ request, cookies }) => {
+  try {
+    const { email, password } = await request.json();
+    
+    const session = await appwriteServer.createAdminSession(email, password);
+    
+    // Set HttpOnly cookie with session
+    cookies.set('admin_session', session.$id, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'strict',
+      maxAge: 60 * 60 * 24 * 7, // 7 days
+      path: '/'
+    });
+    
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  } catch (error) {
+    return new Response(JSON.stringify({ error: 'Invalid credentials' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+};
+```
+
+#### Step 3.2: Admin Logout Endpoint
+**New File**: `website/src/pages/api/auth/logout.ts`
+```typescript
+import type { APIRoute } from 'astro';
+import { appwriteServer } from '~/lib/appwriteServer';
+
+export const POST: APIRoute = async ({ cookies }) => {
+  const sessionId = cookies.get('admin_session')?.value;
+  
+  if (sessionId) {
+    try {
+      await appwriteServer.deleteSession(sessionId);
+    } catch {
+      // Session might already be invalid
+    }
+    cookies.delete('admin_session', { path: '/' });
+  }
+  
+  return new Response(JSON.stringify({ success: true }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' }
+  });
+};
+```
+
+#### Step 3.3: Session Verification Middleware
+**New File**: `website/src/lib/auth.ts`
+```typescript
+import type { AstroCookies } from 'astro';
+import { appwriteServer } from './appwriteServer';
+
+export async function requireAdmin(cookies: AstroCookies): Promise<boolean> {
+  const sessionId = cookies.get('admin_session')?.value;
+  
+  if (!sessionId) return false;
+  
+  return await appwriteServer.verifyAdminSession(sessionId);
+}
+```
+
+### Phase 4: Admin Dashboard
+
+#### Step 4.1: Admin Login Page
+**New File**: `website/src/pages/admin/login.astro`
+```astro
+---
+import Layout from '~/layouts/Layout.astro';
+
+// Redirect if already logged in
+import { requireAdmin } from '~/lib/auth';
+const isAdmin = await requireAdmin(Astro.cookies);
+if (isAdmin) {
+  return Astro.redirect('/admin');
+}
+---
+
+<Layout title="Admin Login">
+  <div class="min-h-screen flex items-center justify-center bg-gray-900">
+    <form id="loginForm" class="bg-gray-800 p-8 rounded-lg shadow-xl w-96">
+      <h1 class="text-2xl font-bold text-white mb-6">Admin Login</h1>
+      
+      <input
+        type="email"
+        name="email"
+        placeholder="Email"
+        required
+        class="w-full p-3 mb-4 bg-gray-700 text-white rounded"
+      />
+      
+      <input
+        type="password"
+        name="password"
+        placeholder="Password"
+        required
+        class="w-full p-3 mb-6 bg-gray-700 text-white rounded"
+      />
+      
+      <button
+        type="submit"
+        class="w-full p-3 bg-blue-600 text-white rounded hover:bg-blue-700"
+      >
+        Login
+      </button>
+      
+      <div id="error" class="mt-4 text-red-400 hidden"></div>
+    </form>
+  </div>
+  
+  <script>
+    const form = document.getElementById('loginForm') as HTMLFormElement;
+    const error = document.getElementById('error') as HTMLDivElement;
+    
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const formData = new FormData(form);
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: formData.get('email'),
+          password: formData.get('password')
+        })
+      });
+      
+      if (response.ok) {
+        window.location.href = '/admin';
+      } else {
+        error.textContent = 'Invalid credentials';
+        error.classList.remove('hidden');
+      }
+    });
+  </script>
+</Layout>
+```
+
+#### Step 4.2: Admin Dashboard
+**New File**: `website/src/pages/admin/index.astro`
+```astro
+---
+import Layout from '~/layouts/Layout.astro';
+import { requireAdmin } from '~/lib/auth';
+import { appwriteServer } from '~/lib/appwriteServer';
+
+// Require admin authentication
+const isAdmin = await requireAdmin(Astro.cookies);
+if (!isAdmin) {
+  return Astro.redirect('/admin/login');
+}
+
+// Fetch all links
+const links = await appwriteServer.getAllLinks();
+---
+
+<Layout title="Admin Dashboard">
+  <div class="min-h-screen bg-gray-900 text-white p-8">
+    <div class="max-w-6xl mx-auto">
+      <div class="flex justify-between items-center mb-8">
+        <h1 class="text-3xl font-bold">Link Management</h1>
+        <button
+          id="logoutBtn"
+          class="px-4 py-2 bg-red-600 rounded hover:bg-red-700"
+        >
+          Logout
+        </button>
+      </div>
+      
+      <div class="bg-gray-800 rounded-lg p-6">
+        <table class="w-full">
+          <thead>
+            <tr class="border-b border-gray-700">
+              <th class="text-left p-2">Order</th>
+              <th class="text-left p-2">Name</th>
+              <th class="text-left p-2">URL</th>
+              <th class="text-left p-2">Category</th>
+              <th class="text-left p-2">Type</th>
+              <th class="text-left p-2">Active</th>
+              <th class="text-left p-2">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {links.map(link => (
+              <tr class="border-b border-gray-700">
+                <td class="p-2">
+                  <input
+                    type="number"
+                    value={link.order}
+                    data-link-id={link.id}
+                    class="link-order w-16 bg-gray-700 px-2 py-1 rounded"
+                  />
+                </td>
+                <td class="p-2">{link.name}</td>
+                <td class="p-2 truncate max-w-xs">{link.url || '-'}</td>
+                <td class="p-2">{link.category || '-'}</td>
+                <td class="p-2">{link.type}</td>
+                <td class="p-2">
+                  <button
+                    data-link-id={link.id}
+                    class="toggle-active px-3 py-1 rounded {link.active ? 'bg-green-600' : 'bg-gray-600'}"
+                  >
+                    {link.active ? 'Active' : 'Inactive'}
+                  </button>
+                </td>
+                <td class="p-2">
+                  <button
+                    data-link-id={link.id}
+                    class="delete-link px-3 py-1 bg-red-600 rounded hover:bg-red-700"
+                  >
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    // Logout
+    document.getElementById('logoutBtn')?.addEventListener('click', async () => {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      window.location.href = '/admin/login';
+    });
+    
+    // Toggle active status
+    document.querySelectorAll('.toggle-active').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const linkId = (e.target as HTMLElement).dataset.linkId;
+        await fetch(`/api/admin/links/${linkId}/toggle`, { method: 'POST' });
+        window.location.reload();
+      });
+    });
+    
+    // Update order
+    document.querySelectorAll('.link-order').forEach(input => {
+      input.addEventListener('change', async (e) => {
+        const target = e.target as HTMLInputElement;
+        const linkId = target.dataset.linkId;
+        await fetch(`/api/admin/links/${linkId}/order`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ order: parseInt(target.value) })
+        });
+      });
+    });
+    
+    // Delete link
+    document.querySelectorAll('.delete-link').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        if (!confirm('Delete this link?')) return;
+        const linkId = (e.target as HTMLElement).dataset.linkId;
+        await fetch(`/api/admin/links/${linkId}`, { method: 'DELETE' });
+        window.location.reload();
+      });
+    });
+  </script>
+</Layout>
+```
+
+### Phase 5: Frontend Integration
+
+#### Step 5.1: Update Type Definitions
+**File**: `website/src/types/baseSchemas.ts`
+```typescript
+import { z } from "zod";
+
+export const LinkSchema = z.object({
+  id: z.string().optional(), // Appwrite document ID
+  name: z.string(),
+  url: z.string().optional(),
+  action: z.custom<(() => void) | (() => Promise<void>) | undefined>().optional(),
+  position: z.tuple([z.number(), z.number(), z.number()]).optional(),
+  type: z.enum(["url", "download", "contact", "action", "category"]),
+  icon: z
+    .string()
+    .or(
+      z.object({
+        prefix: z.string(),
+        name: z.string(),
+      })
+    )
+    .optional(),
+  category: z.string().optional(),
+  inlineIcon: z.boolean().optional(),
+  active: z.boolean().default(true), // NEW
+  order: z.number().default(0), // NEW
+});
+
+export type Link = z.infer<typeof LinkSchema>;
+```
+
+#### Step 5.2: Update Index Page to Fetch Links
+**File**: `website/src/pages/index.astro`
+```astro
+---
+export const prerender = false; // Change to false for SSR
+import Layout from '../layouts/Layout.astro';
+import LinkApp from '~/components/svelte/LinkApp.svelte';
+import { appwriteServer } from '~/lib/appwriteServer';
+
+// Fetch published links from Appwrite
+let links = [];
+try {
+  links = await appwriteServer.getPublishedLinks();
+} catch (error) {
+  console.error('Failed to fetch links:', error);
+  // Fallback to empty array or default links
+  links = [];
+}
+---
+
+<Layout title="Zach Handley">
+  <main class="relative h-screen w-screen overflow-hidden">
+    <LinkApp links={links} client:only="svelte" />
+  </main>
+</Layout>
+```
+
+#### Step 5.3: Update LinkApp Component
+**File**: `website/src/components/svelte/LinkApp.svelte`
+```svelte
+<script lang="ts">
+  import type { Link } from "~/types/baseSchemas";
+  
+  // Accept links as prop
+  export let links: Link[] = [];
+  
+  // Fallback for development/migration
+  const defaultLinks: Link[] = [
+    // Keep existing hardcoded links as fallback
+  ];
+  
+  // Use provided links or fallback
+  const activeLinks = $state(links.length > 0 ? links : defaultLinks);
+  
+  // Rest of component logic remains the same
+</script>
+```
+
+### Phase 6: Admin API Endpoints
+
+#### Step 6.1: Toggle Link Active Status
+**New File**: `website/src/pages/api/admin/links/[id]/toggle.ts`
+```typescript
+import type { APIRoute } from 'astro';
+import { requireAdmin } from '~/lib/auth';
+import { appwriteServer } from '~/lib/appwriteServer';
+
+export const POST: APIRoute = async ({ params, cookies }) => {
+  const isAdmin = await requireAdmin(cookies);
+  if (!isAdmin) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+  
+  const { id } = params;
+  await appwriteServer.toggleLinkActive(id!);
+  
+  return new Response(JSON.stringify({ success: true }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' }
+  });
+};
+```
+
+#### Step 6.2: Update Link Order
+**New File**: `website/src/pages/api/admin/links/[id]/order.ts`
+```typescript
+import type { APIRoute } from 'astro';
+import { requireAdmin } from '~/lib/auth';
+import { appwriteServer } from '~/lib/appwriteServer';
+
+export const POST: APIRoute = async ({ params, request, cookies }) => {
+  const isAdmin = await requireAdmin(cookies);
+  if (!isAdmin) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+  
+  const { id } = params;
+  const { order } = await request.json();
+  
+  await appwriteServer.updateLinkOrder(id!, order);
+  
+  return new Response(JSON.stringify({ success: true }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' }
+  });
+};
+```
+
+#### Step 6.3: Delete Link
+**New File**: `website/src/pages/api/admin/links/[id].ts`
+```typescript
+import type { APIRoute } from 'astro';
+import { requireAdmin } from '~/lib/auth';
+import { appwriteServer } from '~/lib/appwriteServer';
+
+export const DELETE: APIRoute = async ({ params, cookies }) => {
+  const isAdmin = await requireAdmin(cookies);
+  if (!isAdmin) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+  
+  const { id } = params;
+  await appwriteServer.deleteLink(id!);
+  
+  return new Response(JSON.stringify({ success: true }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' }
+  });
+};
+```
+
+## Security Considerations
+
+### 1. API Key Protection
+- **CRITICAL**: Change `APPWRITE_API_KEY` to `access: "secret"` immediately
+- Never expose API keys in client-side code
+- Use environment variables for production deployment
+
+### 2. Authentication Security
+- HttpOnly cookies prevent XSS attacks
+- Secure flag ensures HTTPS-only transmission
+- SameSite=strict prevents CSRF attacks
+- Session validation on every admin request
+
+### 3. Appwrite Configuration
+- Disable public registration in Appwrite console
+- Add `label:admin` to Zach's user account manually
+- Document-level security ensures only admins can modify links
+
+### 4. Deployment Security
+- Set environment variables in Cloudflare Workers:
+  ```bash
+  wrangler secret put APPWRITE_API_KEY
+  wrangler secret put APPWRITE_ENDPOINT
+  wrangler secret put APPWRITE_PROJECT_ID
+  ```
+
+## Migration Strategy
+
+### Phase 1: Infrastructure Setup (Day 1)
+1. Fix environment security issue
+2. Update Appwrite collection schema
+3. Deploy appwriteServer helper
+4. Manually add `label:admin` to Zach's Appwrite user
+
+### Phase 2: Data Migration (Day 2)
+1. Create migration script to import existing links
+2. Test with staging Appwrite project
+3. Verify all links are properly categorized
+
+### Phase 3: Authentication (Day 3)
+1. Deploy auth endpoints
+2. Test admin login/logout
+3. Verify session persistence
+
+### Phase 4: Admin Dashboard (Day 4)
+1. Deploy admin pages
+2. Test CRUD operations
+3. Verify order management
+
+### Phase 5: Frontend Integration (Day 5)
+1. Update index.astro to fetch from Appwrite
+2. Update LinkApp to accept props
+3. Test with production data
+
+### Phase 6: Cleanup (Day 6)
+1. Remove hardcoded links from LinkApp
+2. Update documentation
+3. Monitor for issues
+
+## Rollback Plan
+
+If issues arise:
+1. Revert `index.astro` to use `prerender = true`
+2. Revert `LinkApp.svelte` to use hardcoded links
+3. Keep admin dashboard for future migration attempt
+
+## Performance Considerations
+
+### Caching Strategy
+- Consider edge caching for public links (1-hour TTL)
+- Use Astro's hybrid rendering for optimal performance
+- Cache Appwrite responses in Cloudflare Workers KV if needed
+
+### Optimization
+- Limit link queries to 100 items
+- Index on active + order for fast queries
+- Consider pagination for admin dashboard if links exceed 100
+
+## Monitoring & Maintenance
+
+### Health Checks
+- Monitor Appwrite connection health
+- Track API response times
+- Alert on authentication failures
+
+### Maintenance Tasks
+- Regular session cleanup
+- Link order optimization
+- Database backup schedule
+
+## Documentation Updates
+
+### For Developers
+- Update README with new architecture
+- Document environment variables
+- Add admin user setup guide
+
+### For Admin (Zach)
+- Create user guide for admin dashboard
+- Document link management workflow
+- Provide troubleshooting guide
+
+## Summary
+
+This plan provides a secure, scalable solution for managing links through Appwrite while maintaining the existing 3D experience. The phased approach minimizes risk and allows for gradual migration with rollback capabilities at each stage.
+
+Key benefits:
+- **Security**: Server-side only API keys, HttpOnly session cookies
+- **Flexibility**: Dynamic link management without code changes
+- **Simplicity**: Minimal admin UI for essential operations
+- **Performance**: SSR with caching options
+- **Maintainability**: Clean separation of concerns
+
+The implementation preserves the medieval theme and 3D interactions while adding powerful backend capabilities for content management.

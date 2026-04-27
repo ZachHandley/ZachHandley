@@ -1,0 +1,372 @@
+[2025-09-12T06:27:52] Code v0.2.129
+--------
+workdir: /home/zach/github/ZachHandley
+model: gpt-5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: auto
+--------
+[2025-09-12T06:27:52] User instructions:
+Context: Monorepo single app at /website. Astro 5.x with Svelte 5. Uses Cloudflare adapter and Threlte for 3D. Current links are hardcoded in LinkApp.svelte and typing in types/baseSchemas.ts. An Appwrite config already declares a 'links' collection with admin-only write permissions using 'label:admin'. We need to extend schema with 'active' and align types. No public registration; admin-only auth for Zach. We want a minimal admin UI for toggling links and managing order. Plan should minimize churn, keep SSR-only secrets, and avoid client SDK for privileged ops.
+
+Agent: Goal: Plan a refactor to use Appwrite (node-appwrite) for all server-side requests, add a simple admin-only login + dashboard, and introduce an `appwriteServer` helper. We will only add things definable in `appwrite.config.json`. No public user registration; only the admin user (Zach) can auth. Frontend must pass `links` as a prop from `website/src/pages/index.astro` into `website/src/components/svelte/LinkApp.svelte`, and each link must include an `active: boolean`. Please propose concrete steps, file placements, and data model adjustments that align with Astro + Svelte and Cloudflare Worker deployment.
+
+Important constraints:
+- Do not modify files now (planning only). Suggest minimal surface-area changes.
+- Use node-appwrite for server-side only. No client SDK usage for privileged actions.
+- Keep secrets server-side; prefer `website/src/env.ts` + runtime secrets. Avoid leaking API keys to client. Recommend changes if needed.
+- Favor items expressible in `website/appwrite.config.json` for infrastructure: collections, attributes, permissions, roles, labels.
+- No user self-registration. Auth only for Zach (admin). Use email/password or magic URL or JWT gate, but keep it simple and secure.
+- Links content should live in Appwrite Databases. Public read access for published links; writes limited to admin only.
+- Route: pass computed `links` (with `active: boolean`) from `index.astro` into `LinkApp.svelte`; remove hardcoded array from `LinkApp.svelte` (or default while migrating).
+
+Repo structure (key paths):
+- /website
+  - astro.config.ts (Astro + Cloudflare integration)
+  - appwrite.config.json (already present)
+  - src/
+    - pages/
+      - index.astro (current entry)
+      - api/ (exists, empty utils/ subdir)
+    - components/
+      - svelte/
+        - LinkApp.svelte (holds links array currently)
+        - scene/* (3D scene)
+    - types/baseSchemas.ts (Link schema)
+    - env.ts (APPWRITE_* defaults)
+
+Key file snapshots (snippets):
+1) website/src/pages/index.astro
+---
+export const prerender = true;
+import Layout from '../layouts/Layout.astro';
+import LinkApp from '~/components/svelte/LinkApp.svelte';
+...
+<Layout ...>
+  <main class="...">
+    <LinkApp client:only="svelte" />
+  </main>
+</Layout>
+---
+
+2) website/src/components/svelte/LinkApp.svelte (excerpt)
+---
+<script lang="ts">
+  import type { Link } from "~/types/baseSchemas";
+  const links = $state<Link[]>([
+    { name: "GitHub", url: "https://github.com/zachhandley", icon: "simple-icons:github", type: "url", category: "personal" },
+    { name: "LinkedIn", url: "https://linkedin.com/in/zachhandley", icon: "simple-icons:linkedin", type: "url", category: "personal" },
+    ...
+  ]);
+</script>
+---
+
+3) website/src/types/baseSchemas.ts (excerpt)
+---
+export const LinkSchema = z.object({
+  name: z.string(),
+  url: z.string().optional(),
+  action: z.custom<(() => void) | (() => Promise<void>) | undefined>().optional(),
+  position: z.tuple([z.number(), z.number(), z.number()]).optional(),
+  type: z.enum(["url", "download", "contact", "action", "category"]),
+  icon: z.string().or(z.object({ prefix: z.string(), name: z.string() })).optional(),
+  category: z.string().optional(),
+  inlineIcon: z.boolean().optional(),
+});
+---
+
+4) website/appwrite.config.json (excerpt)
+- Contains project settings and a `links` collection with attributes: title, url, icon, order. Permissions for create/update/delete are constrained to `label:admin`.
+
+5) website/src/env.ts (excerpt)
+- Has APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, and APPWRITE_API_KEY defaults. Needs review to ensure no client exposure of secrets.
+
+What to deliver:
+- A step-by-step plan to:
+  1) Finalize `appwrite.config.json` for Links collection: add `active` (boolean), optional `category`, optional `type` (url/download/contact), and indexes as needed. Ensure public read on documents intended to be public; writes limited to admin label only.
+  2) Propose labeling strategy to tag Zach’s user (e.g., `label:admin`) and disable public registration. Suggest minimal auth method (email/password or magic URL) for admin-only.
+  3) Define `website/src/lib/appwriteServer.ts` that creates a server-side Appwrite client with API key from env. Expose helpers for: getPublishedLinks, upsertLink, reorderLinks, toggleActive.
+  4) Add `website/src/pages/api/auth/*` endpoints for admin login/logout/session (Astro API routes), using HttpOnly cookies and Appwrite sessions/JWT. No client-side secrets.
+  5) Add `website/src/pages/admin/index.astro` (admin dashboard shell) that requires admin session; SSR fetches links via `appwriteServer` and provides simple CRUD (plan only, no code yet).
+  6) Refactor `index.astro` to fetch links at build/runtime via `appwriteServer.getPublishedLinks()` and pass as `<LinkApp links={links} client:only="svelte" />`.
+  7) Update `LinkApp.svelte` signature to `export let links: Link[];` and remove inline default (or keep as fallback). Ensure compatibility with 3D scene.
+  8) Update `types/baseSchemas.ts` to include `active: boolean` and optional fields matching Appwrite schema. Create a lightweight transform layer mapping Appwrite docs → Link type.
+  9) Deployment notes: ensure `APPWRITE_*` secrets are server-only; configure Astro adapter for Cloudflare compatibility with node-appwrite (advise if needed).
+- Please include rationale, security considerations, and migration strategy from hardcoded links to Appwrite.
+
+
+Desired output: Planning doc with ordered steps, rationale, file-by-file changes, security notes, and a migration checklist.
+
+Files to consider: website, website/astro.config.ts, website/appwrite.config.json, website/src/pages/index.astro, website/src/components/svelte/LinkApp.svelte, website/src/types/baseSchemas.ts, website/src/env.ts, website/src/pages/api
+
+[Running in read-only mode - no modifications allowed]
+
+[2025-09-12T06:28:10] thinking
+
+**Exploring registration options**
+
+I see that there's no straightforward "disable self-registration" option. Instead, I can remove all registration flows from the UI and just require login with admin-held credentials. To fully stop registrations, I could disable the public API for creating users, restricting it to server-side use only. Additionally, I should use a Cloudflare worker to ensure registration endpoints aren't exposed. There are settings in Appwrite for user authentication options, though I’m not entirely sure about earlier versions.
+**Examining Appwrite session methods**
+
+I’m figuring out how the node-appwrite server operates with the admin API. For user sessions via email/password, I know the Account methods are client-side and require a JWT from the user. However, I could have the server impersonate the user. To create a session, I can use `Account.createEmailSession(email, password)`, but that needs cookies on the client domain. Since Appwrite is hosted separately, I might need to use the JWT approach and create a session using the User's methods.
+**Reviewing Appwrite session options**
+
+I want to recall how the Appwrite API works, particularly the `Users.createEmailSession(userId)` method, which I don’t recommend using directly. I see there's an option for creating email tokens and JWT as alternatives. Instead of relying on Appwrite sessions in the browser, I could implement our own admin session cookies as signed JWTs on our domain. This way, it would isolate the admin login and avoid CORS issues, fitting the "No client SDK for privileged ops" guideline. I plan to store a salted hash of admin passwords securely.
+**Analyzing auth methods**
+
+I’m considering how admin-only API routes can verify the cookie while still using the Appwrite API key for operations. The requirements specify no public registration and admin-only authentication. This opens up the possibility of using a cookie-based gate referencing environment secrets, which should keep things simple and secure. However, there’s a mention of wanting to use Appwrite sessions and JWT with HttpOnly cookies for identity. Yet, there are challenges since the node-appwrite library is primarily for Node, while Cloudflare Workers uses the Fetch API.
+**Planning Appwrite integration**
+
+I’m working on integrating Appwrite with Cloudflare Workers, acknowledging that the Node SDK might not function properly due to incompatible APIs. Appwrite 1.5 introduced an Edge SDK that could work with Fetch, and there are suggestions to utilize the Appwrite Web SDK. However, since the prompt insists on using node-appwrite specifically for server-side requests, I need to clarify that it's not directly compatible. I’ll propose creating a minimal fetch-based client that interacts with the Appwrite REST API instead, and outline modifications to appwrite.config.json for aligning attributes and permissions.
+**Structuring the deployment plan**
+
+I’m drafting a detailed deployment plan focusing on integrating Appwrite with Cloudflare using best practices. First, I’ll outline the **Data Model** in appwrite.config.json, adding the necessary attributes and permissions. Next is the **Auth Strategy**, ensuring minimal admin access and implementing a cookie-based login. I’ll define the **Server Helper** responsibilities, highlighting environment compatibility. Under **API Routes**, I’ll clarify endpoint methods and middleware protections.
+
+For the **Admin UI**, I’ll suggest minimal designs and refactor the **Public Index** to fetch links server-side. The **Component Update** will ensure LinkApp.svelte has no exposed secrets, followed by a **Types Update** for baseSchemas.ts. Security notes will cover cookie settings and CORS. Finally, I’ll address **Cloudflare Deployment** specifics and provide a **Migration Checklist** to guide release steps efficiently.
+[2025-09-12T06:29:17] codex
+**Examining Appwrite session methods**
+
+I’m figuring out how the node-appwrite server operates with the admin API. For user sessions via email/password, I know the Account methods are client-side and require a JWT from the user. However, I could have the server impersonate the user. To create a session, I can use `Account.createEmailSession(email, password)`, but that needs cookies on the client domain. Since Appwrite is hosted separately, I might need to use the JWT approach and create a session using the User's methods.
+[2025-09-12T06:29:17] codex
+**Reviewing Appwrite session options**
+
+I want to recall how the Appwrite API works, particularly the `Users.createEmailSession(userId)` method, which I don’t recommend using directly. I see there's an option for creating email tokens and JWT as alternatives. Instead of relying on Appwrite sessions in the browser, I could implement our own admin session cookies as signed JWTs on our domain. This way, it would isolate the admin login and avoid CORS issues, fitting the "No client SDK for privileged ops" guideline. I plan to store a salted hash of admin passwords securely.
+[2025-09-12T06:29:17] codex
+**Analyzing auth methods**
+
+I’m considering how admin-only API routes can verify the cookie while still using the Appwrite API key for operations. The requirements specify no public registration and admin-only authentication. This opens up the possibility of using a cookie-based gate referencing environment secrets, which should keep things simple and secure. However, there’s a mention of wanting to use Appwrite sessions and JWT with HttpOnly cookies for identity. Yet, there are challenges since the node-appwrite library is primarily for Node, while Cloudflare Workers uses the Fetch API.
+[2025-09-12T06:29:17] codex
+**Planning Appwrite integration**
+
+I’m working on integrating Appwrite with Cloudflare Workers, acknowledging that the Node SDK might not function properly due to incompatible APIs. Appwrite 1.5 introduced an Edge SDK that could work with Fetch, and there are suggestions to utilize the Appwrite Web SDK. However, since the prompt insists on using node-appwrite specifically for server-side requests, I need to clarify that it's not directly compatible. I’ll propose creating a minimal fetch-based client that interacts with the Appwrite REST API instead, and outline modifications to appwrite.config.json for aligning attributes and permissions.
+[2025-09-12T06:29:17] codex
+**Structuring the deployment plan**
+
+I’m drafting a detailed deployment plan focusing on integrating Appwrite with Cloudflare using best practices. First, I’ll outline the **Data Model** in appwrite.config.json, adding the necessary attributes and permissions. Next is the **Auth Strategy**, ensuring minimal admin access and implementing a cookie-based login. I’ll define the **Server Helper** responsibilities, highlighting environment compatibility. Under **API Routes**, I’ll clarify endpoint methods and middleware protections.
+
+For the **Admin UI**, I’ll suggest minimal designs and refactor the **Public Index** to fetch links server-side. The **Component Update** will ensure LinkApp.svelte has no exposed secrets, followed by a **Types Update** for baseSchemas.ts. Security notes will cover cookie settings and CORS. Finally, I’ll address **Cloudflare Deployment** specifics and provide a **Migration Checklist** to guide release steps efficiently.
+[2025-09-12T06:29:17] codex
+
+**Objective**
+
+- Refactor links to live in Appwrite with `active: boolean` and ordered display.
+- Server-only Appwrite access via a small helper; admin-only dashboard for Zach.
+- Keep secrets SSR-only; minimize churn to Astro + Svelte components.
+
+**High-Level Plan**
+
+- Data model: finalize `links` collection (attributes, indexes, permissions).
+- Auth: admin-only login, label-based permissioning, no self‑registration.
+- Server helper: `appwriteServer.ts` for all privileged operations.
+- API routes: auth (login/logout/me) + links CRUD endpoints.
+- Admin UI: `/admin` SSR page for toggle/reorder/basic CRUD.
+- Public page: fetch links server-side in `index.astro`, pass to `LinkApp.svelte`.
+- Component/types: accept `links` as prop; extend types with `active`.
+- Deployment/security: Cloudflare Worker compatibility, secret handling.
+- Migration: staged rollout from hardcoded → Appwrite.
+
+**1) Appwrite Data Model (appwrite.config.json)**
+
+- **Collection `links`:** keep existing fields; add and align minimal new ones.
+  - Attributes (existing assumed: `title: string`, `url: string?`, `icon: string?`, `order: integer`).
+  - Add:
+    - `active: boolean` (default true, required).
+    - `type: enum["url","download","contact"]` (optional; default "url").
+    - `category: string` (optional).
+- **Indexes:**
+  - `by_active_order`: composite index on `[active ASC, order ASC]` (primary query).
+  - Optional: `by_category_order`: `[category ASC, order ASC]` for future filtering.
+- **Permissions:**
+  - Read: `role:all` (public read).
+  - Create/Update/Delete: `label:admin` only.
+  - Notes: Use collection “Document Security” with default document permissions set as above so new docs inherit public read + admin write.
+- **Rationale:** Matches current UI needs, supports simple filters and deterministic order, locks down writes.
+
+Concrete additions (illustrative; adjust to your schema versioning):
+- Add boolean attribute `active` (default true, required).
+- Add enum attribute `type` with values: url, download, contact (optional).
+- Add string attribute `category` (optional).
+- Add indexes as described.
+- Ensure collection permissions default to `read: ["role:all"]`, `write: ["label:admin"]` and disable any other write roles.
+
+**2) Auth Strategy (Admin Only)**
+
+- **User labeling:** In Appwrite Console, set Zach’s account label to `admin` (Users → Zach → Labels: add `admin`).
+- **Disable self-registration:** Do not expose any registration flows. In Appwrite Auth settings, disable providers you don’t need (Anonymous, OAuth, etc.). Only Email/Password remains, but no public registration UI is provided. Optionally pre-create Zach’s user manually in Console and do not expose `/account` endpoints publicly.
+- **Minimal login:** Use a server-rendered login form that posts to `/api/auth/login`.
+  - Verify credentials on the server:
+    - Option A (simplest and strongest isolation): Check against env `ADMIN_EMAIL` + `ADMIN_PASSWORD`. Use only our cookie session for admin; Appwrite is accessed via API key server-side.
+    - Option B (tie to Appwrite): Server uses Appwrite REST to validate Zach’s email/password (Users session or account session via REST), then still issue our own site session cookie. This keeps identity in Appwrite if desired.
+  - Set HttpOnly, Secure, SameSite=Strict cookie signed with `ADMIN_SESSION_SECRET`.
+- **Authorization:** Protect admin APIs and pages by verifying the signed cookie and (if using Appwrite-backed auth) additionally checking Zach’s `label:admin` via Users API.
+
+Rationale: Avoids exposing Appwrite client/session to the browser and keeps privileged ops strictly server-side. Simple to reason about and CF Worker–friendly.
+
+**3) Server Helper: `website/src/lib/appwriteServer.ts`**
+
+- **Purpose:** Single server-only entry for Appwrite REST/SDK usage. No client imports.
+- **Env inputs:** `APPWRITE_ENDPOINT`, `APPWRITE_PROJECT_ID`, `APPWRITE_API_KEY`, `APPWRITE_DATABASE_ID`, `APPWRITE_LINKS_COLLECTION_ID`.
+- **Runtime compatibility:**
+  - Cloudflare Worker cannot use `node-appwrite`. Preferred: a minimal fetch wrapper against Appwrite REST in this helper (export the same interface either way).
+  - In local Node dev, you can swap to `node-appwrite` if desired, but keep the implementation fetch-based by default for portability.
+- **Exports (typed):**
+  - `getPublishedLinks(): Promise<Link[]>` — query `active == true`, order ASC, map to `Link`.
+  - `upsertLink(input: Partial<AppwriteLink> & { id?: string }): Promise<void>` — create or update document; enforce admin.
+  - `reorderLinks(newOrder: Array<{ id: string; order: number }>): Promise<void>` — batch updates.
+  - `toggleActive(id: string, active: boolean): Promise<void>`.
+  - Internals:
+    - `toLink(doc): Link` mapping: `name = doc.title`, `active`, `type`, `url`, `icon`, `category`, `order`.
+    - Guards: throw if any secret/env missing; never log secrets.
+
+Rationale: Centralizes privilege, enables future caching, and isolates Appwrite details from routes/pages.
+
+**4) API Routes (Astro, SSR-only)**
+
+- Location: `website/src/pages/api`
+- **Auth**
+  - `auth/login.ts` (POST): body `{ email, password }` (or just password); validate; set signed HttpOnly cookie; return 204.
+  - `auth/logout.ts` (POST): clear cookie; return 204.
+  - `auth/me.ts` (GET): return `{ authenticated: true }` if cookie valid.
+- **Links**
+  - `links/list.ts` (GET): guarded; return full list including inactive for admin UI.
+  - `links/upsert.ts` (POST): guarded; create/update one link.
+  - `links/reorder.ts` (POST): guarded; batch order updates.
+  - `links/toggle.ts` (POST): guarded; toggle active.
+- **Security**
+  - All endpoints verify admin cookie before calling `appwriteServer`.
+  - Use `application/json` only; validate payloads with Zod.
+  - Respond with 401/403 as appropriate.
+
+Rationale: Keeps browser from directly touching Appwrite; simple, auditable surface.
+
+**5) Admin UI (`website/src/pages/admin/index.astro`)**
+
+- **Guard:** SSR-only; redirect to `/admin/login` if no valid admin cookie.
+- **Data:** `const links = await appwriteServer.listAllLinks()` (includes inactive).
+- **UI (minimal):**
+  - Table of links with columns: Title, URL, Type, Category, Order, Active [toggle], Edit, Delete.
+  - Drag handle for order; saves via `links/reorder`.
+  - Add link form (Title required, URL optional based on type).
+  - Toggle Active triggers `links/toggle`.
+- **No client secrets:** All actions hit our API routes; cookies HttpOnly.
+- **Optional:** separate `/admin/login.astro` with a small form posting to `/api/auth/login`.
+
+Rationale: Small footprint, no SPA needed, easy to maintain.
+
+**6) Public Index Refactor (`website/src/pages/index.astro`)**
+
+- **Switch to SSR:** Change `export const prerender = false;` so links are fresh on each request (or add ISR later).
+- **Fetch:** `const links = await appwriteServer.getPublishedLinks();`
+- **Pass prop:** `<LinkApp links={links} client:only="svelte" />`
+- **Note:** If you want to keep static generation, add a revalidation strategy later; start with SSR for correctness.
+
+Rationale: Removes hardcoded data, keeps LinkApp focused on rendering.
+
+**7) Component Update (`website/src/components/svelte/LinkApp.svelte`)**
+
+- **Signature:** `export let links: Link[] = [];`
+- **Remove inline defaults:** Delete the hardcoded array. Optionally keep a guarded fallback only for local dev (`if (!links.length) show minimal defaults`).
+- **No secret imports:** Avoid importing `env.ts` here; ensure pure client component.
+- **3D scene untouched:** No change to Threlte scene; component simply consumes `links`.
+
+Rationale: Minimal churn; single responsibility.
+
+**8) Types Update (`website/src/types/baseSchemas.ts`)**
+
+- **Extend `LinkSchema`:**
+  - Add `active: z.boolean()` (required).
+  - Add `order: z.number()` (required; integer).
+  - Add `category: z.string().optional()`.
+  - Narrow `type` to `z.enum(["url","download","contact"])` for persisted docs.
+  - Keep UI-only fields (`action`, `position`, `inlineIcon`) optional and not persisted.
+- **Add `AppwriteLinkSchema`:** mirrors collection attribute names (`title`, `url`, `icon`, `order`, `active`, `type`, `category`).
+- **Transform helpers:**
+  - `toLink(doc: AppwriteLink): Link` maps `title -> name`.
+  - `fromLink(link: Link): AppwriteLink` for upserts (ignore UI-only fields).
+
+Rationale: Clear separation between storage shape and UI shape with minimal refactor to consuming code.
+
+**9) Secrets and Env (`website/src/env.ts`)**
+
+- **Ensure server-only export:** Keep all `APPWRITE_*` and `ADMIN_*` in server-only module. Do not import this file from client components.
+- **Vars:**
+  - `APPWRITE_ENDPOINT`, `APPWRITE_PROJECT_ID`, `APPWRITE_API_KEY`, `APPWRITE_DATABASE_ID`, `APPWRITE_LINKS_COLLECTION_ID`
+  - `ADMIN_EMAIL`, `ADMIN_PASSWORD` (if using Option A)
+  - `ADMIN_SESSION_SECRET` (HMAC for cookie signing)
+- **Cloudflare Workers:** Provide these as environment bindings (Wrangler/Pages project settings). Access via Astro server context; avoid `process.env` for edge. Continue to gate with `import.meta.env` via `astro:env/server` or a thin adapter in `env.ts`.
+
+Rationale: Prevent leakage into client bundles; support edge runtime.
+
+**10) Cloudflare + SDK Compatibility**
+
+- **node-appwrite note:** The Node SDK is not Worker-compatible. Use REST fetch inside `appwriteServer.ts` (recommended) so it runs on Cloudflare. Keep the interface so you can transparently use `node-appwrite` in Node dev if desired.
+- **Adapter:** Astro Cloudflare adapter is fine; ensure no Node-only APIs used in server code. Use `fetch` and standard headers: `X-Appwrite-Project`, `X-Appwrite-Key`, `Content-Type: application/json`.
+- **CORS:** Not relevant for server-to-server calls; keep admin UI talking to same-origin `/api/*`.
+- **Caching:** Optionally add `Cache-Control` on public index route once confident; start uncached for correctness.
+
+Rationale: Ensures smooth deployment on Workers without runtime surprises.
+
+**11) File-By-File Changes (planned)**
+
+- `website/appwrite.config.json`
+  - Add attributes: `active:boolean`, `type:enum`, `category:string`.
+  - Add indexes: `[active, order]` asc.
+  - Set collection default permissions: read `role:all`, write `label:admin`.
+- `website/src/env.ts`
+  - Confirm server-only exposure; add ADMIN_* vars and links DB/collection IDs.
+- `website/src/lib/appwriteServer.ts` (new)
+  - REST-based Appwrite helper with functions listed above.
+- `website/src/pages/api/auth/login.ts|logout.ts|me.ts` (new)
+  - Cookie-based admin session handling; no client secrets.
+- `website/src/pages/api/links/{list,upsert,reorder,toggle}.ts` (new)
+  - Guarded endpoints calling `appwriteServer`.
+- `website/src/pages/admin/index.astro` (+ optional `login.astro`) (new)
+  - SSR admin UI with basic CRUD/toggle/reorder.
+- `website/src/pages/index.astro`
+  - Switch `prerender` to `false`; fetch links via helper; pass to `LinkApp`.
+- `website/src/components/svelte/LinkApp.svelte`
+  - Accept `links` prop; remove hardcoded array.
+- `website/src/types/baseSchemas.ts`
+  - Add `active`, `order`, `category` and adjust `type`. Add mapping schemas/helpers.
+
+**12) Security Considerations**
+
+- **Least privilege:** Public reads rely on `role:all`; writes restricted to `label:admin`.
+- **No client SDK:** All privileged operations are server-only via `appwriteServer`.
+- **Secrets:** Only in server modules; never import into Svelte components.
+- **Cookies:** HttpOnly, Secure, SameSite=Strict; short expiry (e.g., 8 hours) and rotation on login. Sign with strong `ADMIN_SESSION_SECRET`.
+- **Input validation:** Use Zod on API routes; reject malformed data.
+- **Auditing:** Appwrite logs admin writes; optional: log minimal audit entries in server logs.
+
+**13) Migration Checklist**
+
+- Appwrite:
+  - Add `active`, `type`, `category` attributes to `links`.
+  - Create `by_active_order` index.
+  - Set collection default permissions (public read, admin write).
+  - Ensure Zach’s user has `label:admin`.
+  - Seed documents for current links with `active: true` and proper `order`.
+- Code (behind a feature flag if desired):
+  - Create `appwriteServer.ts`; wire env.
+  - Add admin auth API routes and cookies.
+  - Add links API endpoints (admin).
+  - Add `/admin` page; verify end-to-end toggles and reorder work.
+  - Refactor `index.astro` to fetch from Appwrite.
+  - Update `LinkApp.svelte` to use prop.
+  - Update types and add transform mapping.
+- Deploy:
+  - Set Cloudflare secrets/bindings for `APPWRITE_*` and `ADMIN_*`.
+  - Deploy to preview; verify `/admin`, toggle/ordering, and public index.
+  - Remove old hardcoded array after verification.
+  - Optionally enable caching/ISR on index after correctness is confirmed.
+
+**Rationale Summary**
+
+- Minimizes churn in UI by keeping `Link` shape stable (map `title -> name`).
+- Keeps privileged actions entirely server-side with a small, testable helper.
+- Works on Cloudflare Workers by using REST fetch instead of Node SDK.
+- Simple, robust admin gate with no public registration attack surface.
+- Clear migration path that doesn’t break the 3D/Threlte setup.
+[2025-09-12T06:30:17] tokens used: 15447

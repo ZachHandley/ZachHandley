@@ -1,0 +1,52 @@
+model_list:
+  # Local Ollama models (default)
+  - model_name: ollama/llama3
+    litellm_params:
+      model: ollama/llama3
+      api_base: http://localhost:11434
+
+  - model_name: ollama/llama3.2
+    litellm_params:
+      model: ollama/llama3.2
+      api_base: http://localhost:11434
+
+  - model_name: ollama/mistral
+    litellm_params:
+      model: ollama/mistral
+      api_base: http://localhost:11434
+
+  - model_name: ollama/qwen2.5
+    litellm_params:
+      model: ollama/qwen2.5
+      api_base: http://localhost:11434
+
+  # Cloud fallback models (require API keys in environment)
+  - model_name: gpt-4-turbo
+    litellm_params:
+      model: gpt-4-turbo
+      api_key: ${OPENAI_API_KEY}
+
+  - model_name: claude-3-sonnet
+    litellm_params:
+      model: claude-3-sonnet-20240229
+      api_key: ${ANTHROPIC_API_KEY}
+
+  - model_name: gpt-3.5-turbo
+    litellm_params:
+      model: gpt-3.5-turbo
+      api_key: ${OPENAI_API_KEY}
+
+# General settings
+general_settings:
+  master_key: ${LITELLM_MASTER_KEY:-}
+  database_url: null
+
+# Logging
+litellm_settings:
+  success_callback: []
+  failure_callback: []
+  service_callback: []
+  cache: false
+  cache_params: {}
+  max_parallel_requests: 10
+  timeout: 60

@@ -267,7 +267,7 @@ export class AssetManager {
       return;
     }
 
-    console.log(`🔥 Pre-warming particle pool with ${poolSize} systems of each type...`);
+    // Pre-warm particle pool
     
     const now = Date.now();
     
@@ -304,7 +304,7 @@ export class AssetManager {
         }
       }
       
-      console.log(`✅ Pool pre-warmed: ${this.particlePool.fireballSystems.available.length} fireball, ${this.particlePool.explosionSystems.available.length} explosion systems`);
+      // Pool pre-warmed successfully
       
     } catch (error) {
       console.error('Failed to pre-warm particle pool:', error);
@@ -331,7 +331,7 @@ export class AssetManager {
         return;
       }
 
-      console.log('🔥 Creating particle systems during asset loading...');
+      // Create particle systems during asset loading
       
       // Helper function to create safe values (copied from FireAnimation)
       const safeValue = (value: number, fallback: number, min: number, max: number): number => {
@@ -456,14 +456,12 @@ export class AssetManager {
 
       if (fireballResult?.instance) {
         this.assets.fireballParticleSystem = fireballResult.instance;
-        console.log('✅ Fireball particle system template created');
       } else {
         throw new Error('Failed to create fireball particle system');
       }
 
       if (explosionResult?.instance) {
         this.assets.explosionParticleSystem = explosionResult.instance;
-        console.log('✅ Explosion particle system template created');
       } else {
         throw new Error('Failed to create explosion particle system');
       }
@@ -531,13 +529,9 @@ export class AssetManager {
       const system = pool.available.pop()!;
       pool.active.add(system);
       
-      // System is already positioned off-screen with scale 0
-      // The consumer will move it to the correct position and scale it to 1
-      console.log(`🎯 Retrieved pre-warmed ${type} system from pool (${pool.available.length} remaining)`);
       return system;
     }
-    
-    console.warn(`⚠️ No available ${type} systems in pool, will need async creation`);
+
     return null;
   }
 
@@ -560,7 +554,6 @@ export class AssetManager {
       // The caller will move this system back to the pool container
       
       pool.available.push(system);
-      console.log(`♻️ Returned ${type} system to pool (${pool.available.length} available)`);
     }
   }
 
@@ -583,7 +576,6 @@ export class AssetManager {
           
           const result = createParticleSystem(config as any, now);
           if (result?.instance) {
-            console.log(`✅ Created new ${type} system asynchronously`);
             resolve(result.instance);
           } else {
             resolve(null);

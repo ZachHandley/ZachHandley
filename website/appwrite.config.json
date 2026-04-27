@@ -1,0 +1,131 @@
+{
+    "projectId": "68c3bb35001fe37018e4",
+    "projectName": "ZachHandley",
+    "settings": {
+        "services": {
+            "account": true,
+            "avatars": true,
+            "databases": true,
+            "locale": true,
+            "health": true,
+            "storage": true,
+            "teams": true,
+            "users": true,
+            "sites": true,
+            "functions": true,
+            "graphql": true,
+            "messaging": true
+        },
+        "auth": {
+            "methods": {
+                "jwt": true,
+                "phone": true,
+                "invites": true,
+                "anonymous": true,
+                "email-otp": true,
+                "magic-url": true,
+                "email-password": true
+            },
+            "security": {
+                "duration": 31536000,
+                "limit": 0,
+                "sessionsLimit": 10,
+                "passwordHistory": 0,
+                "passwordDictionary": false,
+                "personalDataCheck": false,
+                "sessionAlerts": false,
+                "mockNumbers": []
+            }
+        }
+    },
+    "databases": [    
+        {
+            "$id": "main",
+            "name": "Main Database",
+            "enabled": true
+        }
+    ],
+    "collections": [
+        {
+            "$id": "links",
+            "databaseId": "main",
+            "name": "Links",
+            "$permissions": [
+                "read(\"any\")",
+                "create(\"label:admin\")",
+                "update(\"label:admin\")",
+                "delete(\"label:admin\")"
+            ],
+            "documentSecurity": true,
+            "attributes": [
+                {
+                    "key": "title",
+                    "type": "string",
+                    "encrypt": false,
+                    "size": 256,
+                    "required": true,
+                    "array": false
+                },
+                {
+                    "key": "url",
+                    "type": "string",
+                    "encrypt": false,
+                    "size": 2048,
+                    "required": false,
+                    "array": false
+                },
+                {
+                    "key": "icon",
+                    "type": "string",
+                    "encrypt": false,
+                    "size": 512,
+                    "required": false,
+                    "array": false
+                },
+                {
+                    "key": "order",
+                    "type": "integer",
+                    "required": true,
+                    "array": false
+                },
+                {
+                    "key": "active",
+                    "type": "boolean",
+                    "required": true,
+                    "array": false
+                },
+                {
+                    "key": "type",
+                    "type": "string",
+                    "encrypt": false,
+                    "size": 24,
+                    "required": false,
+                    "array": false,
+                    "default": "url"
+                },
+                {
+                    "key": "category",
+                    "type": "string",
+                    "encrypt": false,
+                    "size": 64,
+                    "required": false,
+                    "array": false
+                }
+            ],
+            "indexes": [
+                {
+                    "key": "by_active_order",
+                    "type": "key",
+                    "attributes": ["active", "order"],
+                    "orders": ["ASC", "ASC"]
+                },
+                {
+                    "key": "by_category_order",
+                    "type": "key",
+                    "attributes": ["category", "order"],
+                    "orders": ["ASC", "ASC"]
+                }
+            ]
+        }
+    ]
+}

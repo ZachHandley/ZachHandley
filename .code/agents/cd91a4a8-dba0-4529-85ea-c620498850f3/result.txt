@@ -1,0 +1,153 @@
+Of course. Here is a detailed plan for refactoring your application to use Appwrite for dynamic link management, complete with an admin interface.
+
+---
+
+### **Project Refactoring Plan: Appwrite Integration**
+
+This plan outlines the steps to migrate from hardcoded links to a dynamic, database-driven system using Appwrite. It includes creating a secure, server-side architecture for data management and a minimal admin interface for content updates.
+
+#### **1. Finalize Appwrite Collection Schema (`appwrite.config.json`)**
+
+First, we'll update the Appwrite configuration to finalize the data structure for links. This ensures our infrastructure is defined as code.
+
+**File:** `website/appwrite.config.json`
+
+**Changes:**
+- **Collection:** `links`
+- **Attributes:**
+    - `title` (string, required): The display name of the link.
+    - `url` (string, required, format: url): The destination URL.
+    - `icon` (string, required): The icon identifier (e.g., `simple-icons:github`).
+    - `order` (integer, required): A number for sorting, managed by the admin UI.
+    - `active` (boolean, required, default: `false`): Controls public visibility.
+    - `type` (string, required, default: `url`): The link type (e.g., `url`, `download`).
+    - `category` (string, optional): A grouping category (e.g., `personal`, `work`).
+- **Permissions:**
+    - `read`: `role:all` (Allows anyone to read the documents). We will filter for `active: true` in our server-side query for the public page.
+    - `create`, `update`, `delete`: `role:admin` (Restricts write operations to users in the 'admin' role).
+- **Indexes:**
+    - Create a composite index on `active` and `order` for efficient querying of published links.
+
+**Rationale:** This configuration establishes a clear, version-controlled schema. Using `role:admin` for write permissions is a robust way to secure your data, and public read access is necessary for the front end to display the links.
+
+#### **2. Configure Admin User and Roles**
+
+We need to define the `admin` role and ensure only you can register and assume it.
+
+**Appwrite Console / `appwrite.config.json`:**
+1.  **Disable Public Registration:** In your Appwrite project's console, navigate to **Auth > Settings** and disable user registration.
+2.  **Create Admin Role:** Define the `admin` role in `appwrite.config.json` under a `teams` or `roles` section if the CLI supports it, or create it manually in the Appwrite Console under **Auth > Teams**.
+3.  **Create Admin User:** Manually create your user account (e.g., `zach@...`) in the Appwrite Console.
+4.  **Assign Role:** Add your user to the `admin` team/role.
+
+**Rationale:** This approach guarantees that only a pre-approved administrator can manage content, fulfilling the "no public registration" requirement.
+
+#### **3. Create Server-Side Appwrite Helper**
+
+A dedicated server-side helper will encapsulate all Appwrite interactions, keeping your API key and privileged operations off the client.
+
+**New File:** `website/src/lib/appwriteServer.ts`
+
+**Content Plan:**
+- Import `node-appwrite`.
+- Create a singleton `adminSdk` instance initialized with the `APPWRITE_API_KEY` from `Astro.locals.runtime.env`.
+- Export async helper functions:
+    - `getPublishedLinks()`: Fetches documents from the `links` collection where `active` is `true`, sorted by `order`.
+    - `getAllLinks()`: Fetches all links, for the admin view.
+    - `updateLink(id, data)`: Updates a specific link document.
+    - `toggleLinkActive(id, currentState)`: Toggles the `active` boolean.
+    - `reorderLinks(linkIds)`: Updates the `order` attribute for a list of links.
+
+**Security:** The API key is accessed via `Astro.locals.runtime.env`, which is populated from environment secrets in your Cloudflare dashboard. This prevents the key from ever being exposed to the client or being checked into version control.
+
+#### **4. Implement Admin Authentication API**
+
+Create Astro API routes to handle the admin login/logout flow securely.
+
+**New Files:**
+- `website/src/pages/api/auth/login.post.ts`
+- `website/src/pages/api/auth/logout.post.ts`
+
+**Logic for `login.post.ts`:**
+1.  Accepts `email` and `password` from a POST request.
+2.  Uses the `node-appwrite` SDK to create a user session.
+3.  On success, it sets the session token in a secure, `HttpOnly` cookie.
+4.  Returns a success or failure response.
+
+**Logic for `logout.post.ts`:**
+1.  Reads the session token from the cookie.
+2.  Uses the SDK to delete the Appwrite session.
+3.  Clears the cookie.
+4.  Redirects to the login page.
+
+**Rationale:** Using `HttpOnly` cookies is critical for security, as it prevents client-side JavaScript from accessing the session token, mitigating XSS attacks.
+
+#### **5. Create Admin Dashboard Page**
+
+This page will be the UI for managing links. It will be server-rendered and protected.
+
+**New Files:**
+- `website/src/pages/admin/index.astro`
+- `website/src/pages/admin/login.astro` (A simple login form)
+
+**Logic for `admin/index.astro`:**
+1.  **Authentication Check:** In the frontmatter, check for the presence and validity of the auth cookie using a helper that calls the Appwrite `account.get()` endpoint. If invalid, redirect to `/admin/login`.
+2.  **Data Fetching:** If authenticated, use `appwriteServer.getAllLinks()` to fetch all link data.
+3.  **Rendering:**
+    - Render a table or list of all links.
+    - For each link, display its `title`, `url`, and `active` status.
+    - Include a form/button next to each link to trigger a POST request to an API route (e.g., `/api/links/toggle.post.ts`) to toggle the `active` state.
+    - (Optional) Implement drag-and-drop reordering that sends the new order to an API route.
+
+**Rationale:** Server-side rendering ensures the page is only accessible to authenticated admins. All mutations are handled via dedicated API endpoints, maintaining a clean separation of concerns.
+
+#### **6. Refactor `index.astro` to Fetch Live Data**
+
+Update the main page to use the new server-side helper.
+
+**File:** `website/src/pages/index.astro`
+
+**Changes:**
+1.  Remove `export const prerender = true;`. This is necessary to allow server-side data fetching on each request (or at build time if you prefer, but SSR is better for seeing admin changes live).
+2.  In the frontmatter, call `const links = await appwriteServer.getPublishedLinks();`.
+3.  Pass the data to the Svelte component: `<LinkApp links={links} client:only="svelte" />`.
+
+**Rationale:** This decouples the frontend from hardcoded data and allows changes made in the admin panel to be reflected immediately on the public site.
+
+#### **7. Update `LinkApp.svelte` to Accept Props**
+
+Modify the Svelte component to be a pure, presentational component.
+
+**File:** `website/src/components/svelte/LinkApp.svelte`
+
+**Changes:**
+1.  In the `<script>` section, remove the hardcoded `links` array.
+2.  Add `export let links: Link[];`.
+3.  Keep the old hardcoded array as a default fallback during migration if desired: `export let links: Link[] = [/* old data */];`.
+
+**Rationale:** This follows standard component design principles, making `LinkApp` more reusable and easier to test.
+
+#### **8. Update Zod Schema and Types**
+
+Align the TypeScript types with the new Appwrite data model.
+
+**File:** `website/src/types/baseSchemas.ts`
+
+**Changes:**
+1.  Modify `LinkSchema` to match the Appwrite collection:
+    - Add `id: z.string()` (for the Appwrite document ID).
+    - Add `active: z.boolean()`.
+    - Make `category` and `type` required or optional as defined in the Appwrite schema.
+2.  Create a helper function `transformAppwriteDoc(doc): Link` that maps an Appwrite document to your `Link` type, ensuring consistency.
+
+**Rationale:** Keeping types synchronized with the database schema is essential for type safety and preventing runtime errors.
+
+#### **9. Deployment & Security Notes**
+
+- **Environment Variables:** Your `APPWRITE_API_KEY` must be stored as a secret in your Cloudflare project settings, not in `wrangler.toml` or any committed file. Astro will automatically make it available in `Astro.locals.runtime.env`.
+- **Cloudflare Compatibility:** `node-appwrite` is compatible with the Node.js runtime provided by Cloudflare Workers. No special adapter configuration should be needed beyond the standard `@astrojs/cloudflare` setup.
+- **Migration Strategy:**
+    1.  Implement steps 1-5 to get the backend and admin panel functional.
+    2.  Manually create entries in the Appwrite `links` collection corresponding to your old hardcoded array.
+    3.  Implement steps 6-8 to switch the frontend over.
+    4.  Once verified, remove the fallback data from `LinkApp.svelte`.
