@@ -1,0 +1,1973 @@
+[2025-09-12T07:52:55] Code v0.2.129
+--------
+workdir: /home/zach/github/ZachHandley
+model: gpt-5
+provider: openai
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: auto
+--------
+[2025-09-12T07:52:55] User instructions:
+Context: Monorepo single app at /website. 3D homepage uses Threlte/Three. Build output shows LinkApp chunk ~1.74MB. We want to improve load times and FPS and refine placement of crates/links with minimal risk. Current Svelte 5 runes. Draco loader present, no KTX2/Meshopt detected. We prefer solutions we can A/B behind flags.
+
+Agent: Goal: Research Threlte and Three.js optimization strategies, inspect our project structure, and produce a safe, incremental performance plan to reduce initial load time and improve runtime FPS without breaking UI/UX. Include actionable changes for asset pipeline (models/textures/audio), scene graph (materials/geometry/light/shadows), renderer/camera settings, Threlte-specific patterns (tasks, runes, lazy components), and 3D placement improvements for crates/links. Provide code-level examples (Svelte/Threlte) where helpful. Prioritize minimal-risk changes behind flags with success metrics.
+
+Repo context (Astro + Svelte + Threlte):
+- App: website/ (Astro 5, Svelte 5 runes, Cloudflare adapter). 3D UI rendered via Threlte.
+- Entry: website/src/pages/index.astro → server fetches links, passes to LinkApp.svelte as prop.
+- Main 3D component: website/src/components/svelte/LinkApp.svelte (chunk ~1.74 MB in production build). Uses @threlte/core/extras, three r0.176.
+- Scene: website/src/components/svelte/scene/{BaseScene.svelte, Ground.svelte, StackedLinks.svelte, effects/Fireball.svelte, models/*}. Utilities in website/src/components/svelte/utils/{assetManager.svelte.ts, crateController.svelte.ts, sceneController.svelte.ts}.
+- StackedLinks handles crate/link UI, uses Draco loader, dynamic layout utilities, categories left/right. CrateController calculates grid positions based on viewport and dragon width.
+
+Key observations from code/build:
+- LinkApp bundle 1.74 MB gzip ~469 KB (still heavy). Many three/Threlte and model code in initial chunk.
+- BaseScene mounts tasks/tweens and logs; Camera update thr ottling present; Fireball particle systems prewarmed; toneMapping disabled; Canvas toneMapping={undefined}.
+- Draco loader used; no Meshopt or KTX2 compressed textures detected. No explicit device pixel ratio clamp or dynamic resolution.
+- Crates/links placed via grid; could occlude dragon; two-column layout; potential InstancedMesh batching not used.
+
+What to deliver:
+1) A prioritized, incremental optimization plan with quick wins first (no visual changes), then medium-risk (toggleable), then advanced (optional).
+2) Threlte-focused practices: useTask, pause/resume, lazy components, suspense, `<T>` memoization, preloading strategies.
+3) Three.js specifics: renderer init flags, pixel ratio clamp, textures (KTX2/Basis), MeshoptDecoder, Draco setup, material/geometry dedupe, instancing, LOD, frustum culling, shadow tuning.
+4) Placement improvement plan for crates/links: better spatial packing, avoiding occlusion, adaptive density for mobile/desktop; code sketches modifying CrateController.calculate*.
+5) Metrics and verification: how to capture First Interaction Time, GPU time, FPS, memory; how to compare before/after.
+
+You may reference the following files (summaries are fine; do not modify):
+- website/src/components/svelte/scene/BaseScene.svelte (camera/tweens/tasks; sceneController hooks)
+- website/src/components/svelte/scene/StackedLinks.svelte (links/crates; Draco, category flows)
+- website/src/components/svelte/utils/crateController.svelte.ts (layout logic)
+- website/package.json (deps: three 0.176, @threlte/core 8.x, extras 9.x)
+
+Constraints:
+- Planning-only. No code changes now.
+- Must not break current visuals/UX.
+- Provide fallbacks for older mobile GPUs.
+- Suggest changes as toggles/flags where possible.
+- Assume Cloudflare adapter (Edge) and client hydration.
+
+
+Desired output: Planning doc with ordered steps, Threlte/Three code snippets for changes, metrics checklist, and a migration plan behind flags.
+
+Files to consider: website, website/src/components/svelte/LinkApp.svelte, website/src/components/svelte/scene/BaseScene.svelte, website/src/components/svelte/scene/StackedLinks.svelte, website/src/components/svelte/utils/crateController.svelte.ts, website/package.json
+
+[Running in read-only mode - no modifications allowed]
+
+[2025-09-12T07:53:02] thinking
+
+**Planning document creation**
+
+We're set to create a planning document. Since there's no code change allowed in the danger-full-access environment, and the user wants to run in read-only mode, we shouldn't use apply_patch or shell for modifications. However, we can read files with shell commands. The user provided context and files, prioritizing summaries without modification. I'll need to keep my preamble concise before making tool calls, and verifying the files could help improve recommendations. Using rg could list file contents if time allows.
+**Creating a planning document**
+
+I can produce the planning document without further code reading, but it would help to reflect on specifics, like the Draco loader and toneMapping status. The goal is to propose toggles, feature flags, and code sketches in Svelte/Threlte. I'll prioritize an incremental optimization plan with quick wins followed by medium and advanced strategies. I'll also detail Threlte practices, Three.js specifics, and metrics for verification, along with bundling improvements like code splitting and lazy imports in Astro. Lastly, I’ll incorporate Svelte 5 features and Threlte contexts for enhanced performance.
+**Implementing Threlte extras**
+
+I’m considering the use of `@threlte/extras` for the `GLTF` component and `useGltf`, which support KTX2 and Meshopt with appropriate decoders. I need to register Draco, MeshoptDecoder, and KTX2Loader from either three-stdlib or `@pmndrs`. The `useGltf` function accepts parameters for decoders. I’ll also review renderer flags like `powerPreference: 'high-performance'` and settings for older GPUs. Additionally, I'll explore shadow tuning, material reuse, and suitable text options for clarity in Threlte extras.
+**Using Threlte extras for text and textures**
+
+I’m looking at `@threlte/extras` for using troika text, but currently, there's no KTX2 support. I could propose a pipeline to convert PNG and JPG to KTX2 BasisU using `toktx` or `BasisU`, considering the Cloudflare Asset pipeline since it serves static assets. I'll provide CLI commands like `toktx --bcmp --t2 --genmipmap`. Additionally, I’ll suggest dynamic imports for decoders to reduce bundle size and propose route-level splitting for optimal loading strategies in Astro and Threlte. Using `Suspense` for lazy loading also sounds helpful.
+**Summary of Threlte Improvements**
+
+I’m analyzing the integration of `@threlte/extras` for caching GLTF components and optimizing performance using features like `useTask`. I’ll provide code snippets for handling renderer settings, dynamic pixel ratio adjustments, and frame optimizations with visibility controls. It’s important to implement LODs for models, utilize instanced meshes, and consider placement algorithms to avoid overlaps. I’ll also cover performance metrics, caching strategies, and dynamic imports, while ensuring clarity and conciseness in the planning document. Keeping each section clear with bullet points and code examples is crucial.
+**Creating Incremental Performance Plan**
+
+I’m preparing an outline for the "Incremental Performance Plan" document without making tool calls—just focusing on delivering the content.
+
+I’ll break it down into sections. For Quick Wins, I’ll list strategies like bundle splitting via Astro's client:visible, clamping DPR, and lazy-loading effects. Each point will have code snippets. 
+
+I'll also address medium-risk items, such as allowing KTX2 textures and optimizing shadows, followed by advanced options like raycasting improvements.
+
+Lastly, I will emphasize defining flags and success metrics to ensure clarity and track performance effectively.
+[2025-09-12T07:54:21] codex
+**Creating a planning document**
+
+I can produce the planning document without further code reading, but it would help to reflect on specifics, like the Draco loader and toneMapping status. The goal is to propose toggles, feature flags, and code sketches in Svelte/Threlte. I'll prioritize an incremental optimization plan with quick wins followed by medium and advanced strategies. I'll also detail Threlte practices, Three.js specifics, and metrics for verification, along with bundling improvements like code splitting and lazy imports in Astro. Lastly, I’ll incorporate Svelte 5 features and Threlte contexts for enhanced performance.
+[2025-09-12T07:54:21] codex
+**Implementing Threlte extras**
+
+I’m considering the use of `@threlte/extras` for the `GLTF` component and `useGltf`, which support KTX2 and Meshopt with appropriate decoders. I need to register Draco, MeshoptDecoder, and KTX2Loader from either three-stdlib or `@pmndrs`. The `useGltf` function accepts parameters for decoders. I’ll also review renderer flags like `powerPreference: 'high-performance'` and settings for older GPUs. Additionally, I'll explore shadow tuning, material reuse, and suitable text options for clarity in Threlte extras.
+[2025-09-12T07:54:21] codex
+**Using Threlte extras for text and textures**
+
+I’m looking at `@threlte/extras` for using troika text, but currently, there's no KTX2 support. I could propose a pipeline to convert PNG and JPG to KTX2 BasisU using `toktx` or `BasisU`, considering the Cloudflare Asset pipeline since it serves static assets. I'll provide CLI commands like `toktx --bcmp --t2 --genmipmap`. Additionally, I’ll suggest dynamic imports for decoders to reduce bundle size and propose route-level splitting for optimal loading strategies in Astro and Threlte. Using `Suspense` for lazy loading also sounds helpful.
+[2025-09-12T07:54:21] codex
+**Summary of Threlte Improvements**
+
+I’m analyzing the integration of `@threlte/extras` for caching GLTF components and optimizing performance using features like `useTask`. I’ll provide code snippets for handling renderer settings, dynamic pixel ratio adjustments, and frame optimizations with visibility controls. It’s important to implement LODs for models, utilize instanced meshes, and consider placement algorithms to avoid overlaps. I’ll also cover performance metrics, caching strategies, and dynamic imports, while ensuring clarity and conciseness in the planning document. Keeping each section clear with bullet points and code examples is crucial.
+[2025-09-12T07:54:21] codex
+**Creating Incremental Performance Plan**
+
+I’m preparing an outline for the "Incremental Performance Plan" document without making tool calls—just focusing on delivering the content.
+
+I’ll break it down into sections. For Quick Wins, I’ll list strategies like bundle splitting via Astro's client:visible, clamping DPR, and lazy-loading effects. Each point will have code snippets. 
+
+I'll also address medium-risk items, such as allowing KTX2 textures and optimizing shadows, followed by advanced options like raycasting improvements.
+
+Lastly, I will emphasize defining flags and success metrics to ensure clarity and track performance effectively.
+[2025-09-12T07:54:21] codex
+
+**Goal & Constraints**
+
+- Optimize initial load and runtime FPS for the 3D homepage with minimal risk.
+- Keep visuals/UX intact; ship changes behind feature flags to A/B compare.
+- Focus on: asset pipeline, scene graph, renderer/camera, Threlte patterns, and crate/link placement.
+
+---
+
+**Plan Overview (Incremental, Flagged)**
+
+- Quick Wins (no visual change)
+- Medium-Risk (toggleable)
+- Advanced (optional)
+- Threlte Patterns
+- Three.js Specifics
+- Placement Improvements
+- Metrics & Verification
+- Migration & Flags
+
+---
+
+**Quick Wins (No Visual Changes)**
+
+- Bundle split: Lazy-hydrate 3D only when visible.
+  - Use Astro island `client:visible` or `client:idle` for `LinkApp`.
+  - Defer non-critical effects (e.g., Fireball) via dynamic import + suspense.
+
+- DPR clamp: Cap device pixel ratio and add dynamic resolution fallback.
+  - Reduce GPU fill-rate spikes on high-DPR mobile and 4K displays.
+
+- Pause when hidden: Stop frames/tweens/tasks when tab not visible or canvas offscreen.
+  - Saves CPU/GPU without visual changes.
+
+- Antialias strategy: Disable MSAA, switch to lightweight post-AA (FXAA/SMAA) only when needed.
+
+- Shadow trims: Reduce shadow map size; restrict shadow casters/receivers; update on demand.
+
+- Material/geometry reuse: Deduplicate shared materials/geometries and freeze static nodes.
+  - For crates, cache a single material/geometry instance.
+
+- Conditional decoders: Load Draco/Meshopt/KTX2 decoders on demand (dynamic import).
+  - Avoid decoder WASM in the main chunk.
+
+- Kill dev logs: Remove console logs and dev watchers in `BaseScene` in production builds.
+
+Code sketches
+
+- index.astro island and flags
+```astro
+---
+// website/src/pages/index.astro
+import LinkApp from '../components/svelte/LinkApp.svelte';
+
+const links = await getLinks(); // existing server fetch
+const flags = {
+  dprClamp: Number(Astro.url.searchParams.get('dpr')) || 1.5,
+  lazyEffects: Astro.url.searchParams.get('fx') !== 'off',
+  instancing: Astro.url.searchParams.get('inst') === '1',
+  meshopt: Astro.url.searchParams.get('mo') === '1',
+  ktx2: Astro.url.searchParams.get('ktx2') === '1',
+  lowShadows: Astro.url.searchParams.get('shad') === 'low',
+  dynRes: Astro.url.searchParams.get('dynres') === '1'
+};
+---
+<LinkApp client:visible links={links} flags={flags} />
+```
+
+- DPR clamp in Threlte
+```svelte
+<!-- e.g., website/src/components/svelte/scene/BaseScene.svelte -->
+<script lang="ts">
+  import { useThrelte } from '@threlte/core';
+  export let flags: { dprClamp?: number; dynRes?: boolean };
+  const { renderer } = useThrelte();
+  let targetDpr = Math.min(window.devicePixelRatio ?? 1, flags.dprClamp ?? 1.5);
+  $effect(() => renderer.setPixelRatio(targetDpr));
+</script>
+```
+
+- Pause on visibility
+```ts
+// shared util
+export function onVisibilityChange(pause: () => void, resume: () => void) {
+  const handler = () => (document.visibilityState === 'hidden' ? pause() : resume());
+  document.addEventListener('visibilitychange', handler);
+  return () => document.removeEventListener('visibilitychange', handler);
+}
+```
+
+- Lazy effects (e.g., Fireball)
+```svelte
+<script>
+  export let flags;
+  let Fireball;
+  $effect(async () => {
+    if (flags.lazyEffects) {
+      Fireball = (await import('./effects/Fireball.svelte')).default;
+    }
+  });
+</script>
+
+{#if Fireball}
+  <Fireball />
+{/if}
+```
+
+---
+
+**Medium-Risk (Toggleable)**
+
+- Instanced crates: Replace repeated crate meshes with a single `InstancedMesh`.
+  - Dramatic draw call reduction; identical material; per-instance transform/color.
+```svelte
+<!-- sketch in StackedLinks or a Crates component -->
+<script lang="ts">
+  import * as THREE from 'three';
+  import { T } from '@threlte/core';
+  export let instances: Array<{ matrix: THREE.Matrix4; color?: THREE.Color }>;
+  export let geometry: THREE.BufferGeometry;
+  export let material: THREE.Material;
+</script>
+
+<T.InstancedMesh args={[geometry, material, instances.length]} frustumCulled>
+  {#each instances as inst, i}
+    {@render (() => $renderer?.object.setMatrixAt(i, inst.matrix))()}
+  {/each}
+</T.InstancedMesh>
+```
+
+- Mesh optimization in pipeline: Use `gltfpack` + Meshopt; optionally Draco for legacy.
+  - Target flags: `-cc -tc -kn -ke -mm -mi -noq` to strip extras, compress, and quantize.
+
+- KTX2 textures: Convert PNG/JPG to KTX2 BasisU with mipmaps.
+  - Smaller textures, faster upload, fewer stalls. Keep source alongside KTX2 to revert.
+
+- Shadow tuning: Set `renderer.shadowMap.type = PCFSoftShadowMap`, reduce size to 512–1024.
+  - Only key objects cast/receive; disable for crates if not needed.
+
+- Lightweight text: Ensure SDF text via `@threlte/extras` Text (Troika).
+  - Avoid per-glyph mesh geometry.
+
+- Overlay debug toggle: A minimal FPS/DPR overlay to inform dynamic resolution.
+  - Off in production unless `?debug=1`.
+
+Code sketches
+
+- `useGLTF` with decoders on demand
+```svelte
+<script lang="ts">
+  import { GLTF } from '@threlte/extras';
+  import { onMount } from 'svelte';
+
+  export let flags;
+  let MeshoptDecoder, dracoPath, ktxPath;
+
+  onMount(async () => {
+    if (flags.meshopt) {
+      // Static asset path or CDN
+      MeshoptDecoder = (await import('meshoptimizer/meshopt_decoder.wasm?url')).default;
+    }
+    if (flags.ktx2) ktxPath = '/decoders/basis/';  // basis_transcoder*.wasm
+    if (flags.draco !== false) dracoPath = '/decoders/draco/'; // dr[2025-09-12T07:55:27] ERROR: stream error: stream disconnected before completion: Transport error: error decoding response body; retrying 1/5 in 197ms…
+
+[2025-09-12T07:55:42] thinking
+
+**Planning Document Outline**
+
+I'm focusing on crafting a planning document that includes a prioritized, incremental approach, featuring Threlte/Three practices. I want to incorporate concise code examples, placement improvements, metrics, and verification, while avoiding any code changes in the repo since this is strictly for planning.
+
+I’ll outline section headers in Title Case and bullet points with bold keywords. It's important to include safe toggles behind flags, mentioning the LinkApp chunk size of 1.74MB. I’ll suggest bundle splitting and lazy-loading for efficiency while proposing to convert LinkApp.svelte into a separate island for optimal loading.
+**Toggling Code for Astro Page**
+
+I want to provide code for an Astro page that toggles elements behind flags. I'll propose a "3DDisabled" fallback or skeleton for cases where 3D rendering isn't available. 
+
+For Threlte code, I'll include a `Canvas` setup that utilizes pixel ratio clamping with a snippet like `<Canvas dpr={[1, flags.maxDpr ?? 1.75]}>`. When discussing renderer flags, I might suggest using `powerPreference: 'high-performance'`, and setting `precision: 'mediump'` for mobile.
+
+Also, I need to consider textures, like using KTX2/Basis, and if we can host transcoder `.wasm` files effectively.
+**Loading Assets and Optimization**
+
+I want to ensure the Draco loader is only activated when assets use Draco compression, which seems fine. For GLTF meshes, I'll use `GLTFLoader.setMeshoptDecoder(MeshoptDecoder)`, aiming to load decoders dynamically when the corresponding flag is true.
+
+I should consider deduplicating materials and geometry, possibly using `useGraph`. For crates, I’ll recommend using Three's `InstancedMesh` to propose instancing the crate mesh, while also looking into `Instances` from Threlte for easier mesh handling.
+
+Additionally, optimizing LOD with bounding boxes and examining frustum culling will be key, especially for small UI elements. Lastly, I plan to use throttling in camera/render updates by implementing reactive invalidation.
+**Managing Asset Loading and Placement**
+
+I’m considering using `<Suspense>` along with `prepareScene` to load assets efficiently. Threlte 8 offers `<T>` for memoization of props, which seems useful for creating Three.js objects. I might propose using `const memo = $state(...)` and demonstrate it with `<T.Mesh geometry={memoGeometry} material={memoMaterial} />`.
+
+For caching heavy `BufferGeometry`, employing Svelte 5 runes and `$derived.by(() => ...)` could be a better approach, along with utilizing an asset manager to store loaded caches. 
+
+I also need to improve the placement in `crateController`, possibly using Poisson-disc sampling for crate placement around the dragon while ensuring optimal spacing and adjusting for mobile constraints.
+[2025-09-12T07:56:48] codex
+**Toggling Code for Astro Page**
+
+I want to provide code for an Astro page that toggles elements behind flags. I'll propose a "3DDisabled" fallback or skeleton for cases where 3D rendering isn't available. 
+
+For Threlte code, I'll include a `Canvas` setup that utilizes pixel ratio clamping with a snippet like `<Canvas dpr={[1, flags.maxDpr ?? 1.75]}>`. When discussing renderer flags, I might suggest using `powerPreference: 'high-performance'`, and setting `precision: 'mediump'` for mobile.
+
+Also, I need to consider textures, like using KTX2/Basis, and if we can host transcoder `.wasm` files effectively.
+[2025-09-12T07:56:48] codex
+**Loading Assets and Optimization**
+
+I want to ensure the Draco loader is only activated when assets use Draco compression, which seems fine. For GLTF meshes, I'll use `GLTFLoader.setMeshoptDecoder(MeshoptDecoder)`, aiming to load decoders dynamically when the corresponding flag is true.
+
+I should consider deduplicating materials and geometry, possibly using `useGraph`. For crates, I’ll recommend using Three's `InstancedMesh` to propose instancing the crate mesh, while also looking into `Instances` from Threlte for easier mesh handling.
+
+Additionally, optimizing LOD with bounding boxes and examining frustum culling will be key, especially for small UI elements. Lastly, I plan to use throttling in camera/render updates by implementing reactive invalidation.
+[2025-09-12T07:56:48] codex
+**Managing Asset Loading and Placement**
+
+I’m considering using `<Suspense>` along with `prepareScene` to load assets efficiently. Threlte 8 offers `<T>` for memoization of props, which seems useful for creating Three.js objects. I might propose using `const memo = $state(...)` and demonstrate it with `<T.Mesh geometry={memoGeometry} material={memoMaterial} />`.
+
+For caching heavy `BufferGeometry`, employing Svelte 5 runes and `$derived.by(() => ...)` could be a better approach, along with utilizing an asset manager to store loaded caches. 
+
+I also need to improve the placement in `crateController`, possibly using Poisson-disc sampling for crate placement around the dragon while ensuring optimal spacing and adjusting for mobile constraints.
+**Goals**
+
+- Reduce initial JS and GL payload while preserving visuals.
+- Improve runtime FPS and interaction latency, especially on mobile GPUs.
+- Ship all changes behind flags to A/B test and fall back safely.
+
+**Flag Harness**
+
+- Flags source: URL params (`?ab=1&maxDpr=1.5`), localStorage (`threlteFlags`), and `import.meta.env.PUBLIC_*`.
+- Merge order: URL → localStorage → env → defaults.
+- Expose `flags` to `index.astro` and `LinkApp.svelte` to gate features.
+
+Code: flag util
+```ts
+// website/src/lib/flags.ts
+export type Flags = {
+  ab?: boolean;            // enable experiment
+  maxDpr?: number;         // clamp DPR (e.g., 1.5)
+  idleLoad3D?: boolean;    // defer 3D to idle/visible
+  instancing?: boolean;    // instanced crates
+  dynamicRes?: boolean;    // auto DPR under load
+  meshopt?: boolean;       // GLTF MeshoptDecoder
+  draco?: boolean;         // GLTF Draco
+  ktx2?: boolean;          // Basis/KTX2 textures
+  lowShadows?: boolean;    // smaller maps/fewer casters
+  fx?: boolean;            // Fireball/effects toggle
+  lod?: boolean;           // LOD for crates/dragon
+  mobileTopN?: number;     // cap crates on small viewports
+};
+export function getFlags(): Flags {
+  const url = new URLSearchParams(window.location.search);
+  const fromUrl = Object.fromEntries(url.entries());
+  const fromLs = JSON.parse(localStorage.getItem('threlteFlags') ?? '{}');
+  const fromEnv = {
+    ab: import.meta.env.PUBLIC_AB === '1',
+    maxDpr: Number(import.meta.env.PUBLIC_MAX_DPR ?? '0') || undefined,
+  };
+  return { idleLoad3D: true, draco: true, ...fromEnv, ...fromLs, ...fromUrl };
+}
+```
+
+Code: A/B in Astro
+```astro
+---
+// website/src/pages/index.astro
+const flags = Astro.request.url.searchParams.get('ab') === '1';
+import LinkApp from '../components/svelte/LinkApp.svelte';
+---
+{ /* SSR list fallback to ensure contentful TTFB */ }
+{links.map(l => <a href={l.url} class="sr-only">{l.title}</a>)}
+
+{flags
+  ? <LinkApp client:visible links={links} flags={{ ab: true }} />
+  : <LinkApp client:idle links={links} flags={{ ab: false }} />
+}
+```
+
+---
+
+**Prioritized Plan**
+
+1) Quick Wins (safe, default-on if ab=false)
+- Clamp device pixel ratio
+  - Canvas `dpr={[1, flags.maxDpr ?? 1.75]}` to cap GPU cost.
+- Defer non-critical modules
+  - Load 3D on `client:visible` or `client:idle`; lazy-load FX (Fireball), audio, and heavy helpers via dynamic import.
+- Renderer lean defaults
+  - `powerPreference="high-performance"`, `stencil={false}`, `alpha={true}`, `precision="mediump"` on mobile, `logarithmicDepthBuffer={false}`.
+- Shadow budget
+  - Reduce `shadow.mapSize` to 1024 or disabled for crates; only dragon casts/receives shadows if needed.
+- Texture budgets
+  - Limit `anisotropy` to 2–4 on mobile; ensure `RGBE`/HDR not used; use sRGB output only.
+- Preload small essentials
+  - Preload 1 small LOD of dragon/crate icons; defer full-res GLTF till first interaction or visibility.
+
+2) Medium-Risk (toggleable via flags.ab)
+- Dynamic resolution
+  - Adjust DPR at runtime based on FPS budget (target 55–60). Only when `flags.dynamicRes`.
+- Instanced crates
+  - Replace N identical crate meshes with `Instances/Instance` for 10–50× fewer draw calls.
+- Meshopt + KTX2 on demand
+  - Serve decoders from `/decoders/` and wire GLTFLoader only when flags enabled.
+- Frustum culling & LOD
+  - Ensure crates/dragon use frustum culling; add `LOD` for dragon and distant crates.
+- Idle tasks/tweens gating
+  - Pause Threlte tasks when offscreen/tab hidden and resume on interaction.
+
+3) Advanced (optional, off by default)
+- On-demand rendering
+  - Switch to `invalidate()`-driven renders: render only on interaction or animation; falls back to RAF when moving.
+- BVH raycasting
+  - three-mesh-bvh accelerated raycast for dragon if raycasting dominates; gated by `flags.bvh`.
+- Texture pipeline overhaul
+  - Convert hero textures to KTX2 Basis; atlas UI textures; bake AO for crates to remove shadow reliance.
+- Static image fallback on constrained GPUs
+  - `client:media="(min-width: 768px)"` for 3D; image hero on smaller screens.
+
+---
+
+**Threlte Practices**
+
+- Lazy components
+  - Dynamic import heavy subtrees: Fireball, postprocessing, model packs.
+```svelte
+<script>
+  export let flags; let Fireball;
+  $effect.pre(async () => { if (flags.fx) Fireball = (await import('./effects/Fireball.svelte')).default; });
+</script>
+{svelte:component this={Fireball} />
+```
+
+- Suspend asset load
+  - Wrap GLTF/textures in `<Suspense>` and show lightweight placeholder to unblock interactivity.
+```svelte
+<Suspense fallback={<T.Group />}>
+  <GLTF src="/models/dragon.glb" />
+</Suspense>
+```
+
+- Tasks pause/resume
+```svelte
+<script>
+  import { useTask } from '@threlte/core';
+  let running = $state(false);
+  const stop = useTask((ctx) => {
+    if (!running) return;
+    // animation steps...
+  });
+  function onFocus() { running = true; }
+  function onBlur() { running = false; }
+</script>
+<div on:mouseenter={onFocus} on:mouseleave={onBlur} />
+```
+
+- `<T>` memoization
+  - Create and reuse materials/geometries once; store in module scope or `$state` cache.
+```svelte
+<script>
+  import { T } from '@threlte/core';
+  const mat = $state(new THREE.MeshStandardMaterial({ metalness: .1, roughness: .9 }));
+[2025-09-12T07:57:59] ERROR: stream error: stream disconnected before completion: Transport error: error decoding response body; retrying 2/5 in 384ms…
+
+[2025-09-12T07:58:08] thinking
+
+**Planning document preparation**
+
+I'm working on creating a planning document that outlines ordered steps, code snippets, a metrics checklist, and a migration plan. The user mentioned that the environment is in read-only mode, so we can't modify anything, but we can still read files for context. The main deliverable is the plan itself, which needs to guarantee safety and minimal risk. I’ll include specific examples and metrics verification while ensuring it remains cohesive.
+**Documenting sectional deliverables**
+
+I’m preparing to deliver a document with various sections. The overview will cover goals and constraints. For Quick Wins, I'll list actionable items without visual changes, including code snippets. One strategy is to split heavy 3D into a separate lazily loaded island using Astro/Svelte hydration techniques. I'll explore optimizing the Threlte runtime, managing pixel ratios, and pausing tasks when a tab is hidden. Lastly, I'll suggest using `<Suspense>` for lazy loading GLTF and effects while memoizing materials and geometries.
+**Optimizing materials and performance**
+
+I'm focusing on improving our project by deduplicating materials and ensuring proper metalness and roughness settings. Frustum culling should be enabled, and I need to set matrixAutoUpdate to false for static objects. I'll ensure that particle systems are prewarmed and optimize light computation. For medium-risk toggles, I'll suggest texture compression using KTX2/Basis and exploring instancing for crates. Shadow optimization is essential too, including reducing shadow map sizes and introducing LODs for distant objects. I’ll also monitor frame times for dynamic resolution adjustments and ensure a WebGL1 fallback for older mobile devices.
+**Refining camera controls and performance**
+
+I’m considering debouncing camera controls and ensuring that throttling for camera updates is properly implemented. It’s essential to limit skeleton updates or skinning for any features that aren't being used. For advanced options, I’m thinking about moving heavy code into a web worker using three-stdlib, though that seems a bit challenging. Additionally, I could explore utilizing reactivity granularity in Svelte 5 to enhance performance further. These adjustments aim to improve the overall responsiveness and efficiency of the application.
+**Planning for optimization and metrics**
+
+I’m creating a plan focused on improving performance, including minimal invalidations with `$effect.pre` and asset streaming using progressive glTF. 
+
+Baking ambient occlusion and lighting into textures while disabling real-time lights is key. I'll also explore Threlte-specific patterns and lazy loading components.
+
+For placement, I'll utilize Poisson disk sampling and adaptive density for better layout across different screen sizes. 
+
+To capture essential metrics, I plan on measuring performance metrics like First Interaction Time and network usage. 
+
+I’ll outline a migration plan with phased toggles for various features and ensure clear code snippets for implementation.
+[2025-09-12T07:58:52] codex
+**Documenting sectional deliverables**
+
+I’m preparing to deliver a document with various sections. The overview will cover goals and constraints. For Quick Wins, I'll list actionable items without visual changes, including code snippets. One strategy is to split heavy 3D into a separate lazily loaded island using Astro/Svelte hydration techniques. I'll explore optimizing the Threlte runtime, managing pixel ratios, and pausing tasks when a tab is hidden. Lastly, I'll suggest using `<Suspense>` for lazy loading GLTF and effects while memoizing materials and geometries.
+[2025-09-12T07:58:52] codex
+**Optimizing materials and performance**
+
+I'm focusing on improving our project by deduplicating materials and ensuring proper metalness and roughness settings. Frustum culling should be enabled, and I need to set matrixAutoUpdate to false for static objects. I'll ensure that particle systems are prewarmed and optimize light computation. For medium-risk toggles, I'll suggest texture compression using KTX2/Basis and exploring instancing for crates. Shadow optimization is essential too, including reducing shadow map sizes and introducing LODs for distant objects. I’ll also monitor frame times for dynamic resolution adjustments and ensure a WebGL1 fallback for older mobile devices.
+[2025-09-12T07:58:52] codex
+**Refining camera controls and performance**
+
+I’m considering debouncing camera controls and ensuring that throttling for camera updates is properly implemented. It’s essential to limit skeleton updates or skinning for any features that aren't being used. For advanced options, I’m thinking about moving heavy code into a web worker using three-stdlib, though that seems a bit challenging. Additionally, I could explore utilizing reactivity granularity in Svelte 5 to enhance performance further. These adjustments aim to improve the overall responsiveness and efficiency of the application.
+[2025-09-12T07:58:52] codex
+**Planning for optimization and metrics**
+
+I’m creating a plan focused on improving performance, including minimal invalidations with `$effect.pre` and asset streaming using progressive glTF. 
+
+Baking ambient occlusion and lighting into textures while disabling real-time lights is key. I'll also explore Threlte-specific patterns and lazy loading components.
+
+For placement, I'll utilize Poisson disk sampling and adaptive density for better layout across different screen sizes. 
+
+To capture essential metrics, I plan on measuring performance metrics like First Interaction Time and network usage. 
+
+I’ll outline a migration plan with phased toggles for various features and ensure clear code snippets for implementation.
+**Goal & Constraints**
+- Reduce initial load and improve FPS for the 3D homepage without changing visuals/UX.
+- Ship safe, incremental optimizations behind flags for A/B testing.
+- Maintain Svelte 5 runes + Threlte 8, three r0.176, Cloudflare adapter.
+- Focus on LinkApp (1.74MB chunk), Draco present; no KTX2/Meshopt yet.
+
+**Rollout Strategy**
+- Phase 0: Add flags + metrics; no visual change.
+- Phase 1 (Quick Wins): Low-risk, default-on in A/B.
+- Phase 2 (Medium): Toggle default-off; flip after validation.
+- Phase 3 (Advanced): Optional experiments; keep behind flags.
+
+---
+
+**Phase 1 — Quick Wins (no visual changes)**
+- **Split the island**: Make the 3D scene a lazy Astro island and defer non-essential effects.
+  - `index.astro`: mount LinkApp with `client:visible` and a small intersection threshold.
+  - Defer Fireball/effects and debug tooling as lazy components.
+
+- **Clamp DPR**: Cap pixel ratio; lower on low-end devices for free FPS.
+  - Set `dpr = Math.min(devicePixelRatio, 1.5)` (desktop), `1.0–1.25` (mobile).
+  - Add dynamic fallback to `1.0` if frame time > 22 ms sustained.
+
+- **Renderer init**: Prefer speed-friendly flags.
+  - `powerPreference: 'high-performance'`, `antialias: false` (mobile), `alpha: true` if compositing, `logarithmicDepthBuffer: false` unless absolutely needed.
+  - Keep toneMapping disabled as-is and avoid postprocessing during initial paint.
+
+- **Pause work when hidden/idle**: Stop tasks/animations when the canvas isn’t visible or on blur.
+  - Use `document.visibilityState`, `Page Visibility`, and hover/focus gating for heavy loops.
+
+- **Memoize and reuse**: One-time-create materials, geometries, and textures.
+  - Use `<T>` and module-level caches to avoid per-frame churn.
+  - Ensure `matrixAutoUpdate = false` for static objects; call `updateMatrix()` once.
+
+- **Frustum culling & shadows**: Ensure frustum culling is on; reduce shadow cost by default.
+  - Only `receiveShadow` on ground; avoid `castShadow` for crates unless visually required.
+  - Keep shadow map small initially (e.g., 512–1024) and PCF (not soft) as baseline.
+
+- **Preload tiny placeholders**: Wrap heavy GLTF/textures in `<Suspense>` with lightweight fallbacks to unblock interactivity.
+
+Code snippets
+
+- Astro island split
+```astro
+---
+// index.astro
+import LinkApp from '@components/svelte/LinkApp.svelte';
+const flags = Astro.url.searchParams; // parse into an object
+---
+<div>
+  <LinkApp client:visible client:media="(min-width: 0px)" {flags} />
+</div>
+```
+
+- Threlte Canvas renderer config + DPR clamp
+```svelte
+<script lang="ts">
+  import { Canvas, useRenderer } from '@threlte/core';
+  export let flags = {};
+  const dprCap = flags.dprCap ?? (matchMedia('(max-width: 768px)').matches ? 1.25 : 1.5);
+  const dpr = Math.min(window.devicePixelRatio ?? 1, dprCap);
+
+  let renderer;
+  $effect(() => {
+    if (!renderer) return;
+    renderer.setPixelRatio(dpr);
+    renderer.shadowMap.enabled = !!flags.shadows; // default false in Phase 1
+    renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+  });
+</script>
+
+<Canvas
+  on:created={(e) => (renderer = e.detail.renderer)}
+  antialias={!!flags.aa && !/mobile/i.test(navigator.userAgent)}
+  powerPreference="high-performance"
+  logarithmicDepthBuffer={false}
+  dpr={dpr}
+/>
+```
+
+- Pause/resume tasks
+```svelte
+<script lang="ts">
+  import { useTask } from '@threlte/core';
+  let running = $state(true);
+  const stop = useTask(() => {
+    if (!running) return;
+    // animation logic
+  });
+  const setRunning = (v) => (running = v);
+  onMount(() => {
+    const onVis = () => setRunning(document.visibilityState === 'visible');
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  });
+</script>
+
+<div on:mouseenter={() => setRunning(true)} on:mouseleave={() => setRunning(false)} />
+```
+
+- Suspense for heavy GLTF
+```svelte
+<Suspense fallback={<T.Group />}>
+  <GLTF src="/models/dragon.glb" />
+</Suspense>
+```
+
+- Memoized materials/geometries
+```svelte
+<script lang="ts">
+  import { T } from '@threlte/core';
+  import * as THREE from 'three';
+  const groundMat = $state(new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0 }));
+  const groundGeo = $state(new THREE.PlaneGeometry(100, 100));
+</script>
+
+<T.Mesh material={groundMat} geometry={groundGeo} receiveShadow />
+```
+
+---
+
+**Phase 2 — Medium (toggleable defaults-off)**
+- **KTX2 Basis textures**: Compress textures to KTX2; enable transcoder when `flags.ktx2`.
+  - Use KTX2Loader path to wasm; glTF with KHR_texture_basisu.
+```svelte
+<script lang="ts">
+  import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
+  import { useRenderer } from '@threlte/core';
+  export let flags;
+  let renderer;
+  let ktx2;
+  $effect.pre(async () => {
+    if (!flags?.ktx2 || !renderer) return;
+    ktx2 = new KTX2Loader().setTranscoderPath('/basis/').detectSupport(renderer);
+  });
+  // Pass `ktx2` to your texture/gltf loading pipeline when available
+</script>
+```
+
+- **MeshoptDecoder**: Use meshopt glTF compression when `flags.meshopt`.
+```svelte
+<script>
+  export let flags;
+  let MeshoptDecoder;
+  onMount(async () => {
+    if (flags?.meshopt) {
+      MeshoptDecoder = (await import('meshoptimizer/meshopt_decoder.wasm?url')).default;
+    }
+  });
+  // Supply to GLTFLoader if using custom loader, e.g. loader.setMeshoptDecoder(MeshoptDecoder);
+</script>
+```
+
+- **Instanced crates**: Batch identical crate meshes as `InstancedMesh` when `flags.instancing`.
+  - Store transforms/colors per crate; update matrices once.
+```svelte
+<script>
+  import * as THREE from 'three'; import { T } from '@threlte/core';
+  export let crates; export let flags;
+  const count = crates.length;
+  const mat = $state(new THREE.MeshStandardMaterial({ roughness: .8 }));
+  const geo = $state(new THREE.BoxGeometry(1,1,1));
+  const matrices = $derived.by(() => crates.map(c => new THREE.Matrix4().compose(c.pos, c.quat, c.scale)));
+</script>
+
+{#if flags.instancing}
+  <T.InstancedMesh args={[geo, mat, count]} on:created={(e) => {
+    const m = e.detail.object;
+    matrices.forEach((mat4, i) => m.setMatrixAt(i, mat4));
+    m.instanceMatrix.needsUpdate = true;
+  }} castShadow={false} receiveShadow={false} />
+{:else}
+  {#each crates as c}
+    <T.Mesh position={c.pos} quaternion={c.quat} scale={c.scale} geometry={geo} material={mat} />
+  {/each}
+{/if}
+```
+
+- **Shadow tuning**: When `flags.shadowsLow`, cap shadow size, single directional light, no crate shadows, only hero cast.
+  - Try `shadow.mapSize.set(512,512)`, `light.shadow.camera.near = 5`, `far = 50`.
+
+- **Dynamic resolution**: Adjust DPR based on moving average of RAF delta when `flags.dynRes`.
+```ts
+let targetMs = 16.7, dprMin=0.8, dprMax=dprCap, avg=16.7;
+useTask(() => {
+  avg = avg * 0.9 + Math.min(50, performance.now() - last) * 0.1;
+  if (avg > 22 && renderer.getPixelRatio() > dprMin) renderer.setPixelRatio(Math.max(dprMin, renderer.getPixelRatio() - 0.1));
+  else if (avg < 15 && renderer.getPixelRatio() < dprMax) renderer.setPixelRatio(Math.min(dprMax, renderer.getPixelRatio() + 0.1));
+});
+```
+
+- **LOD for crates**: Precompute simplified crate meshes; switch based on camera distance when `flags.lod`.
+  - Use `THREE.LOD` with 2–3 levels; or swap materials to `MeshBasicMaterial` beyond threshold.
+
+---
+
+**Phase 3 — Advanced (optional experiments)**
+- **Baked lighting**: Bake AO/light into textures; use 1–2 lights only, or all unlit `MeshBasicMaterial` for crates; toggle via `flags.baked`.
+- **Worker decoding**: Offload Draco/KTX2 decoding to workers; use loaders’ built-in WASM/worker mode; toggle `flags.workerDecode`.
+- **OffscreenCanvas + post**: Move post to OffscreenCanvas and disable entirely on mobile; toggle `flags.postFx`.
+
+---
+
+**Threlte‑Specific Practices**
+- **useTask discipline**: Prefer 1–2 core tasks; avoid per-entity tasks. Pause tasks offscreen.
+- **Lazy components**: Dynamically import heavy components/effects.
+```svelte
+<script>
+  export let flags;
+  let Fireball;
+  $effect.pre(async () => {
+    if (!flags.effects) return;
+    Fireball = (await import('./scene/effects/Fireball.svelte')).default;
+  });
+</script>
+{#if Fireball}<svelte:component this={Fireball} />{/if}
+```
+- **Suspense everywhere heavy**: Wrap GLTF and texture-heavy nodes.
+- **<T> memoization**: Create/keep Three objects stable; avoid recreating materials in reactive blocks.
+- **Asset manager**: Centralize loaders and caches; prefetch decoders on idle via `requestIdleCallback`.
+
+---
+
+**Crate/Link Placement Improvements**
+Goals: avoid dragon occlusion, keep two-column balance, stable layout across resizes, adaptive density.
+
+- **Occlusion mask**: Compute the dragon’s projected bounding box + margin; forbid placement inside it.
+- **Poisson-disc sampling**: For each column region (left/right), fill with well-spaced positions that avoid the mask and maintain minimum spacing.
+- **Adaptive density**: Fewer crates on small viewports; adjust `minDistance` and column widths based on viewport.
+- **Snap-to-grid**: Round to a grid to keep visual stability; recalc only on breakpoint changes, not every resize pixel.
+
+Code sketch (crateController.calculateLayout)
+```ts
+type Vec2 = [number, number];
+interface LayoutFlags { density?: 'low'|'med'|'high'; avoidOccluder?: boolean; }
+interface Rect { x: number; y: number; w: number; h: number; }
+
+export function calculateLayout(view: { w: number; h: number }, dragonRect: Rect, crates: any[], flags: LayoutFlags) {
+  const margin = 16;
+  const occluder = flags.avoidOccluder !== false
+    ? inflate(dragonRect, margin)
+    : { x: -Infinity, y: -Infinity, w: 0, h: 0 };
+
+  const density = flags.density ?? (view.w < 768 ? 'low' : 'med');
+  const minDist = density === 'low' ? 64 : density === 'high' ? 32 : 48;
+  const grid = 16;
+
+  const leftRegion = { x: grid, y: grid, w: view.w * 0.4 - 2*grid, h: view.h - 2*grid };
+  const rightRegion = { x: view.w * 0.6 + grid, y: grid, w: view.w * 0.4 - 2*grid, h: view.h - 2*grid };
+
+  const left = poissonFill(leftRegion, minDist, occluder);
+  const right = poissonFill(rightRegion, minDist, occluder);
+
+  const positions = interleave(left, right).slice(0, crates.length)
+    .map(p => snap(p, grid))
+    .map((p, i) => ({ id: crates[i].id, pos: [p[0], crateHeight(crates[i]), p[1]] as [number, number, number] }));
+
+  return positions;
+}
+
+function poissonFill(region: Rect, r: number, forbid: Rect): Vec2[] {
+  const pts: Vec2[] = [];
+  const active: Vec2[] = [];
+  const k = 30;
+  const inForbid = (x: number, y: number) => x >= forbid.x && x <= forbid.x + forbid.w && y >= forbid.y && y <= forbid.y + forbid.h;
+  const dist2 = (a: Vec2, b: Vec2) => (a[0]-b[0])**2 + (a[1]-b[1])**2;
+
+  const first: Vec2 = [rand(region.x, region.x+region.w), rand(region.y, region.y+region.h)];
+  if (!inForbid(first[0], first[1])) { pts.push(first); active.push(first); }
+
+  while (active.length) {
+    const idx = (Math.random() * active.length) | 0;
+    const center = active[idx];
+    let found = false;
+    for (let i = 0; i < k; i++) {
+      const a = Math.random() * 2 * Math.PI;
+      const m = rand(r, 2*r);
+      const p: Vec2 = [center[0] + Math.cos(a) * m, center[1] + Math.sin(a) * m];
+      if (p[0] < region.x || p[0] > region.x+region.w || p[1] < region.y || p[1] > region.y+region.h) continue;
+      if (inForbid(p[0], p[1])) continue;
+      if (pts.every(q => dist2(p, q) >= r*r)) { pts.push(p); active.push(p); found = true; break; }
+    }
+    if (!found) active.splice(idx, 1);
+  }
+  return pts;
+}
+
+const rand = (a: number, b: number) => a + Math.random() * (b - a);
+const snap = (p: Vec2, g: number): Vec2 => [Math.round(p[0] / g) * g, Math.round(p[1] / g) * g];
+const inflate = (r: Rect, m: number): Rect => ({ x: r.x - m, y: r.y - m, w: r.w + 2*m, h: r.h + 2*m });
+const interleave = <T,>(a: T[], b: T[]) => a.reduce<T[]>((acc, v, i) => (acc.push(v, b[i]), acc), []).filter(Boolean as any);
+```
+
+- Apply transforms to 3D crates, preserving current two-column UX.
+- For mobile: widen occluder margin, lower density, and shrink crate scale slightly to avoid clutter.
+
+---
+
+**Asset Pipeline Changes**
+- **Textures**: Convert PNG/JPEG to KTX2 (Basis UASTC) with mipmaps; author glTFs with `KHR_texture_basisu`. Keep originals as fallback behind flag.
+- **Meshes**: Meshopt compress GLTF; keep Draco decode (works together). Merge static meshes where possible; dedupe materials.
+- **Audio**: Use OGG/MP3 and stream or lazy-load on interaction; do not bundle.
+- **GLTF cleanup**: Remove unused nodes/animations; bake transforms; ensure tangents only if needed; drop extras to shrink JSON.
+- **Decoders**: Host `basis_transcoder.*` and `meshopt_decoder.*` on a CDN path; load only when flags enabled.
+
+---
+
+**Renderer/Camera Settings**
+- **Renderer**: As above; set output color space SRGB; no tone mapping; cap DPR; antialias off on mobile.
+- **Camera**: Keep existing throttle. Prevent frequent `camera.updateProjectionMatrix()` calls; only on breakpoint, not on every resize.
+- **Lights**: Prefer 1 directional + ambient; low shadow resolution by default; baked/look-up if Phase 3 enabled.
+
+---
+
+**Threlte Flow Tuning**
+- **Preload on idle**: On `requestIdleCallback`, preload decoders; prime small LODs.
+- **Hydration slicing**: Consider hydrating link list UI separately from 3D island; keep page TTI fast.
+- **Svelte 5 runes**: Use `$effect.pre` for lazy imports; `$state` for caches; avoid `$effect` that touches Three objects every render.
+
+---
+
+**Flags & Migration Plan**
+- **Flags object**: Wire flags via `index.astro` from query params, cookies, or server props.
+  - Phase 1: `dprCap`, `pauseHidden`, `lazyEffects`, `splitIsland`, `shadows=false`.
+  - Phase 2: `ktx2`, `meshopt`, `instancing`, `shadowsLow`, `dynRes`, `lod`.
+  - Phase 3: `baked`, `workerDecode`, `postFx`.
+- **Defaults**: Phase 1 on; Phase 2+3 off.
+- **Rollout**: A/B by percent or query param; log flags with metrics.
+
+Example flag parsing
+```ts
+// index.astro
+const q = Object.fromEntries(Astro.url.searchParams.entries());
+const flags = {
+  dprCap: Number(q.dprCap ?? 1.5),
+  pauseHidden: q.pauseHidden !== '0',
+  lazyEffects: q.effects === '1',
+  ktx2: q.ktx2 === '1',
+  meshopt: q.meshopt === '1',
+  instancing: q.instancing === '1',
+  dynRes: q.dynRes === '1',
+  shadows: q.shadows === '1',
+  shadowsLow: q.shadowsLow === '1',
+  lod: q.lod === '1',
+  baked: q.baked === '1'
+};
+```
+
+---
+
+**Metrics & Verification**
+- **Build size**: Track LinkApp chunk size; use Rollup visualizer or source-map-explorer to confirm splitting and size reductions.
+- **FIT (First Interaction Time)**: Timestamp from navigation to first accepted pointerdown in 3D area; log `ready` when scene is interactive (camera responds, main model visible).
+- **FPS**: RAF-based moving average; target ≥ 55–60 on desktop, ≥ 45 on mid mobile. Log per session.
+- **GPU time**: If `EXT_disjoint_timer_query_webgl2` available, measure draw timings for a few frames (sampled).
+- **Memory**: `performance.memory` (Chrome) and `renderer.info.memory` for geometries/textures.
+- **Network**: Total transferred bytes for 3D assets; time-to-first-frame of 3D canvas.
+- **A/B logging**: Emit metrics with flag set; compare medians and p50/p95 across cohorts.
+- **Regression checks**: Visual diffs on key viewports; ensure no occlusion overlap regresses; verify interaction parity.
+
+Minimal metrics snippet
+```ts
+const metrics = { tStart: performance.now(), flags };
+function mark(name) { metrics[name] = performance.now() - metrics.tStart; }
+function report() { navigator.sendBeacon('/metrics', JSON.stringify(metrics)); }
+
+// after first model visible
+mark('firstModel');
+// after camera interactive
+mark('interactive');
+// avg FPS
+let frames=0, start=performance.now();
+function tick() { frames++; requestAnimationFrame(tick); }
+requestAnimationFrame(tick);
+setTimeout(() => { metrics.fps = (frames * 1000) / (performance.now() - start); report(); }, 3000);
+```
+
+---
+
+**Prioritized Checklist**
+- Quick Wins
+  - Split 3D island and lazy-load effects.
+  - Clamp DPR; dynamic downscale on load spikes.
+  - Pause tasks when not visible; memoize materials/geometries.
+  - Reduce shadows to ground-only; verify frustum culling.
+- Medium
+  - Enable KTX2, Meshopt behind flags; re-export assets.
+  - Instanced crates; shadow-low preset; dynamic resolution.
+  - LOD for crates beyond threshold.
+- Advanced
+  - Baked lighting option; worker decoding; offscreen post as experiment.
+
+If you’d like, I can map these items to specific files (LinkApp.svelte, BaseScene.svelte, StackedLinks.svelte, crateController[2025-09-12T08:00:31] ERROR: stream error: stream disconnected before completion: Transport error: error decoding response body; retrying 3/5 in 737ms…
+
+[2025-09-12T08:00:57] thinking
+
+**Implementing InstancedMesh Techniques**
+
+I see that I can work on proper bounding spheres for InstancedMesh. Instancing for crates can be effective by unifying geometry and material to draw many crate meshes efficiently. I could showcase building instances in Svelte, using T.InstancedMesh from Threlte or a standard method. For placement improvements, I think about using Poisson disk placement around the dragon silhouette to avoid occlusion while maintaining proper categories and projecting 2D data to 3D. I'll provide relevant code for calculating positions and ensuring sizes and spacing adjust based on device specs.
+**Setting Up Metrics for Performance Measurement**
+
+I want to define instrumentation steps for various metrics. For the network, I can measure 3D island chunk size using custom resource timing and filter filenames with performance.getEntriesByType('resource'). I’ll track the First Interaction Time by timing pointer events or the first frame rendered, using Threlte's events and marking them with requestAnimationFrame. For FPS, maybe I can count using rAF and explore WebGL profiling with timer queries. Lastly, I want to monitor memory using performance.memory and track draw calls and triangles in three.js. A/B testing can use query parameters or localStorage for feature flags.
+**Merging Flags and Performance Optimization Steps**
+
+I need to provide a snippet for merging flags. For Cloudflare Edge, flags can be passed via cookies or query parameters, so hydration must use the same flags. I'll analyze build sizes using Astro and the Rollup visualizer while tracking changes in LinkApp chunk sizes and setting budgets.
+
+For visual equivalence, I plan to capture screenshots or conduct manual checks. I should outline a migration plan across several stages, focusing on quick wins and asset pipeline changes. It’s also essential to implement fallbacks for older mobile GPUs and initialize the renderer with specific flags for performance adjustments.
+**Optimizing Frame Loop and Rendering**
+
+For optimizing the frame loop, I plan to use `useTask` with a 'pre' priority to lessen reactivity and set `invalidateFrameloop` to true. I'll look into demand-driven rendering, where we only render during interactions or when animations are active. Threlte supports an `invalidate(true)` call for rendering, and I might consider using `frameloop='demand'` in r3f.
+
+I'll include a snippet to pause rendering if no animations are running and suggest prewarming GLTF decoders by importing them early. Additionally, I want to explore progressive GLTF streaming and asset preloading via the onIntersect method for better efficiency. Finally, migrating to Text SDF for labels instead of geometry could be beneficial, possibly using Troika Text for 2D overlays.
+**Structuring the Document**
+
+I'm structuring the document into clear sections to enhance readability and organization. First, I'll include a brief section on goals and constraints. Next, in "Flags and Experiment Harness," I'll provide an implementation snippet. The "Quick Wins" section will list bullets with code snippets representing changes that don't alter visuals. 
+
+Then, "Medium-Risk" will include toggleable options with additional snippets. The "Advanced" section will suggest optional experiments. I'll also cover Threlte-specific practices, a Three.js settings checklist, and detail the crate/link placement plan with code sketches for updating the crateController.
+
+In "Metrics and Verification," I'll include relevant code. Lastly, the "Migration Plan and Success Criteria" will outline staged steps and targets. Additionally, I’ll ensure to use Svelte 5 runes syntax, demonstrating components like `$state`, `$derived`, and `$effect.pre`, while importing from '@threlte/core'. I'll mention gating in LinkApp.svelte for flags as well. Let's craft this!
+[2025-09-12T08:01:24] codex
+**Setting Up Metrics for Performance Measurement**
+
+I want to define instrumentation steps for various metrics. For the network, I can measure 3D island chunk size using custom resource timing and filter filenames with performance.getEntriesByType('resource'). I’ll track the First Interaction Time by timing pointer events or the first frame rendered, using Threlte's events and marking them with requestAnimationFrame. For FPS, maybe I can count using rAF and explore WebGL profiling with timer queries. Lastly, I want to monitor memory using performance.memory and track draw calls and triangles in three.js. A/B testing can use query parameters or localStorage for feature flags.
+[2025-09-12T08:01:24] codex
+**Merging Flags and Performance Optimization Steps**
+
+I need to provide a snippet for merging flags. For Cloudflare Edge, flags can be passed via cookies or query parameters, so hydration must use the same flags. I'll analyze build sizes using Astro and the Rollup visualizer while tracking changes in LinkApp chunk sizes and setting budgets.
+
+For visual equivalence, I plan to capture screenshots or conduct manual checks. I should outline a migration plan across several stages, focusing on quick wins and asset pipeline changes. It’s also essential to implement fallbacks for older mobile GPUs and initialize the renderer with specific flags for performance adjustments.
+[2025-09-12T08:01:24] codex
+**Optimizing Frame Loop and Rendering**
+
+For optimizing the frame loop, I plan to use `useTask` with a 'pre' priority to lessen reactivity and set `invalidateFrameloop` to true. I'll look into demand-driven rendering, where we only render during interactions or when animations are active. Threlte supports an `invalidate(true)` call for rendering, and I might consider using `frameloop='demand'` in r3f.
+
+I'll include a snippet to pause rendering if no animations are running and suggest prewarming GLTF decoders by importing them early. Additionally, I want to explore progressive GLTF streaming and asset preloading via the onIntersect method for better efficiency. Finally, migrating to Text SDF for labels instead of geometry could be beneficial, possibly using Troika Text for 2D overlays.
+[2025-09-12T08:01:24] codex
+**Structuring the Document**
+
+I'm structuring the document into clear sections to enhance readability and organization. First, I'll include a brief section on goals and constraints. Next, in "Flags and Experiment Harness," I'll provide an implementation snippet. The "Quick Wins" section will list bullets with code snippets representing changes that don't alter visuals. 
+
+Then, "Medium-Risk" will include toggleable options with additional snippets. The "Advanced" section will suggest optional experiments. I'll also cover Threlte-specific practices, a Three.js settings checklist, and detail the crate/link placement plan with code sketches for updating the crateController.
+
+In "Metrics and Verification," I'll include relevant code. Lastly, the "Migration Plan and Success Criteria" will outline staged steps and targets. Additionally, I’ll ensure to use Svelte 5 runes syntax, demonstrating components like `$state`, `$derived`, and `$effect.pre`, while importing from '@threlte/core'. I'll mention gating in LinkApp.svelte for flags as well. Let's craft this!
+**Goals And Constraints**
+- Reduce initial load time and improve FPS with minimal visual change.
+- Keep all changes behind flags for A/B; default to current behavior.
+- Maintain Cloudflare/Edge hydration safety and support older mobile GPUs.
+
+**Feature Flags Harness**
+- Centralize flags; merge from URL, localStorage, server defaults. Persist cohort across sessions.
+
+```ts
+// website/src/lib/flags.ts
+export type Flags = {
+  maxDPR?: number; dynamicDPR?: boolean; demandFrame?: boolean;
+  lazyEffects?: boolean; gltfMeshopt?: boolean; gltfKtx2?: boolean; draco?: boolean;
+  instancedCrates?: boolean; lodCrates?: boolean; mobileLite?: boolean;
+  shadowPreset?: 'off' | 'low' | 'med';
+};
+const defaults: Flags = { maxDPR: 1.5, dynamicDPR: true, demandFrame: true, lazyEffects: true, draco: true, shadowPreset: 'low' };
+export function resolveFlags(server?: Partial<Flags>) {
+  const url = new URLSearchParams(location.search);
+  const ls = JSON.parse(localStorage.getItem('flags') || '{}');
+  const merged = { ...defaults, ...server, ...ls };
+  for (const k in defaults) if (url.has(k)) merged[k] = url.get(k) === '1' ? true : url.get(k) === '0' ? false : url.get(k);
+  localStorage.setItem('flags', JSON.stringify(merged));
+  return merged as Flags;
+}
+```
+
+Use in `LinkApp.svelte`:
+```svelte
+<script lang="ts">
+  import { resolveFlags } from '$lib/flags';
+  const flags = $state(resolveFlags());
+</script>
+```
+
+---
+
+**Quick Wins (No Visual Change)**
+- Clamp device pixel ratio
+  - Limit GPU cost on high-DPI displays; default to current visuals when flag off.
+
+```svelte
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { useThrelte } from '@threlte/core';
+  export let flags;
+  const { renderer } = useThrelte();
+  onMount(() => {
+    if (!renderer) return;
+    const clamp = Math.min(window.devicePixelRatio, flags?.maxDPR ?? 1.5);
+    renderer.setPixelRatio(clamp);
+  });
+</script>
+```
+
+- Demand-driven frame loop for idle scenes
+  - Only render on interaction or when animations are active.
+
+```svelte
+<script lang="ts">
+  import { useThrelte, useTask, invalidate } from '@threlte/core';
+  export let flags;
+  let animate = $state(false);
+  // Example: mark animate = true while tweens/particles run
+  useTask((ctx) => {
+    if (!flags?.demandFrame) return;       // keep current loop
+    if (!animate) return;                   // skip frame when idle
+    // ... do per-frame work
+    invalidate();                           // schedule a render
+  });
+  // Any state change should call invalidate() to render a new frame
+</script>
+```
+
+- Lazy-load heavy effects and models
+  - Gate expensive components; render placeholders until ready.
+
+```svelte
+<script lang="ts">
+  export let flags;
+  let FireballCmp = $state();
+  $effect(() => {
+    if (!flags?.lazyEffects) return;
+    import('../scene/effects/Fireball.svelte').then(m => FireballCmp = m.default);
+  });
+</script>
+
+{#if flags?.lazyEffects && FireballCmp}
+  <svelte:component this={FireballCmp} />
+{:else}
+  <!-- lightweight placeholder -->
+  <T.Group />
+{/if}
+```
+
+- Memoize materials/geometries
+  - Avoid re-creating Three objects and reducing invalidations.
+
+```svelte
+<script lang="ts">
+  import * as THREE from 'three';
+  const crateGeom = $state<THREE.BufferGeometry | null>(null);
+  const crateMat = $state<THREE.Material | null>(null);
+  $effect.pre(() => {
+    crateGeom ||= new THREE.BoxGeometry(1,1,1);
+    crateMat ||= new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0.1 });
+  });
+</script>
+<T.Mesh geometry={crateGeom} material={crateMat} />
+```
+
+- Pause tasks when not visible
+  - Suspend animations when canvas not intersecting or tab hidden.
+
+```svelte
+<script lang="ts">
+  import { useTask } from '@threlte/core';
+  let running = $state(true);
+  const stop = useTask(() => { if (!running) return; /* animate */ });
+  const onVisibility = () => running = !document.hidden;
+  onMount(() => { document.addEventListener('visibilitychange', onVisibility); return () => document.removeEventListener('visibilitychange', onVisibility); });
+</script>
+```
+
+- Shadow low preset
+  - Smaller mapSize, single light caster, no contact-soft shadows.
+
+```svelte
+<script>
+  export let flags;
+  const mapSize = flags?.shadowPreset === 'low' ? 512 : 1024;
+</script>
+<T.DirectionalLight castShadow={flags?.shadowPreset !== 'off'}
+  shadow-mapSize-width={mapSize} shadow-mapSize-height={mapSize} />
+```
+
+- Verify frustum culling stays enabled
+  - Ensure `frustumCulled` isn’t disabled globally on crates/dragon.
+
+---
+
+**Medium-Risk (Toggleable)**
+- Dynamic resolution scaling (DPR up/down)
+  - Adjust DPR based on frame time; clamp to `maxDPR`.
+
+```svelte
+<script>
+  import { useThrelte, useTask } from '@threlte/core';
+  export let flags; const { renderer } = useThrelte();
+  const targetMs = 1000 / 60, hysteresis = 3;
+  let avg = $state(0), dpr = $state(Math.min(devicePixelRatio, flags.maxDPR ?? 1.5));
+  useTask((ctx) => {
+    if (!flags.dynamicDPR) return;
+    avg = 0.9 * avg + 0.1 * ctx.delta;     // ema
+    if (avg > targetMs + hysteresis) dpr = Math.max(0.75, dpr - 0.05);
+    else if (avg < targetMs - hysteresis) dpr = Math.min(flags.maxDPR ?? 1.5, dpr + 0.05);
+    renderer.setPixelRatio(dpr);
+  });
+</script>
+```
+
+- Enable decoders: Meshopt + KTX2 (Basis)
+  - Keep Draco; add meshopt for index/geo compression and KTX2 for textures.
+
+```svelte
+<script lang="ts">
+  import { GLTF } from '@threlte/extras';
+  export let flags;
+  const draco = $derived(flags.draco ? { decoderPath: '/decoders/draco/' } : undefined);
+  const meshopt = $derived(flags.gltfMeshopt ? await import('three/examples/jsm/libs/meshopt_decoder.module.js') : undefined);
+  const ktx2 = $derived(flags.gltfKtx2 ? { transcoderPath: '/decoders/basis/' } : undefined);
+</script>
+
+<Suspense fallback={<T.Group />}>
+  <GLTF src="/models/dragon.glb" {draco} {ktx2} {meshopt} />
+</Suspense>
+```
+
+- Instanced crates (batch draw calls)
+  - Unify crate geometry/material; render N instances with a single draw.
+
+```svelte
+<script lang="ts">
+  import * as THREE from 'three';
+  export let flags; export let positions: Array<THREE.Vector3>;
+  const geom = $state(new THREE.BoxGeometry(1,1,1));
+  const mat = $state(new THREE.MeshStandardMaterial({ /* … */ }));
+  let matrix = new THREE.Matrix4();
+</script>
+
+{#if flags.instancedCrates}
+  <T.InstancedMesh args={[geom, mat, positions.length]}>
+    {#each positions as p, i}
+      {@const _ = matrix.compose(p, new THREE.Quaternion(), new THREE.Vector3(1,1,1))}
+      <T.InstancedMeshInstance index={i} matrix={matrix} />
+    {/each}
+  </T.InstancedMesh>
+{:else}
+  {#each positions as p}<T.Mesh position={p} geometry={geom} material={mat} />{/each}
+{/if}
+```
+
+- Crate LOD beyond interaction radius
+  - Use lower poly or billboard past radius; gated by `lodCrates`.
+
+```svelte
+<T.LOD visible={flags.lodCrates}>
+  <T.Mesh position={p} geometry={hiGeom} material={mat} />
+  <T.Mesh position={p} geometry={loGeom} material={mat} distance={12} />
+</T.LOD>
+```
+
+- Shadow tuning
+  - Restrict casters to hero objects; reduce `camera.near/far` for light’s shadow frustum; set `renderer.shadowMap.enabled = flags.shadowPreset !== 'off'`.
+
+---
+
+**Advanced (Optional Experiments)**
+- Baked lighting preset
+  - Bake AO and key light; turn off dynamic shadows; swap to `MeshBasic/Standard` with baked AO map.
+
+- Worker decoding for GLTF
+  - Offload parsing to Web Worker via `three-stdlib` loaders; keep behind flag.
+
+- OffscreenCanvas post-processing (if any effects)
+  - Only on desktop, with fallback to main thread.
+
+- Progressive asset delivery
+  - Split dragon/crates GLBs; preload on canvas intersection and idle time.
+
+---
+
+**Threlte-Specific Practices**
+- `<Suspense>` around all heavy loaders
+  - Unblocks interaction early; provide minimal placeholders.
+
+```svelte
+<Suspense fallback={<T.Group />}>
+  <StackedLinks {links} {flags} />
+</Suspense>
+```
+
+- `useTask` phases and pause/resume
+  - Prefer `$effect.pre` for setup; `useTask` for frame; gate by visibility/interaction.
+
+- `<T>` memoization
+  - Create objects once in `$effect.pre` or module scope; pass stable refs.
+
+- Preload strategies
+  - Preload decoders in `onMount` with `requestIdleCallback`; kick off model fetch when canvas intersects viewport.
+
+```svelte
+const preload = async () => {
+  if (flags.gltfMeshopt) await import('three/examples/jsm/libs/meshopt_decoder.module.js');
+  if (flags.gltfKtx2) await import('/decoders/basis/basis_transcoder.wasm');
+};
+onMount(() => requestIdleCallback(preload));
+```
+
+- Threlte invalidate discipline
+  - With `demandFrame`, call `invalidate()` on any state that changes visuals (hover, tween tick, scroll).
+
+---
+
+**Three.js Settings Checklist**
+- Renderer init:
+  - `powerPreference: 'high-performance'`, `antialias: false` on mobile, `stencil: false`, `precision: 'mediump'` (fallback).
+  - `renderer.outputColorSpace = SRGBColorSpace`; keep toneMapping off as current.
+
+- Pixel ratio:
+  - Clamp via `setPixelRatio`; enable dynamic scaling flag.
+
+- Textures:
+  - Convert to KTX2/Basis (UASTC for quality, ETC1S for size). Set `renderer.capabilities.getMaxAnisotropy()` but clamp to ≤ 4 on mobile.
+
+- Geometry:
+  - Use Meshopt for buffer/index compression; dedupe materials/geometries; share via caches.
+
+- Culling:
+  - Keep `frustumCulled = true`; compute accurate `boundingSphere` for instanced meshes.
+
+- Shadows:
+  - One caster; small map; PCF; short shadow camera range; receive only on ground.
+
+- Lights:
+  - Minimal count; prefer an environment map for ambient; avoid per-frame light changes.
+
+---
+
+**Crate/Link Placement Plan**
+Objectives:
+- Avoid occluding the dragon.
+- Maintain two categories left/right.
+- Adaptive density across mobile/desktop.
+- Preserve current look by default; gate new layout by `flags.layoutV2`.
+
+Approach:
+- Use Poisson-disc sampling within a masked region (screen/world plane).
+- Dragon exclusion: circle/ellipse mask from dragon bounds.
+- Two columns: split sampling domain by X; fill left/right independently.
+- Adaptive: sample radius based on viewport width and device class.
+
+Code sketches (crateController):
+
+```ts
+// website/src/components/svelte/utils/crateController.svelte.ts
+export type LayoutParams = {
+  viewport: { w: number; h: number; aspect: number };
+  dragon: { center: [number, number]; radius: number }; // in world XY plane
+  leftCount: number; rightCount: number;
+  flags: { layoutV2?: boolean; density?: number };      // density 0..1
+};
+
+export function calculatePositionsV2(p: LayoutParams) {
+  if (!p.flags.layoutV2) return calculatePositionsV1(p); // current grid
+  const margin = 0.1 * p.viewport.w;
+  const rBase = lerp(0.12, 0.22, 1 - (p.flags.density ?? 0.5)); // sample radius
+  const leftDomain = { minX: -p.viewport.w/2 + margin, maxX: 0 - margin };
+  const rightDomain = { minX: 0 + margin, maxX: p.viewport.w/2 - margin };
+  const bandY = { minY: -p.viewport.h/4, maxY: p.viewport.h/4 };
+
+  const rejectDragon = (x: number, y: number) => {
+    const dx = x - p.dragon.center[0], dy = y - p.dragon.center[1];
+    return Math.hypot(dx, dy) < p.dragon.radius * 1.15; // safety factor
+  };
+
+  const left = poisson2D(leftDomain, bandY, rBase, p.leftCount, rejectDragon);
+  const right = poisson2D(rightDomain, bandY, rBase, p.rightCount, rejectDragon);
+
+  // Convert to 3D world (x,y -> x, z) at fixed Y height
+  const to3D = (pt: [number, number]) => ({ x: pt[0], y: 0.5, z: pt[1] });
+  return { left: left.map(to3D), right: right.map(to3D) };
+}
+
+// Fast Poisson-disc with k retries
+function poisson2D(
+  xRange: { minX: number; maxX: number }, yRange: { minY: number; maxY: number },
+  r: number, target: number, reject?: (x: number, y: number) => boolean
+): [number, number][] {
+  const pts: [number, number][] = [];
+  const r2 = r * r, k = 20;
+  while (pts.length < target) {
+    let placed = false, tries = 0;
+    while (!placed && tries++ < k) {
+      const x = rand(xRange.minX, xRange.maxX);
+      const y = rand(yRange.minY, yRange.maxY);
+      if (reject?.(x, y)) continue;
+      let ok = true;
+      for (const [px, py] of pts) if ((x - px)**2 + (y - py)**2 < r2) { ok = false; break; }
+      if (ok) { pts.push([x, y]); placed = true; }
+    }
+    if (!placed) break; // filled domain
+  }
+  return pts;
+}
+```
+
+Adaptive density and mobile fallback:
+- On small screens or `flags.mobileLite`, increase radius r and reduce counts; optionally collapse to single column, then stagger in[2025-09-12T08:03:03] ERROR: stream error: stream disconnected before completion: Transport error: error decoding response body; retrying 4/5 in 1.714s…
+
+[2025-09-12T08:03:13] thinking
+
+**Planning for Optimization**
+
+I need to draft a planning document focused on incremental optimization without any code changes. I'll prioritize Threlte-specific practices such as task management and lazy components while also incorporating Three.js specifics like renderer flags and texture optimization. The plan will address crate/link placement improvements and include metrics like First Interaction Time and FPS for verification. I must keep everything concise but comprehensive, mentioning the existing context, without modifying any files or code.
+**Proposing Optimization Strategies**
+
+It's time to work on how to split chunks using Astro’s client directives like client:visible or client:idle, maybe even considering partial hydration. I should propose loading the LinkApp on demand via entry index.astro, demonstrating an example of how to load LinkApp with client:visible while deferring heavy components with <Suspense> and lazy-loading flags. For Threlte, I need to include memoization with the T component and task scheduling that accounts for paused tabs. I’ll also provide asset pipeline suggestions and relevant code snippets for texture conversion and decoder configuration.
+**Providing Code Examples and Renderer Settings**
+
+I should give an example of using the GLTF component like this: `<GLTF src="/models/..." meshoptDecoder={async () => (await import('meshoptimizer/meshopt_decoder.module.js')).MeshoptDecoder} dracoDecoderPath="/decoders/draco/" ktx2TranscoderPath="/decoders/basis/" />`. I need to be precise about using MeshoptDecoder with GLTFLoader. Threlte has a `useGltf` hook, and I could include both manual loader options with `new GLTFLoader()`. Also, for renderer settings, I need to ensure antialias is false if using FXAA and set pixel ratio correctly, while keeping shadows and depth configurations in mind.
+**Optimizing Rendering Settings**
+
+I need to keep my settings minimal, adjusting near and far clipping planes, and I might turn off castShadow for crates, only enabling it for specific items like the dragon or ground. For materials, I should use MeshStandardMaterial with shared parameters while avoiding expensive hooks with `material.onBeforeCompile`. Keeping `toneMapping` disabled will help speed up the process. I'll also reduce particle effects update rates. For crates, I'll implement InstancedMesh keyed by category to optimize performance, and ensure LOD and frustum culling work correctly.
+**Planning Document for Optimization**
+
+I need to create a well-organized plan with sections that cover various optimization strategies while avoiding repetition or unnecessary verbosity.
+
+**Quick Wins (No Visual Change)**  
+- **Client Splitting:** Use dynamic imports for LinkApp and lazy-load heavy effects within Suspense.
+- **Clamp DPR:** Adjust pixel ratio appropriately.
+- **Renderer Init Flags:** Configure to optimize performance, like disabling shadow casting for crates and ensuring frustum culling.
+- **Reuse Geometry/Materials:** Implement memoization with `<T>`.
+- **Background Tasks:** Pause and throttle when tabs are not visible.
+
+**Medium-Risk (Flagged)**  
+- **KTX2 Textures:** Provide transcoding and KTX2Loader setup with flag gating.
+- **Meshopt and Instanced Crates:** Include code snippets for decoder loading and adjustments for dynamic resolution scaling.
+- **LOD Management:** Consider on-screen visibility for performance.
+- **Lazy Load Effects:** Introduce effectiveness for Fireball.
+
+**Advanced (Optional)**  
+- **Bake AO/Lighting:** Use Blender for pre-rendered effects.
+- **Offscreen Canvas:** For advanced post-processing effects.
+- **Progressive GLTF Streaming:** Explore EXT_meshopt_compression for efficient loading.
+- **Raycast Acceleration:** Snippet for accelerated raycasting on crates.
+
+**Placement Improvements**  
+- **Reserve Ellipse Region:** Use Poisson sampling for optimal positions and avoid occlusion. Provide calculated positions and acceptance categories.
+
+**Metrics & Verification**  
+- **Instrumentation:** Capturing performance with custom markers and using web vitals for metrics.
+
+**Migration Plan & Targets**  
+- **Steps and Timeline:** Outline tasks, success criteria, and maintain a scannable format with concise code snippets throughout the document. 
+
+With this structure, I’m set to draft a comprehensive plan that users can easily navigate!
+[2025-09-12T08:04:32] codex
+**Proposing Optimization Strategies**
+
+It's time to work on how to split chunks using Astro’s client directives like client:visible or client:idle, maybe even considering partial hydration. I should propose loading the LinkApp on demand via entry index.astro, demonstrating an example of how to load LinkApp with client:visible while deferring heavy components with <Suspense> and lazy-loading flags. For Threlte, I need to include memoization with the T component and task scheduling that accounts for paused tabs. I’ll also provide asset pipeline suggestions and relevant code snippets for texture conversion and decoder configuration.
+[2025-09-12T08:04:32] codex
+**Providing Code Examples and Renderer Settings**
+
+I should give an example of using the GLTF component like this: `<GLTF src="/models/..." meshoptDecoder={async () => (await import('meshoptimizer/meshopt_decoder.module.js')).MeshoptDecoder} dracoDecoderPath="/decoders/draco/" ktx2TranscoderPath="/decoders/basis/" />`. I need to be precise about using MeshoptDecoder with GLTFLoader. Threlte has a `useGltf` hook, and I could include both manual loader options with `new GLTFLoader()`. Also, for renderer settings, I need to ensure antialias is false if using FXAA and set pixel ratio correctly, while keeping shadows and depth configurations in mind.
+[2025-09-12T08:04:32] codex
+**Optimizing Rendering Settings**
+
+I need to keep my settings minimal, adjusting near and far clipping planes, and I might turn off castShadow for crates, only enabling it for specific items like the dragon or ground. For materials, I should use MeshStandardMaterial with shared parameters while avoiding expensive hooks with `material.onBeforeCompile`. Keeping `toneMapping` disabled will help speed up the process. I'll also reduce particle effects update rates. For crates, I'll implement InstancedMesh keyed by category to optimize performance, and ensure LOD and frustum culling work correctly.
+[2025-09-12T08:04:32] codex
+**Planning Document for Optimization**
+
+I need to create a well-organized plan with sections that cover various optimization strategies while avoiding repetition or unnecessary verbosity.
+
+**Quick Wins (No Visual Change)**  
+- **Client Splitting:** Use dynamic imports for LinkApp and lazy-load heavy effects within Suspense.
+- **Clamp DPR:** Adjust pixel ratio appropriately.
+- **Renderer Init Flags:** Configure to optimize performance, like disabling shadow casting for crates and ensuring frustum culling.
+- **Reuse Geometry/Materials:** Implement memoization with `<T>`.
+- **Background Tasks:** Pause and throttle when tabs are not visible.
+
+**Medium-Risk (Flagged)**  
+- **KTX2 Textures:** Provide transcoding and KTX2Loader setup with flag gating.
+- **Meshopt and Instanced Crates:** Include code snippets for decoder loading and adjustments for dynamic resolution scaling.
+- **LOD Management:** Consider on-screen visibility for performance.
+- **Lazy Load Effects:** Introduce effectiveness for Fireball.
+
+**Advanced (Optional)**  
+- **Bake AO/Lighting:** Use Blender for pre-rendered effects.
+- **Offscreen Canvas:** For advanced post-processing effects.
+- **Progressive GLTF Streaming:** Explore EXT_meshopt_compression for efficient loading.
+- **Raycast Acceleration:** Snippet for accelerated raycasting on crates.
+
+**Placement Improvements**  
+- **Reserve Ellipse Region:** Use Poisson sampling for optimal positions and avoid occlusion. Provide calculated positions and acceptance categories.
+
+**Metrics & Verification**  
+- **Instrumentation:** Capturing performance with custom markers and using web vitals for metrics.
+
+**Migration Plan & Targets**  
+- **Steps and Timeline:** Outline tasks, success criteria, and maintain a scannable format with concise code snippets throughout the document. 
+
+With this structure, I’m set to draft a comprehensive plan that users can easily navigate!
+**Goal & Context**
+
+- Reduce initial load and improve FPS for the 3D homepage (Threlte + three r0.176) with minimal-risk, flag‑gated changes. Maintain current visuals/UX; prefer A/B toggles and measurable wins.
+
+---
+
+**Quick Wins (No Visual Change)**
+
+- Clamp DPR: Lower GPU load on high‑DPI screens without visible change.
+  - Example (renderer init or Canvas on mount):
+    ```svelte
+    <script lang="ts">
+      import { Canvas } from '@threlte/core'
+      const flags = { dprClamp: true, maxDpr: 1.75 }
+      const dpr = flags.dprClamp ? Math.min(window.devicePixelRatio ?? 1, flags.maxDpr) : window.devicePixelRatio ?? 1
+    </script>
+
+    <Canvas dpr={dpr} powerPreference="high-performance" antialias={false} alpha={true} depth={true} stencil={false} />
+    ```
+- Split heavy code paths: Defer 3D island and effects to shrink `LinkApp` initial chunk.
+  - In `index.astro` gate with client directives:
+    ```astro
+    ---
+    const flags = Astro.params?.exp?.split(',') ?? [];
+    const defer3D = flags.includes('defer3d');
+    ---
+    {defer3D ? (
+      // Hydrates when visible
+      <LinkApp client:visible links={links} flags={flags} />
+    ) : (
+      // Current behavior
+      <LinkApp client:load links={links} flags={flags} />
+    )}
+    ```
+  - Inside `LinkApp.svelte`, lazy‑import heavy subcomponents behind flags:
+    ```svelte
+    <script lang="ts">
+      export let flags: string[] = []
+      const loadFireball = flags.includes('fx')
+      let Fireball
+      $effect.pre(async () => { if (loadFireball) Fireball = (await import('./scene/effects/Fireball.svelte')).default })
+    </script>
+
+    {#if Fireball}<Fireball />{/if}
+    ```
+- Pause background work: Ensure tasks never tick when off‑screen or page hidden.
+  - Threlte tasks:
+    ```svelte
+    <script lang="ts">
+      import { useTask } from '@threlte/core'
+      let running = $state(true)
+      const loop = useTask(({ delta }) => { if (!running) return; /* update */ })
+      const toggle = (v:boolean) => { running = v }
+      onMount(() => {
+        const onVis = () => toggle(!document.hidden)
+        document.addEventListener('visibilitychange', onVis); onVis()
+        return () => document.removeEventListener('visibilitychange', onVis)
+      })
+    </script>
+    ```
+- Memoize materials/geometry: Create once, reuse everywhere.
+  - With `<T>` and Svelte runes:
+    ```svelte
+    <script lang="ts">
+      import * as THREE from 'three'
+      import { T } from '@threlte/core'
+      const mat = $state<THREE.MeshStandardMaterial | null>(null)
+      const geo = $state<THREE.BoxGeometry | null>(null)
+      $effect.pre(() => {
+        if (!mat) mat = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0.05 })
+        if (!geo) geo = new THREE.BoxGeometry(1,1,1)
+      })
+    </script>
+
+    <T.Mesh geometry={geo} material={mat} />
+    ```
+- Frustum culling and castShadow discipline:
+  - Ensure `mesh.frustumCulled = true` (default) for crates; avoid disabling.
+  - Only the ground receives shadows; only hero (dragon) casts if needed. Reduce map size:
+    ```svelte
+    <T.DirectionalLight castShadow={true} shadow-mapSize-width={1024} shadow-mapSize-height={1024} shadow-camera-near={5} shadow-camera-far={50} />
+    ```
+- Avoid per‑frame camera churn: Keep your existing camera throttling; ensure reactive state doesn’t re-create camera/controls.
+- Disable unnecessary tone mapping: Keep toneMapping off (current); set output color space once:
+  ```svelte
+  <Canvas outputColorSpace="srgb-linear" />
+  ```
+
+---
+
+**Medium‑Risk (Toggleable) Changes**
+
+- Texture compression (KTX2/BasisU): 4–8× VRAM savings; large FPS gains on mobile.
+  - Pipeline:
+    - Export textures as PNG/JPG/TGA → transcode to `.ktx2` via BasisU (`basisu -ktx2 -uastc -q 128 -mipmap`).
+    - Re-export GLBs to reference `KHR_texture_basisu`.
+  - Loader (flag‑gated):
+    ```svelte
+    <script lang="ts">
+      import { onMount } from 'svelte'
+      import { T } from '@threlte/core'
+      import { GLTF } from '@threlte/extras'
+      let ktx2Path: string | undefined
+      export let flags: string[] = []
+      onMount(() => { if (flags.includes('ktx2')) ktx2Path = '/decoders/basis/' })
+    </script>
+
+    <GLTF src="/models/dragon.glb" ktx2TranscoderPath={ktx2Path} dracoDecoderPath="/decoders/draco/" />
+    ```
+- Geometry compression (Meshopt): 20–60% smaller GLBs; faster parse.
+  - Add Meshopt decoder behind flag:
+    ```svelte
+    <script lang="ts">
+      let meshopt: any
+      onMount(async () => {
+        if (flags.includes('meshopt')) {
+          meshopt = (await import('meshoptimizer/meshopt_decoder.module.js')).default
+        }
+      })
+    </script>
+
+    <GLTF src="/models/dragon.glb" meshoptDecoder={meshopt} />
+    ```
+- Instanced crates: Replace many identical meshes with one `InstancedMesh` per crate type.
+  - Sketch:
+    ```svelte
+    <script lang="ts">
+      import * as THREE from 'three'
+      import { T } from '@threlte/core'
+      export let instances: { matrix: THREE.Matrix4; color?: THREE.Color }[] = []
+      const mat = $state(new THREE.MeshStandardMaterial({ roughness: .9 }))
+      const geo = $state(new THREE.BoxGeometry(1,1,1))
+    </script>
+
+    <T.InstancedMesh args={[geo, mat, instances.length]} frustumCulled={true}>
+      {#each instances as inst, i}
+        <T.Instance setMatrixAt={[i, inst.matrix]} setColorAt={inst.color ? [i, inst.color] : undefined} />
+      {/each}
+    </T.InstancedMesh>
+    ```
+- Dynamic resolution scaling (DRS): Maintain target FPS by adjusting DPR smoothly.
+  - Example loop:
+    ```svelte
+    <script lang="ts">
+      import { useTask, useThrelte } from '@threlte/core'
+      const { renderer } = useThrelte()
+      const targetFps = 55, min = 1.0, max = 1.75
+      let dpr = Math.min(window.devicePixelRatio, max)
+      let acc = 0, frames = 0
+      useTask(({ delta }) => {
+        acc += delta; frames++
+        if (acc >= 1) {
+          const fps = frames / acc
+          if (fps < targetFps - 5) dpr = Math.max(min, dpr * 0.9)
+          else if (fps > targetFps + 5) dpr = Math.min(max, dpr * 1.05)
+          renderer.setPixelRatio(dpr)
+          acc = 0; frames = 0
+        }
+      })
+    </script>
+    ```
+- Shadow preset “low”: PCF (not soft), lower map, short frustum; expose flag `shadowLow`.
+- Lazy effects: Load `Fireball`, postprocessing, and particles only on interaction or when visible:
+  - `flags.includes('fx')` gate and `<Suspense>` fallback to empty group.
+
+---
+
+**Advanced (Optional Experiments)**
+
+- Baked lighting: Bake AO/diffuse in DCC (Blender), remove real‑time lights.
+  - Flag `baked` turns off shadows and lights, swaps materials to `MeshBasicMaterial`.
+- Raycast optimization: Use `three-mesh-bvh` for large meshes; or per‑instance raycast for crates only.
+  - Gate behind `rayBVH`; only needed if many ray targets.
+- Worker decode: Keep GLTF parse on main thread but ensure Draco/Meshopt WASM decoders load from `public/decoders` and don’t block initial interactable UI.
+- Progressive GLTF: Use Meshopt progressive streams for hero model; show placeholder until LOD1 loaded.
+
+---
+
+**Threlte‑Focused Practices**
+
+- Suspense for heavy assets:
+  ```svelte
+  <Suspense fallback={<T.Group />}>
+    <GLTF src="/models/dragon.glb" dracoDecoderPath="/decoders/draco/" />
+  </Suspense>
+  ```
+- Granular tasks: Split update loops by concern; pause/resume via flags, visibility, and hover/focus.
+- `<T>` memoization: Create materials/geometry once and pass by reference; avoid reactive re-creation.
+- Runes hygiene:
+  - Use `$effect.pre` for one‑time creation; `$derived` for computed, non‑invalidating props.
+  - Keep `$state` for small mutable bits; avoid putting three objects directly into reactive stores if not needed.
+- Preload strategy:
+  - Preload decoders with `<link rel="preload" as="script">` or `as="fetch"` for WASM.
+[2025-09-12T08:05:37] ERROR: stream error: stream disconnected before completion: Transport error: error decoding response body; retrying 5/5 in 3.161s…
+
+[2025-09-12T08:05:46] thinking
+
+**Creating a planning document**
+
+I need to draft a planning document based on the user's requirements for a prioritized, incremental optimization plan. This will have three tiers: quick wins, medium risk toggleable changes, and advanced optional improvements. I'll include specifics on practices, a placement improvement plan, metrics, and a migration plan. Since they emphasized a no-code modification approach for now, I'll focus on producing a structured plan without running any tools. Let's make this efficient and straightforward!
+**Structuring the final answer**
+
+I need to follow the specific structure for the final answer, using bullet formatting with section headers in Title Case. I'll make sure to use monospace for code and paths, along with concise descriptions under bolded keywords. 
+
+I should include technical aspects like device pixel ratio clamping, dynamic resolutions, and various optimization strategies. For the asset pipeline, glTF optimization techniques will be crucial. Additionally, I must discuss metrics capture and provide fallbacks for performance measurements. Lastly, proposing a central configuration for A/B flags will be important, and I’ll include examples for clarity.
+**Initializing renderer flags**
+
+I’m setting up renderer initialization flags, including turning off antialiasing and deciding between 'high-performance' or 'low-power' power preferences. I might keep depth and stencil options true or false, while ensuring toneMapping remains disabled and outputEncoding is set to sRGB. I’ll add a pixel ratio clamp and consider dynamic resolution for heavy frames. 
+
+For shadow tuning, I’ll reduce shadow map sizes and update them only when necessary. I also need to implement instanced meshes for crates and consider LOD for performance alongside lazy loading for heavy effects when they come into the viewport.
+**Implementing Threlte features**
+
+I’m focusing on implementing Threlte and the `client:visible` for partial hydration with Astro, specifically for LinkApp as the main content. It might be better to use `client:only="svelte"` and create a plan to split heavy components into separate islands. I’ll also make sure to lazy load Fireball using `await`, and preload decoders by setting the correct paths.
+
+For the meshoptDecoder, I need to provide code that waits for it to initialize as well as set up the KTX2Loader with samples in the GLTFLoader. Material management is necessary, so I’ll cache with `useGLTF` and ensure we efficiently handle audio and particle loading. I'll also consider throttling camera updates for performance improvements.
+**Planning placement improvements**
+
+I’m focusing on enhancing the placement of crates and links around the dragon. My proposal involves creating an elliptical exclusion zone and using dynamic grid bounding boxes, as well as Poisson-disc sampling to adapt density based on screen size. I must account for overlaps and provide code sketches for `crateController.calculatePositions`, including a pseudo TypeScript function to check intersections.
+
+There are some Threlte specifics to consider, like using `<Canvas>` and certain props. I’ll include dynamic imports for heavy components and preload models where beneficial. 
+
+Finally, I need to define success metrics, create a `perfFlags` object for migration, and ensure I provide concise steps and action checklists for smoother implementation! Let's get this plan crafted with code snippets for clarity.
+[2025-09-12T08:06:38] codex
+**Structuring the final answer**
+
+I need to follow the specific structure for the final answer, using bullet formatting with section headers in Title Case. I'll make sure to use monospace for code and paths, along with concise descriptions under bolded keywords. 
+
+I should include technical aspects like device pixel ratio clamping, dynamic resolutions, and various optimization strategies. For the asset pipeline, glTF optimization techniques will be crucial. Additionally, I must discuss metrics capture and provide fallbacks for performance measurements. Lastly, proposing a central configuration for A/B flags will be important, and I’ll include examples for clarity.
+[2025-09-12T08:06:38] codex
+**Initializing renderer flags**
+
+I’m setting up renderer initialization flags, including turning off antialiasing and deciding between 'high-performance' or 'low-power' power preferences. I might keep depth and stencil options true or false, while ensuring toneMapping remains disabled and outputEncoding is set to sRGB. I’ll add a pixel ratio clamp and consider dynamic resolution for heavy frames. 
+
+For shadow tuning, I’ll reduce shadow map sizes and update them only when necessary. I also need to implement instanced meshes for crates and consider LOD for performance alongside lazy loading for heavy effects when they come into the viewport.
+[2025-09-12T08:06:38] codex
+**Implementing Threlte features**
+
+I’m focusing on implementing Threlte and the `client:visible` for partial hydration with Astro, specifically for LinkApp as the main content. It might be better to use `client:only="svelte"` and create a plan to split heavy components into separate islands. I’ll also make sure to lazy load Fireball using `await`, and preload decoders by setting the correct paths.
+
+For the meshoptDecoder, I need to provide code that waits for it to initialize as well as set up the KTX2Loader with samples in the GLTFLoader. Material management is necessary, so I’ll cache with `useGLTF` and ensure we efficiently handle audio and particle loading. I'll also consider throttling camera updates for performance improvements.
+[2025-09-12T08:06:38] codex
+**Planning placement improvements**
+
+I’m focusing on enhancing the placement of crates and links around the dragon. My proposal involves creating an elliptical exclusion zone and using dynamic grid bounding boxes, as well as Poisson-disc sampling to adapt density based on screen size. I must account for overlaps and provide code sketches for `crateController.calculatePositions`, including a pseudo TypeScript function to check intersections.
+
+There are some Threlte specifics to consider, like using `<Canvas>` and certain props. I’ll include dynamic imports for heavy components and preload models where beneficial. 
+
+Finally, I need to define success metrics, create a `perfFlags` object for migration, and ensure I provide concise steps and action checklists for smoother implementation! Let's get this plan crafted with code snippets for clarity.
+**Goal & Scope**
+
+- Outcome: Reduce initial load time and improve runtime FPS without visual/UX regressions.
+- Constraints: Svelte 5 runes + Threlte 8, Three r0.176, Cloudflare adapter, plan-only with toggleable flags and fallbacks for older mobile GPUs.
+
+---
+
+**A/B Flags**
+
+- Central flags: Add `website/src/lib/perfFlags.ts` and pass props to `LinkApp.svelte` → `BaseScene.svelte`/`StackedLinks.svelte`.
+- Sources: Default config + URL params `?flag=1` + localStorage.
+- Example structure:
+  ```ts
+  // website/src/lib/perfFlags.ts
+  export type PerfFlags = {
+    dprClamp?: number;           // e.g. 1.5
+    dynamicResolution?: boolean; // drop DPR on spikes
+    lazyEffects?: boolean;       // lazy-load Fireball/effects
+    meshopt?: boolean;           // MeshoptDecoder
+    ktx2?: boolean;              // KTX2/Basis textures
+    instancedCrates?: boolean;   // InstancedMesh batching
+    lowShadows?: boolean;        // constrained shadow map
+    lodCrates?: boolean;         // distance LOD
+    bakedLighting?: boolean;     // disable dynamic lights
+    mobileLite?: boolean;        // lower count / one column
+    highPerfPower?: boolean;     // WebGL powerPreference
+  }
+  export const perfFlags: PerfFlags = { dprClamp: 1.5, dynamicResolution: true, lazyEffects: true, lowShadows: true };
+  export function withUrlOverrides(base = perfFlags): PerfFlags { /* read URL/localStorage */ return base; }
+  ```
+- Gate in `LinkApp.svelte`:
+  ```svelte
+  <script>
+    import { perfFlags, withUrlOverrides } from '$lib/perfFlags';
+    const flags = withUrlOverrides(perfFlags);
+  </script>
+  <BaseScene {flags} />
+  <StackedLinks {flags} />
+  ```
+
+---
+
+**1) Prioritized, Incremental Plan**
+
+Quick Wins (no visual change, minimal risk)
+- DPR clamp: Limit device pixel ratio to reduce fill rate on hi‑DPI screens.
+- Dynamic resolution: Temporary DPR downscale when frame time spikes; restore when stable.
+- Lazy effects: Load `effects/Fireball.svelte` and any post-processing only when visible or on interaction.
+- Pause offscreen work: Pause `useTask` loops when tab not visible or canvas offscreen.
+- Memoize materials/geometry: Create once, reuse; avoid reactivity invalidations.
+- Shadow tuning: Ground-only receive; single light casts; reduce map size/type when `lowShadows`.
+- Bundle split: Lazy import heavy models/effects; ensure decoders are loaded on demand.
+- Frustum culling hygiene: Ensure culling is enabled and bounds are correct for crates and dragon.
+
+Medium-Risk (toggleable; safe fallback path)
+- KTX2/Basis: Transcode textures to KTX2; set up `KTX2Loader` when `flags.ktx2`.
+- Meshopt: Use `gltfpack` with `EXT_meshopt_compression`; wire `MeshoptDecoder` when `flags.meshopt`.
+- Instanced crates: Batch identical crate meshes/materials via `InstancedMesh` with per-instance transforms and picking.
+- LOD for crates: Simplify meshes/materials beyond a screen/world distance; swap to billboards on mobile.
+- Renderer init choices: `powerPreference`, disable antialias at high DPR, `precision: 'mediump'`.
+- Draco/KTX2/Meshopt prewarm: Preload decoder WASM to smooth first interaction.
+
+Advanced (optional experiments; behind flags)
+- Baked lighting: Bake key lighting/AO into textures; disable dynamic lights and shadows entirely.
+- OffscreenCanvas + Worker: Move post-processing to worker on capable browsers.
+- GPU timing + quality scaling: Use timer queries to target 16.7 ms GPU time by auto-scaling effect quality.
+- Progressive models: Split hero GLTF into LOD0/1; show LOD1 first, stream LOD0.
+
+---
+
+**2) Threlte‑Focused Practices**
+
+- Suspense + lazy components:
+  ```svelte
+  <!-- In BaseScene.svelte -->
+  <Suspense fallback={<T.Group />}>
+    {#if flags.lazyEffects}
+      {#await import('../scene/effects/Fireball.svelte') then { default: Fireball }}
+        <Fireball />
+      {/await}
+    {:else}
+      <Fireball />
+    {/if}
+  </Suspense>
+  ```
+
+- Memoization with `<T>` and runes:
+  ```svelte
+  <script>
+    import * as THREE from 'three';
+    import { T } from '@threlte/core';
+    const geom = $state(new THREE.BoxGeometry(1,1,1));
+    const mat = $state(new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0.1 }));
+    const boxProps = $derived({ geometry: geom, material: mat }); // non-invalidating props
+  </script>
+  <T.Mesh {...boxProps} />
+  ```
+
+- Tasks pause/resume:
+  ```svelte
+  <script>
+    import { useTask } from '@threlte/core';
+    let active = $state(true);
+    const stop = useTask(({ dt }) => { if (!active) return; /* animate */ });
+    $effect(() => {
+      const onVis = () => active = !document.hidden;
+      document.addEventListener('visibilitychange', onVis);
+      return () => document.removeEventListener('visibilitychange', onVis);
+    });
+  </script>
+  ```
+
+- Progressive asset preloading:
+  - Use `<link rel="preload" as="fetch" href="/models/dragon.glb" crossorigin>` when beneficial.
+  - Preload decoders on hover/idle:
+    ```ts
+    if (flags.meshopt) void import('meshoptimizer/meshopt_decoder.wasm?url');
+    if (flags.ktx2) /* warm basis transcoder path */
+    ```
+
+- Avoid invalidations:
+  - Keep three objects out of reactive stores unless necessary; store references in `$state`.
+  - Use `$effect.pre(() => { /* one-time init */ })` for renderer and loaders.
+
+---
+
+**3) Three.js Specifics**
+
+Renderer init and DPR
+- Canvas options:
+  ```svelte
+  <Canvas
+    antialias={false}
+    powerPreference={flags.highPerfPower ? 'high-performance' : 'default'}
+    depth={true}
+    stencil={false}
+    xr={false}
+  />
+  ```
+- DPR clamp + dynamic resolution:
+  ```ts
+  // in onCreate(renderer)
+  const baseDpr = Math.min(window.devicePixelRatio, flags.dprClamp ?? 1.5);
+  renderer.setPixelRatio(baseDpr);
+  let dpr = baseDpr, debt = 0;
+  function autoscale(frameMs: number) {
+    const target = 16.7, maxDrop = 0.75;
+    debt = Math.max(0, debt + (frameMs - target));
+    if (flags.dynamicResolution && debt > 50 && dpr > 0.7) { // sustained > target
+      dpr = Math.max(0.7, dpr - 0.1);
+      renderer.setPixelRatio(dpr); debt = 0;
+    } else if (debt === 0 && dpr < baseDpr) {
+      dpr = Math.min(baseDpr, dpr + 0.05);
+      renderer.setPixelRatio(dpr);
+    }
+  }
+  // call autoscale in a small monitor task using last frame time
+  ```
+
+Color space and tone mapping
+- Keep tone mapping off; ensure correct output color space:
+  ```ts
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.NoToneMapping;
+  ```
+
+Shadows (only if needed)
+- Single light casts, ground receives; reduce cost:
+  ```ts
+  renderer.shadowMap.enabled = !flags.bakedLighting && !flags.lowShadows ? true : false;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap; // or Basic with lowShadows
+  directionalLight.shadow.mapSize.set(flags.lowShadows ? 512 : 1024, flags.lowShadows ? 512 : 1024);
+  directionalLight.shadow.autoUpdate = false;
+  // Update shadow only on layout/model changes
+  directionalLight.shadow.needsUpdate = true;
+  ```
+
+Loaders: Draco, Meshopt, KTX2
+- GLTF with decoders:
+  ```svelte
+  <script>
+    import { GLTF } from '@threlte/extras';
+    const dracoPath = '/decoders/draco/';
+    let meshoptDecoder;
+    $effect.pre(async () => {
+      if (flags.meshopt) meshoptDecoder = (await import('meshoptimizer/meshopt_decoder.wasm?url')).default;
+    });
+  </script>
+
+  <GLTF
+    src="/models/dragon.glb"
+    dracoDecoderPath={dracoPath}
+    meshoptDecoder={meshoptDecoder}
+    ktxTranscoderPath={flags.ktx2 ? '/decoders/basis/' : undefined}
+  />
+  ```
+
+Materials/geometry reuse
+- Reuse references; avoid duplicating StandardMaterial variations. Prefer vertex colors or per-instance color for crates.
+
+Frustum culling and bounds
+- Ensure `frustumCulled = true` on crates; for animated dragon, set accurate bounding sphere/box once loaded.
+
+---
+
+**4) Asset Pipeline (models/textures/audio)**
+
+- GLTF/GLB
+  - Use `gltfpack -i in.glb -o out.glb -cc -km -kn -noq -tc` with meshopt for compression.
+  - Deduplicate materials and accessors; strip tangents when unused.
+  - Generate LODs for hero model; export LOD1 (~30–50% tris) and LOD0 (full).
+
+- Textures
+  - Author in sRGB/linear as appropriate; transcode to KTX2 (BasisU UASTC for hero/albedo; ETC1S for large UI).
+  - Mipmaps always; keep max 2K for hero, 1K for crates on desktop; 512 on mobileLite.
+  - Use texture atlases for crate labels to reduce material count.
+
+- Audio
+  - Convert to Ogg/Opus; lazy load on first interaction.
+
+- Fonts / text
+  - Use SDF text (`@threlte/extras` Text/Troika); avoid per-glyph meshes.
+
+---
+
+**5) Scene Graph Improvements**
+
+- Lights
+  - Prefer 1 directional + ambient hemi; or bakedLighting mode with zero dynamic lights.
+- Effects
+  - Run particles only when visible/near camera; prewarm in background if `lazyEffects` true.
+- Updates
+  - Split loops into granular `useTask`s; pause based on `IntersectionObserver` on canvas.
+
+---
+
+**6) Crates/Links Placement Plan**
+
+Goals: Avoid occluding dragon; adapt density by device; maintain left/right categories; enable batching/instancing.
+
+Strategy
+- Reserved hero zone: Elliptical exclusion region around dragon projected on ground.
+- Poisson-disc sampling: Evenly distribute crate anchors outside exclusion; stable across resize.
+- Adaptive density: Larger radius + fewer anchors on mobile or `mobileLite`.
+- Boundaries: Keep crates within left/right halves; maintain minimum margins.
+- Occlusion-aware nudge: Post-process overlaps; nudge crates along gradient away from hero zone and each other.
+- Instancing-friendly transforms: Produce array of positions/rotations/scales per crate item.
+
+Code sketch (`crateController.svelte.ts`)
+```ts
+type Rect = { x0: number; x1: number; y0: number; y1: number };
+type Ellipse = { cx: number; cy: number; rx: number; ry: number };
+
+function inEllipse(x: number, y: number, e: Ellipse) {
+  const nx = (x - e.cx) / e.rx, ny = (y - e.cy) / e.ry;
+  return nx*nx + ny*ny <= 1;
+}
+
+function poisson2D(area: Rect, r: number, count: number, reject?: (x:number,y:number)=>boolean) {
+  const out: [number, number][] = [];
+  const r2 = r*r, k = 20;
+  while (out.length < count) {
+    let placed = false, tries = 0;
+    while (!placed && tries++ < k) {
+      const x = area.x0 + Math.random() * (area.x1 - area.x0);
+      const y = area.y0 + Math.random() * (area.y1 - area.y0);
+      if (reject?.(x, y)) continue;
+      let ok = true;
+      for (const [px, py] of out) if ((x-px)**2 + (y-py)**2 < r2) { ok = false; break; }
+      if (ok) { out.push([x, y]); placed = true; }
+    }
+    if (!placed) break;
+  }
+  return out;
+}
+
+export function calculateCrateTransforms(viewport: { w: number; h: number }, counts: { left: number; right: number }, dragon: { cx: number; cy: number; rx: number; ry: number }, flags: PerfFlags) {
+  const pad = 0.06 * viewport.w;
+  const leftArea: Rect = { x0: pad, x1: viewport.w*0.47 - pad, y0: pad, y1: viewport.h - pad };
+  const rightArea: Rect = { x0: viewport.w*0.53 + pad, x1: viewport.w - pad, y0: pad, y1: viewport.h - pad };
+  const hero: Ellipse = { cx: dragon.cx, cy: dragon.cy, rx: dragon.rx, ry: dragon.ry };
+
+  const rBase = Math.min(viewport.w, viewport.h) * (flags.mobileLite ? 0.10 : 0.06);
+  const reject = (x:number,y:number) => inEllipse(x,y,hero);
+
+  const leftPts  = poisson2D(leftArea,  rBase, counts.left,  reject);
+  const rightPts = poisson2D(rightArea, rBase, counts.right, reject);
+
+  // Optional nudge pass to resolve near overlaps and pull from hero
+  function relax(pts: [number,number][]) {
+    for (let iter=0; iter<8; iter++) {
+      for (let i=0;i<pts.length;i++) {
+        let [x,y]=pts[i];
+        // push from hero
+        const dx = x-hero.cx, dy = y-hero.cy;
+        const d2 = Math.max(1e-3, dx*dx+dy*dy);
+        x += 0.02 * dx/Math.sqrt(d2);
+        y += 0.02 * dy/Math.sqrt(d2);
+        pts[i] = [x,y];
+      }
+    }
+  }
+  relax(leftPts); relax(rightPts);
+
+  // Produce transforms; align crates slightly towards center
+  const toTransform = ([x,y]:[number,number], side:'L'|'R') => ({
+    position: [x, 0, y] as [number, number, number],
+    rotation: [0, side==='L' ? 0.08 : -0.08, 0] as [number, number, number],
+    scale: flags.mobileLite ? 0.9 : 1.0
+  });
+
+  return {
+    left:[2025-09-12T08:08:12] ERROR: stream disconnected before completion: Transport error: error decoding response body

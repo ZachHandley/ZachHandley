@@ -1,0 +1,470 @@
+# 🚀 Threlte/Three.js Performance Optimization Plan
+
+## Executive Summary
+Your 3D portfolio site (1.74MB gzipped LinkApp chunk) can be optimized through incremental, low-risk improvements. Focus areas: asset optimization, renderer settings, Threlte-specific patterns, and spatial layout refinements.
+
+## 📊 Current State Analysis
+
+### Strengths
+- ✅ Draco compression already implemented
+- ✅ Camera update throttling (200ms)
+- ✅ Particle pool pre-warming system
+- ✅ Responsive crate positioning logic
+- ✅ Svelte 5 runes for reactivity
+
+### Performance Bottlenecks
+- ❌ No texture compression (81KB cloud.png unoptimized)
+- ❌ Large CrateExplode model (277KB)
+- ❌ No pixel ratio clamping
+- ❌ Missing LOD/instancing for repeated crates
+- ❌ Console removal plugin affects debugging
+
+---
+
+## 🎯 Phase 1: Quick Wins (No Visual Changes)
+**Timeline: 1-2 days | Risk: Low | Impact: High**
+
+### 1.1 Renderer Optimization
+```svelte
+<!-- LinkApp.svelte -->
+<Canvas 
+  toneMapping={undefined}
+  renderMode="on-demand"
+  frameloop="demand"
+  dpr={[1, Math.min(2, window.devicePixelRatio)]}
+  gl={{
+    antialias: true,
+    powerPreference: "high-performance",
+    logarithmicDepthBuffer: false
+  }}
+>
+```
+
+### 1.2 Threlte Task Optimization
+```svelte
+<!-- BaseScene.svelte -->
+const updateTask = useTask((delta) => {
+  if (!visible || transitioning) {
+    updateTask.pause(); // Pause when not visible
+    return;
+  }
+  // Update logic
+}, { autoStart: false });
+
+$effect(() => {
+  visible ? updateTask.start() : updateTask.pause();
+});
+```
+
+### 1.3 Asset Preloading Strategy
+```typescript
+// assetManager.svelte.ts - Add progressive loading
+class AssetManager {
+  async loadCriticalAssets() {
+    // Load only dragon + ground first
+    await Promise.all([
+      this.loadDragon(),
+      this.loadGround()
+    ]);
+  }
+  
+  async loadSecondaryAssets() {
+    // Defer crates/particles
+    requestIdleCallback(() => {
+      this.loadCrates();
+      this.initializeParticlePool();
+    });
+  }
+}
+```
+
+### 1.4 Memory Management
+```svelte
+<!-- StackedLinks.svelte -->
+// Dispose unused geometry/materials
+onDestroy(() => {
+  crateComponents.forEach(crate => {
+    crate.geometry?.dispose();
+    crate.material?.dispose();
+  });
+});
+```
+
+**Metrics to Track:**
+- First Contentful Paint (FCP)
+- Time to Interactive (TTI)
+- GPU memory usage via `renderer.info.memory`
+
+---
+
+## 🔧 Phase 2: Asset Pipeline Optimization
+**Timeline: 2-3 days | Risk: Medium | Impact: High**
+
+### 2.1 Texture Compression (KTX2)
+```bash
+# Install KTX2 tools
+npm i -D @gltf-transform/cli @gltf-transform/functions
+
+# Convert textures
+gltf-transform ktx2 cloud.png cloud.ktx2 --format uastc
+```
+
+```svelte
+<!-- Setup KTX2 loader -->
+import { useKtx2 } from '@threlte/extras';
+const ktx2Loader = useKtx2();
+```
+
+### 2.2 Model Optimization
+```bash
+# Optimize CrateExplode model with Meshopt
+gltf-transform optimize CrateExplode-transformed.glb \
+  --compress meshopt \
+  --simplify 0.5 \
+  --texture-compress ktx2
+```
+
+### 2.3 Lazy Component Loading
+```svelte
+<!-- LinkApp.svelte -->
+<script>
+  // Lazy load heavy components
+  const ModalManager = $derived.by(async () => {
+    if (modalVisible) {
+      const mod = await import('./ui/ModalManager.svelte');
+      return mod.default;
+    }
+  });
+</script>
+
+{#if ModalManager}
+  <ModalManager {...props} />
+{/if}
+```
+
+### 2.4 Audio Optimization
+```typescript
+// Load audio on-demand
+const audioLoader = new THREE.AudioLoader();
+let audioBuffer: AudioBuffer | null = null;
+
+async function loadAudioOnDemand() {
+  if (!audioBuffer) {
+    audioBuffer = await audioLoader.loadAsync('/sounds/Fireball.wav');
+  }
+  return audioBuffer;
+}
+```
+
+---
+
+## 🏗️ Phase 3: Scene Graph Optimization
+**Timeline: 3-4 days | Risk: Medium | Impact: Medium**
+
+### 3.1 Instanced Crates
+```svelte
+<!-- CrateInstanced.svelte -->
+<script>
+  import { InstancedMesh } from '@threlte/core';
+  
+  // Share geometry/material across all crates
+  const crateGeometry = new THREE.BoxGeometry(1, 1, 1);
+  const crateMaterial = new THREE.MeshStandardMaterial();
+  
+  const matrices = $derived.by(() => {
+    return cratePositions.map(pos => {
+      const matrix = new THREE.Matrix4();
+      matrix.setPosition(...pos);
+      return matrix;
+    });
+  });
+</script>
+
+<T.InstancedMesh
+  args={[crateGeometry, crateMaterial, matrices.length]}
+  {matrices}
+/>
+```
+
+### 3.2 LOD System
+```svelte
+<!-- Dragon.svelte with LOD -->
+<T.LOD bind:ref={dragonLOD}>
+  <T.Mesh
+    geometry={highDetailGeometry}
+    material={dragonMaterial}
+    visible={distance < 10}
+  />
+  <T.Mesh
+    geometry={lowDetailGeometry}
+    material={dragonMaterial}
+    visible={distance >= 10}
+  />
+</T.LOD>
+```
+
+### 3.3 Frustum Culling Enhancement
+```typescript
+// sceneController.svelte.ts
+class SceneController {
+  cullInvisibleCrates(camera: THREE.Camera) {
+    const frustum = new THREE.Frustum();
+    frustum.setFromProjectionMatrix(
+      new THREE.Matrix4().multiplyMatrices(
+        camera.projectionMatrix,
+        camera.matrixWorldInverse
+      )
+    );
+    
+    this.crateRegistry.forEach((crate, id) => {
+      const visible = frustum.containsPoint(crate.position);
+      crate.component.setVisible(visible);
+    });
+  }
+}
+```
+
+---
+
+## 📐 Phase 4: Crate Placement Improvements
+**Timeline: 1-2 days | Risk: Low | Impact: Medium**
+
+### 4.1 Improved Spatial Algorithm
+```typescript
+// crateController.svelte.ts improvements
+class CrateController {
+  calculateOptimalLayout(links: Link[], viewport: ViewportDimensions) {
+    const isMobile = viewport.width < 768;
+    
+    // Adaptive density based on device
+    const CRATE_SPACING_FACTOR = isMobile ? 1.2 : 1.5;
+    const MAX_CRATES_PER_COLUMN = isMobile ? 3 : 4;
+    
+    // Avoid dragon occlusion with better margins
+    const DRAGON_SAFE_ZONE = {
+      x: this.options.dragonWidth * 1.3, // 30% margin
+      y: 5 // Height clearance
+    };
+    
+    // Spiral placement for better distribution
+    const positions = this.calculateSpiralLayout(
+      links.length,
+      DRAGON_SAFE_ZONE,
+      CRATE_SPACING_FACTOR
+    );
+    
+    return positions;
+  }
+  
+  private calculateSpiralLayout(
+    count: number,
+    safeZone: { x: number, y: number },
+    spacing: number
+  ): [number, number, number][] {
+    const positions: [number, number, number][] = [];
+    let angle = 0;
+    let radius = safeZone.x;
+    
+    for (let i = 0; i < count; i++) {
+      const x = Math.cos(angle) * radius;
+      const y = (i / count) * safeZone.y;
+      positions.push([x, y, this.options.zDepth]);
+      
+      angle += (Math.PI * 2) / 8; // 8 positions per circle
+      if (i % 8 === 7) radius += spacing;
+    }
+    
+    return positions;
+  }
+}
+```
+
+### 4.2 Dynamic Viewport Adaptation
+```svelte
+<!-- StackedLinks.svelte -->
+const adaptiveLayout = $derived.by(() => {
+  const aspectRatio = screenWidth / screenHeight;
+  
+  if (aspectRatio < 0.5) {
+    // Ultra-tall mobile - single column
+    return 'single-column';
+  } else if (aspectRatio < 1.2) {
+    // Standard mobile - compact two columns
+    return 'compact-dual';
+  } else {
+    // Desktop/tablet - full layout
+    return 'standard';
+  }
+});
+```
+
+---
+
+## 🚦 Phase 5: Feature Flags Implementation
+**Timeline: 1 day | Risk: None | Impact: Enables A/B Testing**
+
+### 5.1 Performance Settings
+```typescript
+// src/stores/performance.svelte.ts
+export const performanceSettings = $state({
+  pixelRatioClamp: true,
+  useInstancing: false,
+  useLOD: false,
+  useKTX2: false,
+  dynamicResolution: false,
+  shadowsEnabled: true
+});
+
+// Toggle via URL params for A/B testing
+const params = new URLSearchParams(location.search);
+if (params.get('instancing') === '1') {
+  performanceSettings.useInstancing = true;
+}
+```
+
+### 5.2 Quality Presets
+```svelte
+<!-- QualitySelector.svelte -->
+<script>
+  const qualityPresets = {
+    low: { dpr: 1, shadows: false, particles: 5 },
+    medium: { dpr: 1.5, shadows: true, particles: 10 },
+    high: { dpr: 2, shadows: true, particles: 20 }
+  };
+  
+  function detectOptimalQuality() {
+    const gpu = getGPUTier();
+    if (gpu.tier < 2) return 'low';
+    if (gpu.tier < 3) return 'medium';
+    return 'high';
+  }
+</script>
+```
+
+---
+
+## 📊 Metrics & Monitoring
+
+### Key Performance Indicators
+```typescript
+// utils/performanceMonitor.ts
+class PerformanceMonitor {
+  private stats = {
+    fps: 0,
+    frameTime: 0,
+    memoryUsage: 0,
+    drawCalls: 0
+  };
+  
+  measure() {
+    // Using three.js renderer.info
+    this.stats.drawCalls = renderer.info.render.calls;
+    this.stats.memoryUsage = renderer.info.memory.geometries;
+    
+    // Custom FPS counter
+    const delta = clock.getDelta();
+    this.stats.fps = 1 / delta;
+    this.stats.frameTime = delta * 1000;
+    
+    // Send to analytics
+    if (this.stats.fps < 30) {
+      console.warn('Low FPS detected:', this.stats);
+    }
+  }
+}
+```
+
+### Success Metrics
+- **Load Time**: < 3s on 4G
+- **FPS**: 60fps desktop, 30fps mobile
+- **Memory**: < 200MB GPU memory
+- **First Interaction**: < 2s
+
+---
+
+## 🗺️ Migration Plan
+
+### Week 1: Foundation
+1. Implement Phase 1 (renderer settings, task optimization)
+2. Add performance monitoring
+3. Deploy behind `?perf=1` flag
+
+### Week 2: Assets
+1. Implement Phase 2 (KTX2, lazy loading)
+2. A/B test with 10% of users
+3. Monitor metrics
+
+### Week 3: Advanced
+1. Implement Phase 3 (instancing, LOD)
+2. Refine crate placement (Phase 4)
+3. Full rollout if metrics improve
+
+### Rollback Strategy
+```javascript
+// Feature flag with instant rollback
+if (performanceSettings.useNewOptimizations) {
+  // New code
+} else {
+  // Original code preserved
+}
+```
+
+---
+
+## 🎮 Code Examples
+
+### Optimized BaseScene with Threlte Patterns
+```svelte
+<script lang="ts">
+  import { useTask, useThrelte } from '@threlte/core';
+  import { Suspense } from '@threlte/extras';
+  
+  const { renderer, invalidate } = useThrelte();
+  
+  // Clamp pixel ratio
+  $effect(() => {
+    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio));
+  });
+  
+  // Pause rendering when hidden
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      renderer.setAnimationLoop(null);
+    } else {
+      invalidate();
+    }
+  });
+</script>
+
+<Suspense>
+  <Dragon slot="fallback" lowPoly />
+  <Dragon highPoly />
+</Suspense>
+```
+
+### Optimized Crate with Memoization
+```svelte
+<script lang="ts">
+  const crateGeometry = $derived.by(() => {
+    // Memoize geometry creation
+    return new THREE.BoxGeometry(width, height, depth);
+  }, [width, height, depth]);
+  
+  onDestroy(() => {
+    crateGeometry?.dispose();
+  });
+</script>
+```
+
+---
+
+## 🔬 Testing Checklist
+
+- [ ] Lighthouse score > 90
+- [ ] No memory leaks over 5 min session
+- [ ] Smooth 30fps on iPhone 12
+- [ ] Bundle size < 500KB gzipped
+- [ ] No visual regressions
+- [ ] Accessibility maintained
+
+This plan provides a clear path from quick wins to advanced optimizations, all testable behind feature flags with minimal risk to your production site.

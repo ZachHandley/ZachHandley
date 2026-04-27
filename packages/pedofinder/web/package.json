@@ -1,0 +1,29 @@
+{
+  "name": "pedofinder-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "type-check": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0",
+    "appwrite": "^16.0.2",
+    "echarts": "^5.5.1",
+    "vue-echarts": "^7.0.3",
+    "zod": "^3.23.8",
+    "@vueuse/core": "^11.3.0",
+    "resize-observer-polyfill": "^1.5.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "@vue/tsconfig": "^0.7.0",
+    "typescript": "^5.8.3",
+    "vite": "^6.0.5",
+    "vue-tsc": "^2.2.0"
+  }
+}

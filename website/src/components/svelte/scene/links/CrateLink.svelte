@@ -109,9 +109,9 @@
     }
   }
 
-  // Position and rotation
-  const positionArray = Array.isArray(position) ? position : [position, 0, 0];
-  const rotationArray = Array.isArray(rotation) ? rotation : [0, rotation, 0];
+  // Position and rotation (reactive to respond to parent resize recalculations)
+  let positionArray = $derived(Array.isArray(position) ? position as [number, number, number] : [position, 0, 0] as [number, number, number]);
+  let rotationArray = $derived(Array.isArray(rotation) ? rotation as [number, number, number] : [0, rotation, 0] as [number, number, number]);
 
   // States
   let group = $state<THREE.Group>();

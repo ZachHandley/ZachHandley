@@ -7,8 +7,25 @@
       "Bash(find:*)",
       "Bash(mkdir:*)",
       "Bash(mv:*)",
-      "Bash(sed:*)"
+      "Bash(sed:*)",
+      "Bash(uv sync:*)",
+      "Bash(uv add:*)",
+      "Bash(uv run ruff:*)",
+      "Bash(uv run:*)",
+      "mcp__web-search-prime__webSearchPrime",
+      "Bash(chmod:*)",
+      "Bash(cat:*)",
+      "Bash(tree:*)",
+      "Bash(npx astro:*)",
+      "Bash(pnpm run:*)",
+      "WebSearch",
+      "Bash(npx tsc:*)",
+      "Bash(npx svelte-check:*)"
     ],
     "deny": []
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledMcpjsonServers": [
+    "leantime"
+  ]
 }

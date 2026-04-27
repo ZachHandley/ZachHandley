@@ -17,6 +17,8 @@ export const LinkSchema = z.object({
     .optional(),
   category: z.string().optional(),
   inlineIcon: z.boolean().optional(),
+  active: z.boolean().default(true),
+  order: z.number().int().optional(),
 });
 
 export type Link = z.infer<typeof LinkSchema>;

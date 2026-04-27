@@ -1,0 +1,37 @@
+---
+import Layout from '~/layouts/Layout.astro';
+---
+
+<Layout title="Admin Login">
+  <main class="min-h-screen flex items-center justify-center bg-gray-900 p-6">
+    <form id="loginForm" class="bg-gray-800/80 backdrop-blur rounded-xl p-6 w-full max-w-md shadow-xl border border-white/10">
+      <h1 class="text-2xl font-bold text-white mb-4">Admin Login</h1>
+      <label class="block text-sm text-gray-300 mb-1">Email</label>
+      <input type="email" name="email" required class="w-full mb-4 px-3 py-2 rounded bg-gray-700 text-white border border-white/10 focus:outline-none focus:ring-2 focus:ring-orange-500" />
+      <label class="block text-sm text-gray-300 mb-1">Password</label>
+      <input type="password" name="password" required class="w-full mb-6 px-3 py-2 rounded bg-gray-700 text-white border border-white/10 focus:outline-none focus:ring-2 focus:ring-orange-500" />
+      <button type="submit" class="w-full py-2 rounded bg-orange-600 hover:bg-orange-500 text-white font-semibold">Login</button>
+      <p id="error" class="hidden mt-3 text-red-400 text-sm"></p>
+    </form>
+  </main>
+  <script>
+    const form = document.getElementById('loginForm');
+    const error = document.getElementById('error');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: fd.get('email'), password: fd.get('password') }),
+      });
+      if (res.ok) {
+        location.href = '/admin';
+      } else {
+        error.textContent = 'Invalid credentials';
+        error.classList.remove('hidden');
+      }
+    });
+  </script>
+</Layout>
+

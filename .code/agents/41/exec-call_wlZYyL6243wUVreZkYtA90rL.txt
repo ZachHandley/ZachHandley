@@ -1,0 +1,2228 @@
+2220 website/src/server/appwriteServer.ts
+import {
+  Client,
+  Account,
+  Databases,
+  TablesDB,
+  Storage,
+  Users,
+  Functions,
+  Teams,
+  Query,
+  ExecutionMethod,
+  type Models,
+  Role,
+  Compression,
+  ID,
+} from "node-appwrite";
+import { generateUniqueUsername } from "~/utils/usernameGenerator";
+import { generateReferralCode } from "~/utils/referralCode";
+import { getAppwriteClient } from "~/server/getAppwriteClient";
+import {
+  APPWRITE_ENDPOINT,
+  APPWRITE_PROJECT_ID,
+  APPWRITE_DATABASE_ID,
+  USER_PROFILES_COLLECTION,
+  CONVERSATIONS_COLLECTION,
+  // MESSAGES_COLLECTION,
+  // STARRED_CONTENT_COLLECTION,
+  // STAR_TRANSACTIONS_COLLECTION,
+  // POSTS_COLLECTION,
+  // FOLDERS_COLLECTION,
+  // NOTIFICATIONS_COLLECTION,
+  CREATOR_APPLICATIONS_COLLECTION,
+  CUSTOM_VERIFICATION_COLLECTION,
+  COLL_REQUESTS,
+  MESSAGES_COLLECTION,
+  REFERRALS_COLLECTION,
+  PLATFORM_SETTINGS_COLLECTION,
+  // FOLLOWS_COLLECTION,
+  // MEDIA_COLLECTION,
+  // OAUTH_ACCOUNTS_COLLECTION,
+  // STAR_PACKAGES_COLLECTION,
+  // SUPPORT_TICKETS_COLLECTION,
+  // USER_BANS_COLLECTION,
+  // DISPUTES_COLLECTION,
+  // TRANSACTIONS_COLLECTION,
+  // AVATARS_BUCKET_ID,
+  // GIFTS_STAR_PACKAGES_BUCKET,
+} from "astro:env/client";
+import { STRIPE_SECRET_KEY } from "astro:env/server";
+import { APPWRITE_SESSION_COOKIE } from "astro:env/client";
+import { type UserProfiles } from "~dbschemas/schemas/userProfiles";
+import { type Request } from "~dbschemas/schemas/request";
+import type { AstroCookies } from "astro";
+import { Permission } from "appwrite";
+import type { StarTransactions } from "~dbschemas/schemas/starTransactions";
+import type { Messages } from "~dbschemas/schemas/messages";
+import { type User } from "~/schemas/user";
+
+export interface SessionData {
+  user: Models.User<Models.Preferences> | null;
+  profile: UserProfiles | null;
+  sessionId: string | null;
+}
+
+export interface CreateRequestData {
+  creatorId: string;
+  bounty: number;
+  title?: string;
+  description?: string;
+  requestType: "video_call" | "video" | "image" | "audio" | "custom";
+  suggestedDeadline?: string;
+  deliveryDeadline?: string;
+  metadata?: string;
+}
+
+export interface ReferralInfo {
+  referrerId: string;
+  referrerUsername: string;
+  referrerDisplayName: string;
+  referralCode: string;
+  isValid: boolean;
+}
+
+/**
+ * Server-side Appwrite SDK class for managing all server-side Appwrite functionality
+ * Supports multiple authentication modes:
+ * - API Key mode (for admin operations)
+ * - Session Key mode (for unauthenticated operations during auth flow)
+ * - Session Token mode (for authenticated user operations)
+ */
+export class AppwriteServer {
+  private client: Client;
+  private account: Account;
+  private databases: TablesDB;
+  private storage: Storage;
+  private users: Users;
+  private functions: Functions;
+  private teams: Teams;
+
+  /**
+   * Generate a random 8-digit ID
+   */
+  private static generate8DigitId(): string {
+    return ID.unique().substring(0, 8);
+  }
+
+  constructor(
+    cookies?: AstroCookies,
+    jwt?: string,
+    useApiKey?: boolean,
+    useSessionKey?: boolean,
+    sessionToken?: string
+  ) {
+    if (!APPWRITE_ENDPOINT || !APPWRITE_PROJECT_ID) {
+      throw new Error("Appwrite endpoint and project ID are required");
+    }
+
+    this.client = getAppwriteClient(
+      cookies,
+      jwt,
+      useSessionKey || false,
+      useApiKey || false,
+      sessionToken
+    );
+
+    // Initialize SDK services
+    this.account = new Account(this.client);
+    this.databases = new TablesDB(this.client);
+    this.storage = new Storage(this.client);
+    this.users = new Users(this.client);
+    this.functions = new Functions(this.client);
+    this.teams = new Teams(this.client);
+  }
+
+  /**
+   * Create server instance with API key for admin operations
+   */
+  static withApiKey(): AppwriteServer {
+    return new AppwriteServer(undefined, undefined, true, false);
+  }
+
+  /**
+   * Create server instance with session key for unauthenticated operations
+   */
+  static withSessionKey(): AppwriteServer {
+    return new AppwriteServer(undefined, undefined, false, true);
+  }
+
+  /**
+   * Create server instance with user session token
+   */
+  static withSessionToken(
+    cookies?: AstroCookies,
+    jwt?: string,
+    sessionToken?: string
+  ): AppwriteServer {
+    return new AppwriteServer(cookies, jwt, false, false, sessionToken);
+  }
+
+  /**
+   * Get the databases instance
+   */
+  getDatabases(): TablesDB {
+    return this.databases;
+  }
+
+  /**
+   * Get the users instance
+   */
+  getUsers(): Users {
+    return this.users;
+  }
+
+  /**
+   * Get the account instance
+   */
+  getAccount(): Account {
+    return this.account;
+  }
+
+  /**
+   * Get the storage instance
+   */
+  getStorage(): Storage {
+    return this.storage;
+  }
+
+  /**
+   * Get the functions instance
+   */
+  getFunctions(): Functions {
+    return this.functions;
+  }
+
+  /**
+   * Get the teams instance
+   */
+  getTeams(): Teams {
+    return this.teams;
+  }
+
+  /**
+   * Create authentication token for user (SSR approach)
+   * This uses the Users SDK to create a token that can be used for client-side authentication
+   */
+  async createUserToken(
+    userId: string,
+    expire?: number
+  ): Promise<Models.Token> {
+    const serverWithApiKey = AppwriteServer.withApiKey();
+    return await serverWithApiKey.users.createToken(userId, 12, expire);
+  }
+
+  /**
+   * Does the user setup. Creates a profile, if it doesn't exist, and a bucket for user files.
+   * This is typically called after user registration.
+   */
+  async setupUser(userId: string): Promise<{
+    profile: UserProfiles;
+    bucket: Models.Bucket;
+  } | null> {
+    try {
+      const adminClient = AppwriteServer.withApiKey();
+      // Create user profile if it doesn't exist
+      const profile = await adminClient.getUserProfile(userId);
+      if (!profile) {
+        const uniqueUsername = await generateUniqueUsername();
+        // @ts-ignore
+        await this.createUserProfile(userId, {
+          username: uniqueUsername,
+          starBalance: 130,
+          isCreator: false,
+          isVerified: false,
+          balanceUsd: 0,
+          totalMessageCount: 0,
+        });
+      }
+
+      const bucket = await adminClient.storage.listBuckets({
+        queries: [
+        queries: [
+          Query.equal("$id", userId),
+        ]
+      });
+      let userBucket = bucket.buckets[0];
+      if (bucket.total === 0) {
+        // Create a bucket for user files
+        userBucket = await adminClient.storage.createBucket({
+          bucketId: userId,
+          name: `${userId} Bucket`,
+          permissions: [
+            Permission.read(Role.user(userId)),
+            Permission.write(Role.user(userId)),
+            Permission.read(Role.label("admin")),
+            Permission.write(Role.label("admin")),
+          ],
+          fileSecurity: true,
+          enabled: true,
+          maximumFileSize: 1000000000, // 1 GB limit
+          allowedFileExtensions: [],
+          compression: Compression.Gzip,
+          encryption: true,
+          antivirus: true
+      });
+      }
+      return { profile, bucket: userBucket };
+    } catch (error) {
+      console.error("Failed to setup user:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Create email/password session directly
+   */
+  async createEmailPasswordSession(
+    email: string,
+    password: string
+  ): Promise<{
+    session: Models.Session;
+    user: Models.User<Models.Preferences>;
+  }> {
+    try {
+      // Create session - this returns both session and user data
+      const session = await this.account.createEmailPasswordSession(
+        email,
+        password
+      );
+
+      // Get user data using admin API key for proper user details
+      const adminServer = AppwriteServer.withApiKey();
+      const user = await adminServer.users.get(session.userId);
+
+      return { session, user };
+    } catch (error) {
+      console.error("Failed to create email password session:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get session from request headers and validate
+   */
+  async getSessionFromRequest(
+    cookies?: AstroCookies,
+    sessionToken?: string
+  ): Promise<SessionData | null> {
+    const sessionCookie = cookies?.get(APPWRITE_SESSION_COOKIE)?.value;
+    if (!sessionCookie && !sessionToken) {
+      return null;
+    }
+
+    try {
+      const sessionServer = AppwriteServer.withSessionToken(
+        cookies,
+        undefined,
+        sessionToken
+      );
+      const user = await sessionServer.account.get();
+      if (!user) {
+        return null;
+      }
+      // Get user profile
+      const profile = await sessionServer.getUserProfile(user.$id);
+
+      return {
+        user,
+        profile,
+        sessionId: sessionCookie || sessionToken || null,
+      };
+    } catch (error) {
+      console.error("Failed to get session from request:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Verify user access (authentication required)
+   */
+  async verifyUserAccess(cookies: AstroCookies): Promise<SessionData> {
+    const session = await this.getSessionFromRequest(cookies);
+    if (!session?.user) {
+      throw new Error("Authentication required");
+    }
+    return session;
+  }
+
+  /**
+   * Check if user is admin
+   */
+  static isUserAdmin(user: any): boolean {
+    return user?.labels?.includes("admin") || false;
+  }
+
+  /**
+   * Check if user is super admin
+   */
+  static isUserSuperAdmin(user: any): boolean {
+    return user?.labels?.includes("super_admin") || false;
+  }
+
+  /**
+   * Verify admin access
+   */
+  async verifyAdminAccess(cookies: AstroCookies): Promise<SessionData> {
+    const session = await this.verifyUserAccess(cookies);
+    if (!AppwriteServer.isUserAdmin(session.user)) {
+      throw new Error("Admin access required");
+    }
+    return session;
+  }
+
+  /**
+   * Get user by ID
+   */
+  async getUser(
+    userId: string
+  ): Promise<Models.User<Models.Preferences> | null> {
+    try {
+      // Try with current client first
+      const user = await this.users.get(userId);
+      return user;
+    } catch (error) {
+      // If current client fails, try with admin API key
+      try {
+        const adminServer = AppwriteServer.withApiKey();
+        const user = await adminServer.users.get(userId);
+        return user;
+      } catch (adminError) {
+        console.warn("Could not fetch user with admin access:", adminError);
+        return null;
+      }
+    }
+  }
+
+  /**
+   * Get user profile from database
+   */
+  async getUserProfile(userId: string): Promise<any | null> {
+    try {
+      // Try with current client first
+      const profile = await this.databases.getRow({
+        databaseId: APPWRITE_DATABASE_ID,
+        tableId: USER_PROFILES_COLLECTION,
+        rowId: userId,
+      });
+      return profile;
+    } catch (error) {
+      // If current client fails, try with admin API key
+      try {
+        const adminServer = AppwriteServer.withApiKey();
+        const profile = await adminServer.databases.getRow({
+          databaseId: APPWRITE_DATABASE_ID,
+          tableId: USER_PROFILES_COLLECTION,
+          rowId: userId,
+        });
+        return profile;
+      } catch (adminError) {
+        console.warn(
+          "Could not fetch user profile with admin access:",
+          adminError
+        );
+        return null;
+      }
+    }
+  }
+
+  /**
+   * Get user profile by username
+   */
+  async getUserProfileByUsername(
+    username: string
+  ): Promise<UserProfiles | null> {
+    try {
+      const user = await this.databases.listRows({
+        databaseId: APPWRITE_DATABASE_ID,
+        tableId: USER_PROFILES_COLLECTION,
+        queries: [Query.equal("username", username)],
+      });
+      if (!user.total) {
+        return null;
+      }
+      return user.rows[0] as unknown as UserProfiles;
+    } catch (error) {
+      console.error("Failed to get user profile by username:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Create user profile in database
+   */
+  async createUserProfile(
+    userId: string,
+    profileData: Omit<UserProfiles, '$id' | '$createdAt' | '$updatedAt' | '$permissions'>
+  ): Promise<UserProfiles | null> {
+    try {
+      // Check if profile already exists
+      const existingProfile = await this.getUserProfile(userId);
+      if (existingProfile) {
+        console.warn("Profile already exists, updating instead");
+        return await this.updateUserProfile(userId, profileData);
+      }
+
+      const updateData: any = {
+        ...profileData,
+      };
+      delete updateData.$id;
+      delete updateData.$createdAt;
+      delete updateData.$updatedAt;
+
+      // Create new profile
+      return (await this.databases.createRow({
+        databaseId: APPWRITE_DATABASE_ID,
+        tableId: USER_PROFILES_COLLECTION,
+        rowId: userId,
+        data: updateData,
+        permissions: [
+          Permission.read(Role.user(userId)),
+          Permission.update(Role.user(userId)),
+        ],
+      })) as unknown as UserProfiles;
+    } catch (error) {
+      console.error("Failed to create user profile:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Update user profile in database
+   */
+  async updateUserProfile(
+    userId: string,
+    profileData: Omit<UserProfiles, '$id' | '$createdAt' | '$updatedAt' | '$permissions'>,
+    permissions?: string[],
+  ): Promise<any> {
+    // Remove system fields that should not be updated
+    const updateData: any = {
+      ...profileData,
+    };
+    delete updateData.$id;
+    delete updateData.$createdAt;
+    delete updateData.$updatedAt;
+    return await this.databases.updateRow({
+      databaseId: APPWRITE_DATABASE_ID,
+      tableId: USER_PROFILES_COLLECTION,
+      rowId: userId,
+      data: updateData,
+      permissions,
+    });
+  }
+
+  /**
+   * Get authenticated user with profile data
+   */
+  async getAuthenticatedUserWithProfile(
+    cookies: AstroCookies
+  ): Promise<User | null> {
+    const session = await this.getSessionFromRequest(cookies);
+    if (!session || !session.user) {
+      return null;
+    }
+
+    const profile = await this.getUserProfile(session.user.$id);
+
+    return {
+      ...session.user,
+      ...profile,
+    };
+  }
+
+  /**
+   * Extract domain from URL for cookie configuration
+   */
+  extractDomain(url: string): string {
+    const domain = url
+      .replace("https://", "")
+      .replace("http://", "")
+      .replace(":4321", "")
+      .replace(":8788", "")
+      .replace(":3000", "")
+      .replace(":5000", "");
+
+    return domain;
+  }
+
+  /**
+   * Login user and create session cookie
+   */
+  async loginWithEmailPassword(
+    email: string,
+    password: string,
+    domain: string
+  ): Promise<{
+    user: Models.User<Models.Preferences>;
+    profile: UserProfiles;
+    session: Models.Session;
+  } | null> {
+    try {
+      const { session, user } = await this.createEmailPasswordSession(
+        email,
+        email,
+        password
+      );
+
+      const setupResult = await this.setupUser(user.$id);
+      const profile =
+        setupResult?.profile || (await this.getUserProfile(user.$id));
+
+      return {
+        user,
+        profile,
+        session,
+      };
+    } catch (error) {
+      console.error("Login failed:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Check current user session
+   */
+  async checkUserSession(): Promise<any | null> {
+    try {
+      const user = await this.account.get();
+      return user;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
+   * Logout current session
+   */
+  async logout(): Promise<boolean> {
+    try {
+      await this.account.deleteSession("current");
+      return true;
+    } catch (error) {
+      console.error("Logout error:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Create user with email and password
+   */
+  async createUser(
+    userId: string,
+    identifier: string,
+    password?: string,
+    name?: string
+  ): Promise<any> {
+    const apiKeyServer = AppwriteServer.withApiKey();
+    const isEmail = identifier.includes("@");
+    return await apiKeyServer.users.create(
+      userId,
+      isEmail ? identifier : undefined,
+      !isEmail ? identifier : undefined,
+      password,
+      name
+    );
+  }
+
+  /**
+   * Create anonymous session for free messaging
+   */
+  async createAnonymousSession(): Promise<Models.Session> {
+    try {
+      const session = await this.account.createAnonymousSession();
+      return session;
+    } catch (error) {
+      console.error("Failed to create anonymous session:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create user profile for anonymous signup (with 0 stars)
+   */
+  async createAnonymousUserProfile(
+    userId: string,
+    profileData: Partial<UserProfiles>
+  ): Promise<UserProfiles | null> {
+    try {
+      // For anonymous signups, set star balance to 0 since they used their free message
+      const anonymousProfileData = {
+        ...profileData,
+        starBalance: 0,
+        isCreator: false,
+        isVerified: false,
+        balanceUsd: 0,
+        totalMessageCount: 1, // They already sent one message
+      };
+
+      return await this.createUserProfile(
+        userId,
+        anonymousProfileData as UserProfiles
+      );
+    } catch (error) {
+      console.error("Failed to create anonymous user profile:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Convert anonymous session to authenticated user
+   */
+  async convertAnonymousUser(
+    email: string,
+    password: string,
+    name?: string
+  ): Promise<{
+    user: Models.User<Models.Preferences>;
+  }> {
+    try {
+      // Update anonymous account to have email and password
+      const user = await this.account.updateEmail(email, password);
+      if (name) {
+        await this.account.updateName(name);
+      }
+
+      return { user };
+    } catch (error) {
+      console.error("Failed to convert anonymous user:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get user profiles with query filters
+   */
+  async getUserProfiles(queries: string[] = []): Promise<any[]> {
+    try {
+      const result = await this.databases.listRows({
+        databaseId: APPWRITE_DATABASE_ID,
+        tableId: USER_PROFILES_COLLECTION,
+        queries,
+      });
+      return result.rows;
+    } catch (error) {
+      console.error("Failed to get user profiles:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Execute Appwrite function
+   */
+  async executeFunction(
+    functionId: string,
+    data?: string,
+    async: boolean = false,
+    method: ExecutionMethod = ExecutionMethod.POST,
+    path?: string,
+    headers: Record<string, string> = {}
+  ): Promise<any> {
+    return await this.functions.createExecution(
+      functionId,
+      data,
+      async,
+      path,
+      method,
+      headers
+    );
+  }
+
+  /**
+   * Get documents from a collection with query
+   */
+  async getRows(params: {
+    databaseId: string;
+    tableId: string;
+    queries?: string[];
+  }): Promise<any> {
+    return await this.databases.listRows(params);
+  }
+
+  /**
+   * Get single document by ID
+   */
+  async getRow(params: {
+    databaseId: string;
+    tableId: string;
+    rowId: string;
+  }): Promise<any> {
+    return await this.databases.getRow(params);
+  }
+
+  /**
+   * Create document in collection
+   */
+  async createDocument(
+    collectionId: string,
+    documentId: string,
+    data: any,
+    permissions?: string[]
+  ): Promise<any> {
+    return await this.databases.createRow({
+      databaseId: APPWRITE_DATABASE_ID,
+      tableId: collectionId,
+      rowId: documentId,
+      data,
+      permissions,
+    });
+  }
+
+  /**
+   * Update document in collection
+   */
+  async updateDocument(
+    collectionId: string,
+    documentId: string,
+    data: any,
+    permissions?: string[]
+  ): Promise<any> {
+    return await this.databases.updateRow({
+      databaseId: APPWRITE_DATABASE_ID,
+      tableId: collectionId,
+      rowId: documentId,
+      data,
+      permissions,
+    });
+  }
+
+  /**
+   * Delete document from collection
+   */
+  async deleteDocument(collectionId: string, documentId: string): Promise<any> {
+    return await this.databases.deleteRow({
+      databaseId: APPWRITE_DATABASE_ID,
+      tableId: collectionId,
+      rowId: documentId,
+    });
+  }
+
+  /**
+   * List users with admin privileges
+   */
+  async listUsers(
+    params: {
+      queries?: string[];
+      search?: string;
+    } = {}
+  ): Promise<any> {
+    try {
+      // Use admin API key for user listing
+      const adminServer = AppwriteServer.withApiKey();
+
+      const queries = params.queries || [];
+
+      // Add search if provided
+      if (params.search) {
+        queries.push(`search("name", "${params.search}")`);
+        queries.push(`search("email", "${params.search}")`);
+      }
+
+      return await adminServer.users.list(queries);
+    } catch (error) {
+      console.error("Failed to list users:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create MFA challenge for custom verification
+   */
+  async createMFAChallenge(
+    userId: string,
+    actionType: string
+  ): Promise<{
+    challengeId: string;
+    secret?: string;
+  }> {
+    try {
+      const adminServer = AppwriteServer.withApiKey();
+
+      // Generate a unique challenge ID for our custom verification
+      const challengeId = `totp_${Date.now()}_${Math.random()
+        .toString(36)
+        .substring(2)}`;
+
+      // For now, we'll use a simplified approach since Appwrite's MFA API might not be directly accessible
+      // In a production environment, you would check for existing TOTP factors and create new ones as needed
+
+      // Try to get user's MFA factors (this might throw if user doesn't have MFA setup)
+      let secret: string | null = null;
+      let isSetupRequired = false;
+
+      try {
+        // This is a placeholder - in reality you'd check if user has TOTP setup
+        // const mfaFactors = await adminServer.users.listMfaFactors(userId);
+        // For now, assume first-time setup
+        isSetupRequired = true;
+
+        if (isSetupRequired) {
+          // Generate a new TOTP secret
+          secret = this.generateTOTPSecret();
+        }
+      } catch (mfaError) {
+        // User doesn't have MFA setup, need to create new secret
+        isSetupRequired = true;
+        secret = this.generateTOTPSecret();
+      }
+
+      // Store custom verification record
+      await this.createCustomVerification(userId, actionType, challengeId);
+
+      return {
+        challengeId,
+        secret: isSetupRequired && secret ? secret : undefined,
+      };
+    } catch (error) {
+      console.error("Failed to create MFA challenge:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate TOTP secret
+   */
+   */
+  private generateTOTPSecret(): string {
+    // Generate a random 32-character base32 secret for TOTP
+    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    let secret = "";
+    for (let i = 0; i < 32; i++) {
+      secret += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return secret;
+  }
+
+  /**
+   * Verify TOTP code (simplified implementation)
+   * In a production environment, you would use a proper TOTP library
+   */
+  private verifyTOTPCode(secret: string, token: string): boolean {
+    // This is a simplified verification - in production, use a proper TOTP library
+    // For now, we'll accept any 6-digit code for demonstration
+    return /^\d{6}$/.test(token) && token !== "000000";
+  }
+
+  /**
+   * Verify MFA challenge with TOTP code
+   */
+  async verifyMFAChallenge(
+    userId: string,
+    challengeId: string,
+    otp: string,
+    actionType: string
+  ): Promise<boolean> {
+    try {
+      // For this implementation, we'll do a simple validation
+      // In production, you would:
+      // 1. Retrieve the user's TOTP secret from secure storage
+      // 2. Verify the TOTP code against the secret
+      // 3. Check for time window validity
+
+      // Get the verification record to ensure it's valid
+      const verification = await this.getRow({
+        databaseId: APPWRITE_DATABASE_ID,
+        tableId: CUSTOM_VERIFICATION_COLLECTION,
+        rowId: challengeId,
+      });
+
+      if (
+        !verification ||
+        verification.userId !== userId ||
+        verification.actionType !== actionType
+      ) {
+        return false;
+      }
+
+      // Check if verification has expired
+      if (new Date(verification.expiresAt) < new Date()) {
+        return false;
+      }
+
+      // For demonstration, accept any valid 6-digit code except 000000
+      const isValidCode = /^\d{6}$/.test(otp) && otp !== "000000";
+
+      if (isValidCode) {
+        // Mark custom verification as completed
+        await this.completeCustomVerification(challengeId, userId, actionType);
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      console.error("Failed to verify MFA challenge:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Create custom verification record
+   */
+  async createCustomVerification(
+    userId: string,
+    actionType: string,
+    token: string
+  ): Promise<any> {
+    try {
+      const adminServer = AppwriteServer.withApiKey();
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+      return await adminServer.databases.createRow({
+        databaseId: APPWRITE_DATABASE_ID,
+        tableId: CUSTOM_VERIFICATION_COLLECTION,
+        rowId: token, // Use challengeId as document ID
+        data: {
+          userId,
+          actionType,
+          token,
+          expiresAt: expiresAt.toISOString(),
+          verified: false,
+          used: false,
+        },
+        permissions: [
+          Permission.read(Role.user(userId)),
+          Permission.update(Role.label("admin")),
+          Permission.delete(Role.label("admin")),
+        ],
+      });
+    } catch (error) {
+      console.error("Failed to create custom verification:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Complete custom verification
+   */
+  async completeCustomVerification(
+    token: string,
+    userId: string,
+    actionType: string
+  ): Promise<any> {
+    try {
+      const adminServer = AppwriteServer.withApiKey();
+
+      return await adminServer.databases.updateRow({
+        databaseId: APPWRITE_DATABASE_ID,
+        tableId: CUSTOM_VERIFICATION_COLLECTION,
+        rowId: token,
+        data: {
+          verified: true,
+          verifiedAt: new Date().toISOString(),
+          used: true,
+        },
+      });
+    } catch (error) {
+      console.error("Failed to complete custom verification:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Validate custom verification
+   */
+  async validateCustomVerification(
+    token: string,
+    userId: string,
+    actionType: string
+  ): Promise<{
+    isValid: boolean;
+    verification?: any;
+  }> {
+    try {
+      const adminServer = AppwriteServer.withApiKey();
+
+      const verification = await adminServer.databases.getRow({
+        databaseId: APPWRITE_DATABASE_ID,
+        tableId: CUSTOM_VERIFICATION_COLLECTION,
+        rowId: token,
+      });
+
+      // Check if verification is valid
+      const isValid =
+        verification.userId === userId &&
+        verification.actionType === actionType &&
+        verification.verified === true &&
+        verification.used === false &&
+        new Date(verification.expiresAt) > new Date();
+
+      return { isValid, verification };
+    } catch (error) {
+      console.error("Failed to validate custom verification:", error);
+      return { isValid: false };
+    }
+  }
+
+  /**
+   * Generate QR code URL using Appwrite's Avatars API
+   */
+  async getQRCodeUrl(
+    secret: string,
+    userEmail: string,
+    appName: string = "Staryo"
+  ): Promise<string> {
+    try {
+      const totpUri = `otpauth://totp/${encodeURIComponent(
+        appName
+      )}:${encodeURIComponent(
+        userEmail
+      )}?secret=${secret}&issuer=${encodeURIComponent(appName)}`;
+
+      // Use Appwrite's QR code generation
+      return `${APPWRITE_ENDPOINT}/avatars/qr?text=${encodeURIComponent(
+        totpUri
+      )}&size=256`;
+    } catch (error) {
+      console.error("Failed to generate QR code URL:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Clean up expired verification tokens
+   */
+  async cleanupExpiredVerifications(): Promise<void> {
+    try {
+      const adminServer = AppwriteServer.withApiKey();
+      const now = new Date().toISOString();
+
+      const expiredVerifications = await adminServer.databases.listRows({
+        databaseId: APPWRITE_DATABASE_ID,
+        tableId: CUSTOM_VERIFICATION_COLLECTION,
+        queries: [Query.lessThan("expiresAt", now)],
+      });
+
+      for (const verification of expiredVerifications.rows) {
+        await adminServer.databases.deleteRow({
+          databaseId: APPWRITE_DATABASE_ID,
+          tableId: CUSTOM_VERIFICATION_COLLECTION,
+          rowId: verification.$id,
+        });
+      }
+    } catch (error) {
+      console.error("Failed to cleanup expired verifications:", error);
+    }
+  }
+
+  /**
+   * Create a new request with proper permissions
+   */
+  async createRequest(
+    userId: string,
+    creatorId: string,
+    requestData: CreateRequestData
+  ): Promise<Request> {
+    try {
+      // Use admin API key for document creation
+      const adminServer = AppwriteServer.withApiKey();
+
+      // Prepare request document data
+      const documentData = {
+        userId,
+        creatorId,
+        bounty: requestData.bounty,
+        title: requestData.title,
+        description: requestData.description || null,
+        requestType: requestData.requestType,
+        status: "pending" as const,
+        deliveryDeadline: requestData.deliveryDeadline || null,
+        revisionCount: 0,
+        revisionRequested: false,
+        refunded: false,
+        metadata: requestData.metadata || null,
+      };
+
+      // Set permissions for user and creator
+      const permissions = [
+        Permission.read(Role.user(userId)),
+        Permission.update(Role.user(userId)),
+        Permission.read(Role.user(creatorId)),
+        Permission.update(Role.user(creatorId)),
+        Permission.read(Role.label("admin")),
+        Permission.update(Role.label("admin")),
+        Permission.delete(Role.label("admin")),
+      ];
+
+      // Create the request document
+      const requestId = ID.unique();
+      const createdRequest = await adminServer.databases.createRow({
+        databaseId: APPWRITE_DATABASE_ID,
+        tableId: COLL_REQUESTS,
+        rowId: requestId,
+        data: documentData,
+        permissions,
+      });
+
+      return createdRequest as unknown as Request;
+    } catch (error) {
+      console.error("Failed to create request:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create conversation with team and proper permissions
+   * Uses admin API key for team operations
+   */
+  async createConversationWithTeam(data: {
+    userIds: string[];
+    conversationType: "single" | "group" | "mass";
+    ownerUserId?: string;
+    conversationId?: string;
+  }): Promise<{
+    conversation: any;
+    team: any;
+    success: boolean;
+    error?: string;
+  }> {
+    const adminServer = AppwriteServer.withApiKey();
+    const conversationId = data.conversationId || ID.unique();
+
+    try {
+      // 1. Create team with conversation ID as team ID
+      // Use conversationId as team ID to link conversation and team
+      const teamId = conversationId;
+      const teamName = `Conversation ${conversationId}`;
+
+      let team;
+      try {
+        // Check if team already exists
+        team = await adminServer.teams.get(teamId);
+        console.log(`Team ${teamId} already exists, using existing team`);
+      } catch (teamError) {
+        // Team doesn't exist, create it
+        team = await adminServer.teams.create(teamId, teamName, ["member"]);
+        console.log(
+          `Created team ${teamId} for conversation ${conversationId}`
+        );
+      }
+
+      // 2. Create conversation document after
+      const conversationData = {
+        userIds: data.userIds,
+        ownerUserId: data.ownerUserId || null,
+        conversationType: data.conversationType,
+        isGroup: data.conversationType === "group",
+        isGroup: data.conversationType === "group",
+        lastMessageAt: new Date().toISOString(),
+        lastMessageId: null,
+        messageStreakCount: 0,
+        lastStreakUpdateAt: null,
+        seenBy: [],
+        isDeleted: false,
+      };
+
+      // Create with basic permissions first, will update after team creation
+      const conversation = await adminServer.databases.createRow({
+        databaseId: APPWRITE_DATABASE_ID,
+        tableId: CONVERSATIONS_COLLECTION,
+        rowId: conversationId,
+        data: conversationData,
+        permissions: [
+          Permission.read(Role.team(teamId)),
+          Permission.update(Role.team(teamId)),
+        ],
+      });
+
+      // 2. Create team with conversation ID as team ID
+
+      // 3. Add all participants to the team
+      const membershipsCreated = [];
+      const membershipsFailed = [];
+
+      for (const userId of data.userIds) {
+        try {
+          await adminServer.teams.createMembership(
+            teamId,
+            ["member"],
+            undefined,
+            userId
+          );
+          membershipsCreated.push(userId);
+          console.log(`Added user ${userId} to team ${teamId}`);
+        } catch (membershipError: any) {
+          // Check if user is already a member
+          if (membershipError.type === "user_already_exists") {
+            membershipsCreated.push(userId);
+            console.log(`User ${userId} already in team ${teamId}`);
+          } else {
+            membershipsFailed.push(userId);
+            console.error(
+              `Failed to add user ${userId} to team ${teamId}:`,
+              membershipError
+            );
+          }
+        }
+      }
+
+      return {
+        conversation: conversation,
+        team: team,
+        success: true,
+      };
+    } catch (error: any) {
+      console.error(
+        `Failed to create conversation with team ${conversationId}:`,
+        error
+      );
+
+      // Attempt cleanup if something was created
+      try {
+        await adminServer.databases.deleteRow({
+          databaseId: APPWRITE_DATABASE_ID,
+          tableId: CONVERSATIONS_COLLECTION,
+          rowId: conversationId,
+        });
+      } catch (cleanupError) {
+        console.error(
+          "Failed to cleanup conversation during rollback:",
+          cleanupError
+        );
+      }
+
+      try {
+        await adminServer.teams.delete(conversationId);
+      } catch (cleanupError) {
+        console.error("Failed to cleanup team during rollback:", cleanupError);
+      }
+
+      return {
+        conversation: null,
+        team: null,
+        success: false,
+        error: error.message || "Failed to create conversation with team",
+      };
+    }
+  }
+
+  /**
+   * Add participants to conversation team
+   * Uses admin API key for team operations
+   */
+  async addParticipantsToConversationTeam(
+    conversationId: string,
+    userIds: string[]
+  ): Promise<{ success: boolean; added: string[]; failed: string[] }> {
+    const adminServer = AppwriteServer.withApiKey();
+    const teamId = conversationId; // Team ID matches conversation ID
+    const added = [];
+    const failed = [];
+
+    try {
+      // Add users to team
+      for (const userId of userIds) {
+        try {
+          await adminServer.teams.createMembership(teamId, ["member"], userId);
+          added.push(userId);
+        } catch (error: any) {
+          if (error.type === "user_already_exists") {
+            added.push(userId); // Consider already existing as success
+          } else {
+            failed.push(userId);
+            console.error(
+              `Failed to add user ${userId} to team ${teamId}:`,
+              error
+            );
+          }
+        }
+      }
+
+      // Update conversation userIds if we successfully added anyone
+      if (added.length > 0) {
+        const conversation = await adminServer.databases.getRow({
+          databaseId: APPWRITE_DATABASE_ID,
+          tableId: CONVERSATIONS_COLLECTION,
+          rowId: conversationId,
+        });
+
+        const currentUserIds = conversation.userIds || [];
+        const newUserIds = [...new Set([...currentUserIds, ...added])];
+
+        await adminServer.databases.updateRow({
+          databaseId: APPWRITE_DATABASE_ID,
+          tableId: CONVERSATIONS_COLLECTION,
+          rowId: conversationId,
+          data: { userIds: newUserIds },
+        });
+      }
+
+      return { success: true, added, failed };
+    } catch (error: any) {
+      console.error(
+        `Failed to add participants to conversation ${conversationId}:`,
+        error
+      );
+      return { success: false, added, failed };
+    }
+  }
+
+  /**
+   * Remove participants from conversation team
+   * Uses admin API key for team operations
+   */
+  async removeParticipantsFromConversationTeam(
+    conversationId: string,
+    userIds: string[]
+  ): Promise<{ success: boolean; removed: string[]; failed: string[] }> {
+    const adminServer = AppwriteServer.withApiKey();
+    const teamId = conversationId; // Team ID matches conversation ID
+    const removed: string[] = [];
+    const failed = [];
+
+    try {
+      // Get current team memberships to find membership IDs
+      const memberships = await adminServer.teams.listMemberships(teamId);
+      const membershipMap = new Map();
+
+      for (const membership of memberships.memberships) {
+        membershipMap.set(membership.userId, membership.$id);
+      }
+
+      // Remove users from team
+      for (const userId of userIds) {
+        try {
+          const membershipId = membershipMap.get(userId);
+          if (membershipId) {
+            await adminServer.teams.deleteMembership(teamId, membershipId);
+            removed.push(userId);
+          } else {
+            // User wasn't in team anyway
+            removed.push(userId);
+          }
+        } catch (error) {
+          failed.push(userId);
+          console.error(
+            `Failed to remove user ${userId} from team ${teamId}:`,
+            error
+          );
+        }
+      }
+
+      // Update conversation userIds if we successfully removed anyone
+      if (removed.length > 0) {
+        const conversation = await adminServer.databases.getRow({
+          databaseId: APPWRITE_DATABASE_ID,
+          tableId: CONVERSATIONS_COLLECTION,
+          rowId: conversationId,
+        });
+
+        const currentUserIds = conversation.userIds || [];
+        const newUserIds = currentUserIds.filter(
+          (id: string) => !removed.includes(id)
+        );
+
+        // If no users left, delete the conversation
+        if (newUserIds.length === 0) {
+          await adminServer.databases.deleteRow({
+            databaseId: APPWRITE_DATABASE_ID,
+            tableId: CONVERSATIONS_COLLECTION,
+            rowId: conversationId,
+          });
+          await adminServer.teams.delete(teamId);
+        } else {
+          await adminServer.databases.updateRow({
+            databaseId: APPWRITE_DATABASE_ID,
+            tableId: CONVERSATIONS_COLLECTION,
+            rowId: conversationId,
+            data: { userIds: newUserIds },
+          });
+        }
+      }
+
+      return { success: true, removed, failed };
+    } catch (error: any) {
+      console.error(
+        `Failed to remove participants from conversation ${conversationId}:`,
+        error
+      );
+      return { success: false, removed, failed };
+    }
+  }
+
+  /**
+   * Validate conversation team permissions and fix if needed
+   * Uses admin API key for team operations
+   */
+  async validateConversationTeamPermissions(
+    conversationId: string
+  ): Promise<{ isValid: boolean; fixed?: boolean; errors?: string[] }> {
+    const adminServer = AppwriteServer.withApiKey();
+    const teamId = conversationId; // Team ID matches conversation ID
+    const errors = [];
+    let fixed = false;
+
+    try {
+      // 1. Check if conversation exists
+      const conversation = await adminServer.databases.getRow({
+        databaseId: APPWRITE_DATABASE_ID,
+        tableId: CONVERSATIONS_COLLECTION,
+        rowId: conversationId,
+      });
+
+      // 2. Check if team exists
+      let team;
+      try {
+        team = await adminServer.teams.get(teamId);
+      } catch (teamError) {
+        errors.push(`Team ${teamId} does not exist`);
+        return { isValid: false, errors };
+      }
+
+      // 3. Check team memberships vs conversation participants
+      const memberships = await adminServer.teams.listMemberships(teamId);
+      const teamMembers = memberships.memberships.map((m: any) => m.userId);
+      const conversationParticipants = conversation.userIds || [];
+
+      const missingFromTeam = conversationParticipants.filter(
+        (id: string) => !teamMembers.includes(id)
+      );
+      const extraInTeam = teamMembers.filter(
+        (id: string) => !conversationParticipants.includes(id)
+      );
+
+      // Fix missing team members
+      for (const userId of missingFromTeam) {
+        try {
+          await adminServer.teams.createMembership(teamId, ["member"], userId);
+          fixed = true;
+          console.log(`Fixed: Added missing user ${userId} to team ${teamId}`);
+        } catch (fixError) {
+          errors.push(
+            `Failed to add missing user ${userId} to team: ${fixError}`
+          );
+        }
+      }
+
+      // Fix extra team members
+      for (const userId of extraInTeam) {
+        try {
+          const membershipToRemove = memberships.memberships.find(
+            (m: any) => m.userId === userId
+          );
+          if (membershipToRemove) {
+            await adminServer.teams.deleteMembership(
+              teamId,
+              membershipToRemove.$id
+            );
+            fixed = true;
+            console.log(
+              `Fixed: Removed extra user ${userId} from team ${teamId}`
+            );
+          }
+        } catch (fixError) {
+          errors.push(
+            `Failed to remove extra user ${userId} from team: ${fixError}`
+          );
+        }
+      }
+
+      // 4. Check conversation permissions
+      const expectedPermissions = [
+        `read("team:${teamId}")`,
+        `update("team:${teamId}")`,
+        'read("label:admin")',
+        'update("label:admin")',
+      ];
+
+
+      const currentPermissions = conversation.$permissions || [];
+      const hasCorrectPermissions = expectedPermissions.every((perm) =>
+        currentPermissions.includes(perm)
+      );
+
+      if (!hasCorrectPermissions) {
+        try {
+          await adminServer.databases.updateRow({
+            databaseId: APPWRITE_DATABASE_ID,
+            tableId: CONVERSATIONS_COLLECTION,
+            rowId: conversationId,
+            data: {},
+            permissions: [
+              Permission.read(Role.team(teamId)),
+              Permission.update(Role.team(teamId)),
+              Permission.read(Role.label("admin")),
+              Permission.update(Role.label("admin")),
+            ],
+          });
+          fixed = true;
+          console.log(
+            `Fixed: Updated permissions for conversation ${conversationId}`
+          );
+        } catch (permError) {
+          errors.push(`Failed to fix conversation permissions: ${permError}`);
+        }
+      }
+
+      return {
+        isValid: errors.length === 0,
+        fixed: fixed && errors.length === 0,
+        errors: errors.length > 0 ? errors : undefined,
+      };
+    } catch (error: any) {
+      console.error(
+        `Failed to validate conversation team ${conversationId}:`,
+        error
+      );
+      return {
+        isValid: false,
+        errors: [`Validation failed: ${error.message}`],
+      };
+    }
+  }
+
+  /**
+   * Validate user has sufficient star balance
+   */
+  async validateUserBalance(
+    userId: string,
+    requiredAmount: number
+  ): Promise<{
+    isValid: boolean;
+    currentBalance: number;
+    balanceAfterTransaction?: number;
+    error?: string;
+  }> {
+    try {
+      const profile = (await this.databases.getRow({
+        databaseId: APPWRITE_DATABASE_ID,
+        tableId: USER_PROFILES_COLLECTION,
+        rowId: userId,
+      })) as unknown as UserProfiles;
+
+      const currentBalance = profile.starBalance || 0;
+      const hasBalance = currentBalance >= requiredAmount;
+
+      return {
+        isValid: hasBalance,
+        currentBalance,
+        balanceAfterTransaction: hasBalance
+          ? currentBalance - requiredAmount
+          : undefined,
+        error: hasBalance ? undefined : "Insufficient star balance",
+      };
+    } catch (error) {
+      console.error("Failed to validate user balance:", error);
+      return {
+        isValid: false,
+        currentBalance: 0,
+        error: "Failed to retrieve balance",
+      };
+    }
+  }
+
+  /**
+   * Atomically decrement user star balance
+   * Returns the updated profile or throws an error
+   */
+  async decrementUserStarBalance(
+    userId: string,
+    amount: number
+  ): Promise<UserProfiles> {
+    try {
+      // Get current balance
+      const profile = (await this.databases.getRow({
+        databaseId: APPWRITE_DATABASE_ID,
+        tableId: USER_PROFILES_COLLECTION,
+        rowId: userId,
+      })) as unknown as UserProfiles;
+
+      const currentBalance = profile.starBalance || 0;
+
+      // Validate sufficient balance
+      if (currentBalance < amount) {
+        throw new Error(`Insufficient balance: ${currentBalance} < ${amount}`);
+      }
+
+      // Update balance atomically
+      const updatedProfile = (await this.databases.decrementRowColumn({
+        databaseId: APPWRITE_DATABASE_ID,
+        tableId: USER_PROFILES_COLLECTION,
+        rowId: userId,
+        column: "starBalance",
+        value: amount,
+        min: 0,
+      })) as unknown as UserProfiles;
+
+      return updatedProfile;
+    } catch (error) {
+      console.error("Failed to decrement star balance:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create star transaction record
+   */
+  async createStarTransaction(
+    data: {
+      fromUserId: string;
+      toUserId?: string;
+      amount: number;
+      amountUsd?: number;
+      transactionType: string;
+      status: string;
+      currencyType: string;
+      exchangeRate?: number;
+      relatedMessageId?: string;
+      relatedRequestId?: string;
+      metadata?: string;
+    },
+    starTransactionId?: string,
+    permissions?: string[]
+  ): Promise<StarTransactions> {
+    try {
+      // Import STAR_TRANSACTIONS_COLLECTION at the top of the file if not already
+      const { STAR_TRANSACTIONS_COLLECTION } = await import("astro:env/client");
+
+      const transaction = await this.databases.createRow({
+        databaseId: APPWRITE_DATABASE_ID,
+        tableId: STAR_TRANSACTIONS_COLLECTION,
+        rowId: starTransactionId ?? ID.unique(),
+        data: {
+          ...data,
+          metadata:
+            data.metadata ||
+            JSON.stringify({
+              createdAt: new Date().toISOString(),
+              source: "message_api",
+            }),
+        },
+        permissions:
+          permissions ??
+          ([Permission.read(Role.user(data.fromUserId))].filter(
+            Boolean
+          ) as string[]),
+      });
+
+      return transaction as unknown as StarTransactions;
+    } catch (error) {
+      console.error("Failed to create star transaction:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create message with proper permissions
+   */
+  async createMessage(
+    data: {
+      conversationId: string;
+      senderUserId: string;
+      content: string;
+      messageType: string;
+      starCost?: number;
+      giftId?: string;
+      mediaFileIds?: string[];
+      mediaUrls?: string[];
+      replyToMessageId?: string;
+      metadata?: string;
+    },
+    messageId?: string,
+    permissions?: string[]
+  ): Promise<any> {
+    try {
+      // Get conversation to determine permissions
+      const conversation = await this.databases.getRow({
+        databaseId: APPWRITE_DATABASE_ID,
+        tableId: CONVERSATIONS_COLLECTION,
+        rowId: data.conversationId,
+      });
+
+      const message = await this.databases.createRow({
+        databaseId: APPWRITE_DATABASE_ID,
+        tableId: MESSAGES_COLLECTION,
+        rowId: messageId ?? ID.unique(),
+        data: {
+          ...data,
+          isEdited: false,
+          isArchived: false,
+          isStarred: false,
+          isSaved: false,
+          readBy: [
+            JSON.stringify({
+              userId: data.senderUserId,
+              time: new Date().toISOString(),
+            }),
+          ],
+        },
+        permissions: permissions ?? [
+          Permission.read(Role.team(data.conversationId)),
+          Permission.update(Role.user(data.senderUserId)),
+        ],
+      });
+
+      return message;
+    } catch (error) {
+      console.error("Failed to create message:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Calculate stars to USD based on user's exchange rate
+   */
+  async calculateStarsToUsd(
+    userId: string,
+    starAmount: number
+  ): Promise<{
+    amountUsd: number;
+    exchangeRate: number;
+  }> {
+    try {
+      // Import STAR_TRANSACTIONS_COLLECTION at the top of the file if not already
+      const { STAR_TRANSACTIONS_COLLECTION } = await import("astro:env/client");
+
+      // Get user's most recent purchase to determine exchange rate
+      const transactions = await this.databases.listRows({
+        databaseId: APPWRITE_DATABASE_ID,
+        tableId: STAR_TRANSACTIONS_COLLECTION,
+        queries: [
+          Query.equal("toUserId", userId),
+          Query.equal("transactionType", "purchase"),
+          Query.orderDesc("$createdAt"),
+          Query.limit(1),
+        ],
+      });
+
+      let exchangeRate = 0.01; // Default: 1 star = $0.01
+
+      if (transactions.rows.length > 0) {
+        const lastPurchase = transactions.rows[0];
+        if (lastPurchase.exchangeRate && lastPurchase.exchangeRate > 0) {
+          exchangeRate = lastPurchase.exchangeRate;
+        }
+      }
+
+      const amountUsd = starAmount * exchangeRate;
+
+      return {
+        amountUsd,
+        exchangeRate,
+      };
+    } catch (error) {
+      console.error("Failed to calculate USD value:", error);
+      // Return default calculation on error
+      return {
+        amountUsd: starAmount * 0.01,
+        exchangeRate: 0.01,
+      };
+    }
+  }
+
+  /**
+   * Check if user is eligible for their free first message
+   * A user is eligible if they have never sent a message and have no star transactions
+   */
+  async isEligibleForFreeFirstMessage(userId: string): Promise<boolean> {
+    try {
+      // Import collections
+      const { STAR_TRANSACTIONS_COLLECTION } = await import("astro:env/client");
+
+      // Check if user has any star transactions
+      const transactions = await this.databases.listRows({
+        databaseId: APPWRITE_DATABASE_ID,
+        tableId: STAR_TRANSACTIONS_COLLECTION,
+        queries: [
+          Query.equal('fromUserId', userId),
+          Query.limit(1)
+        ]
+      });
+      
+      if (transactions.rows.length > 0) {
+        return false; // User has transactions, not eligible
+      }
+      
+      // Check if user has sent any messages
+      const messages = await this.databases.listRows({
+        databaseId: APPWRITE_DATABASE_ID,
+        tableId: MESSAGES_COLLECTION,
+        queries: [
+          Query.equal('senderUserId', userId),
+          Query.limit(1)
+        ]
+      });
+      
+      return messages.rows.length === 0; // Eligible if no messages sent
+    } catch (error) {
+      console.error("Failed to check free message eligibility:", error);
+      console.error("Failed to check free message eligibility:", error);
+      return false; // Default to not eligible on error
+    }
+  }
+
+  /**
+   * Verify Stripe checkout session for purchase success flow
+   * Uses admin API key to validate session belongs to user and is paid
+   */
+  async verifyCheckoutSession(
+    sessionId: string,
+    userId: string
+  ): Promise<{
+    isValid: boolean;
+    sessionData?: {
+      starsAmount: number;
+      packageName: string;
+      amount: number;
+      stripeSessionId: string;
+      stripePaymentIntentId?: string;
+    };
+    error?: string;
+  }> {
+    try {
+
+      if (!STRIPE_SECRET_KEY) {
+        return {
+          isValid: false,
+          error: "Stripe configuration missing",
+        };
+      }
+
+      // Initialize Stripe with server key
+      const { default: Stripe } = await import("stripe");
+      const stripe = new Stripe(STRIPE_SECRET_KEY, {
+        apiVersion: "2025-06-30.basil",
+      });
+
+      // Retrieve checkout session from Stripe
+      const session = await stripe.checkout.sessions.retrieve(sessionId, {
+        expand: ["payment_intent"],
+      });
+
+      // Verify session belongs to the authenticated user
+      const sessionUserId =
+        session.client_reference_id || session.metadata?.userId;
+      if (sessionUserId !== userId) {
+        console.warn(
+          `Session ${sessionId} user mismatch: ${sessionUserId} !== ${userId}`
+        );
+        return {
+          isValid: false,
+          error: "Session does not belong to authenticated user",
+        };
+      }
+
+      // Verify payment was completed
+      if (session.payment_status !== "paid") {
+        console.warn(
+          `Session ${sessionId} payment not completed: ${session.payment_status}`
+        );
+        return {
+          isValid: false,
+          error: "Payment not completed",
+        };
+      }
+
+      // Extract purchase data from session metadata
+      const starsAmount = parseInt(session.metadata?.stars_amount || "0");
+      const packageName = session.metadata?.package_name || "Star Package";
+      const amount = (session.amount_total || 0) / 100; // Convert from cents
+
+      if (starsAmount <= 0) {
+        console.warn(
+          `Session ${sessionId} has invalid stars amount: ${starsAmount}`
+        );
+        return {
+          isValid: false,
+          error: "Invalid stars amount in session",
+        };
+      }
+
+      // Extract payment intent ID if available
+      let stripePaymentIntentId: string | undefined;
+      if (session.payment_intent) {
+        stripePaymentIntentId =
+          typeof session.payment_intent === "string"
+            ? session.payment_intent
+            : session.payment_intent.id;
+      }
+
+      return {
+        isValid: true,
+        sessionData: {
+          starsAmount,
+          packageName,
+          amount,
+          stripeSessionId: sessionId,
+          stripePaymentIntentId,
+        },
+      };
+    } catch (error) {
+      console.error("Failed to verify checkout session:", error);
+      return {
+        isValid: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Session verification failed",
+      };
+    }
+  }
+
+  /**
+   * Get referral commission rate from platform settings or user-specific rate
+   */
+  async getReferralCommissionRate(referrerId?: string): Promise<number> {
+    try {
+      const adminServer = AppwriteServer.withApiKey();
+      
+      // First check if referrer has a custom commission rate in their referral records
+      if (referrerId) {
+        try {
+          const existingReferrals = await adminServer.databases.listRows({
+            databaseId: APPWRITE_DATABASE_ID,
+            tableId: REFERRALS_COLLECTION,
+            queries: [
+              Query.equal("referrerUserId", referrerId),
+              Query.limit(1)
+            ],
+          });
+          
+          if (existingReferrals.rows.length > 0) {
+            const rate = existingReferrals.rows[0].commissionRate;
+            if (typeof rate === 'number' && rate > 0) {
+              return rate;
+            }
+          }
+        } catch (referralError) {
+          console.warn('Failed to check existing referral rate:', referralError);
+        }
+      }
+      
+      // Check platform settings for default commission rate
+      try {
+        const commissionSetting = await adminServer.databases.listRows({
+          databaseId: APPWRITE_DATABASE_ID,
+          tableId: PLATFORM_SETTINGS_COLLECTION,
+          queries: [
+            Query.equal("settingKey", "referral_commission_rate"),
+            Query.equal("isActive", true),
+            Query.limit(1)
+          ],
+        });
+        
+        if (commissionSetting.rows.length > 0) {
+          const settingValue = commissionSetting.rows[0].settingValue;
+          const rate = parseFloat(settingValue);
+          if (!isNaN(rate) && rate > 0) {
+            return rate;
+          }
+        }
+      } catch (settingsError) {
+        console.warn('Failed to load commission rate from platform settings:', settingsError);
+      }
+      
+      // Default fallback to 5%
+      return 0.05;
+    } catch (error) {
+      console.error("Failed to get referral commission rate:", error);
+      return 0.05; // Default fallback
+    }
+  }
+
+  /**
+   * Validate referral code and get referrer information
+   */
+  async validateReferralCode(referralCode: string): Promise<ReferralInfo | null> {
+    try {
+      // First, find all user profiles and check which one generates this code
+      const profiles = await this.databases.listRows({
+        databaseId: APPWRITE_DATABASE_ID,
+        tableId: USER_PROFILES_COLLECTION,
+        queries: [Query.equal("isCreator", true), Query.limit(100)],
+      });
+
+      // Check each creator's generated code against the provided code
+      for (const profile of profiles.rows) {
+        const generatedCode = generateReferralCode(profile.$id);
+        if (generatedCode === referralCode.toUpperCase()) {
+          // Found matching referrer
+          return {
+            referrerId: profile.$id,
+            referrerUsername: profile.username || 'unknown',
+            referrerDisplayName: profile.displayName || profile.username || 'Creator',
+            referralCode: referralCode.toUpperCase(),
+            isValid: true,
+          };
+        }
+      }
+
+      // If we have many creators, we might need to paginate
+      // For now, return null if not found in first 100
+      return null;
+    } catch (error) {
+      console.error("Failed to validate referral code:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Create referral record linking referrer to referred user
+   */
+  async createReferralRecord(
+    referrerId: string,
+    referredUserId: string,
+    referralCode: string,
+    customCommissionRate?: number
+  ): Promise<any | null> {
+    try {
+      const adminServer = AppwriteServer.withApiKey();
+      
+      // Get appropriate commission rate
+      const commissionRate = customCommissionRate || await adminServer.getReferralCommissionRate(referrerId);
+      
+      // Create referral record
+      const referralRecord = await adminServer.databases.createRow({
+        databaseId: APPWRITE_DATABASE_ID,
+        tableId: REFERRALS_COLLECTION,
+        rowId: ID.unique(),
+        data: {
+          referrerUserId: referrerId,
+          referredUserId: referredUserId,
+          referralCode: referralCode,
+          isVerified: false, // Will be verified when admin approves the application
+          isActive: true,
+          totalEarnedUsd: 0,
+          commissionRate: commissionRate,
+          lastEarningAt: null,
+          metadata: JSON.stringify({
+            source: 'creator_referral',
+            createdAt: new Date().toISOString(),
+            awaitingApproval: true,
+            commissionRateSource: customCommissionRate ? 'custom' : 'platform_default',
+          }),
+        },
+        permissions: [
+          Permission.read(Role.user(referrerId)),
+          Permission.read(Role.user(referredUserId)),
+          Permission.read(Role.label("admin")),
+          Permission.update(Role.label("admin")),
+          Permission.delete(Role.label("admin")),
+        ],
+      });
+
+      return referralRecord;
+    } catch (error) {
+      console.error("Failed to create referral record:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Process referred creator application (still requires admin approval)
+   */
+  async processReferredCreatorApplication(
+    userId: string,
+    applicationData: any,
+    referralInfo: ReferralInfo
+  ): Promise<{
+    success: boolean;
+    application?: any;
+    referralRecord?: any;
+    error?: string;
+  }> {
+    try {
+      const adminServer = AppwriteServer.withApiKey();
+
+      // 1. Create the creator application with pending status (still needs admin approval)
+      const applicationRecord = await adminServer.databases.createRow({
+        databaseId: APPWRITE_DATABASE_ID,
+        tableId: CREATOR_APPLICATIONS_COLLECTION,
+        rowId: ID.unique(),
+        data: {
+          ...applicationData,
+          status: 'pending_approval', // Still pending, but marked as referred
+          reviewNotes: `Referred by @${referralInfo.referrerUsername}`,
+          isReferred: true,
+          referrerUserId: referralInfo.referrerId,
+          referralCode: referralInfo.referralCode,
+        },
+        permissions: [
+          Permission.read(Role.user(userId)),
+          Permission.update(Role.user(userId)),
+          Permission.read(Role.label("admin")),
+          Permission.update(Role.label("admin")),
+        ],
+      });
+
+      // 2. Do NOT update user profile to creator status yet - wait for admin approval
+
+      // 3. Create referral record (but mark as unverified until application is approved)
+      const referralRecord = await this.createReferralRecord(
+        referralInfo.referrerId,
+        userId,
+        referralInfo.referralCode
+      );
+
+      return {
+        success: true,
+        application: applicationRecord,
+        referralRecord,
+      };
+    } catch (error) {
+      console.error("Failed to process referred creator application:", error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Processing failed",
+      };
+    }
+  }
+  }
+
+  /**
+   * Get referrer information by referral code (used for UI display)
+   */
+  async getReferrerInfo(referralCode: string): Promise<{
+    success: boolean;
+    referrer?: {
+      id: string;
+      username: string;
+      displayName: string;
+      profileImageUrl?: string;
+    };
+    error?: string;
+  }> {
+    try {
+      const referralInfo = await this.validateReferralCode(referralCode);
+      
+      if (!referralInfo) {
+        return {
+          success: false,
+          error: "Invalid referral code",
+        };
+      }
+
+      // Get full profile information
+      const profile = await this.getUserProfile(referralInfo.referrerId);
+      
+      return {
+        success: true,
+        referrer: {
+          id: referralInfo.referrerId,
+          username: profile?.username || referralInfo.referrerUsername,
+          displayName: profile?.displayName || referralInfo.referrerDisplayName,
+          profileImageUrl: profile?.profileImageUrl || undefined,
+        },
+      };
+    } catch (error) {
+      console.error("Failed to get referrer info:", error);
+      return {
+        success: false,
+        error: "Failed to get referrer information",
+      };
+    }
+  }
+
+  /**
+   * Get server client instances (for compatibility)
+   */
+  static getServerClient() {
+    const server = AppwriteServer.withApiKey();
+    return {
+      databases: server.getDatabases(),
+      users: server.getUsers(),
+      account: server.getAccount(),
+      storage: server.getStorage(),
+      functions: server.getFunctions(),
+      teams: server.getTeams(),
+    };
+  }
+}
