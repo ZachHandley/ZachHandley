@@ -32,7 +32,9 @@
   >
     <div class="flex items-center gap-3">
       <p class="font-mono text-xs text-fg-muted">
-        click a category to explore — or press <kbd class="rounded bg-bg-elev-2 px-1 py-0.5 text-fg">m</kbd> for 2D mode
+        click a category to explore — or press <kbd class="rounded bg-bg-elev-2 px-1 py-0.5 text-fg"
+          >m</kbd
+        > for 2D mode
       </p>
       <button
         type="button"

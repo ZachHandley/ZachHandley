@@ -14,19 +14,12 @@
   // Identity is in the icon, not the label.
   const socials = $derived(
     links.filter(
-      (l) =>
-        l.category === "personal" &&
-        l.type === "url" &&
-        typeof l.icon === "string" &&
-        l.url,
+      (l) => l.category === "personal" && l.type === "url" && typeof l.icon === "string" && l.url,
     ),
   );
 </script>
 
-<nav
-  aria-label="Social links"
-  class="flex items-center gap-1 {extraClass}"
->
+<nav aria-label="Social links" class="flex items-center gap-1 {extraClass}">
   {#each socials as link (link.name)}
     <a
       href={link.url}

@@ -15,15 +15,8 @@
     onNavigate: (sectionId: string) => void;
   };
 
-  const {
-    links,
-    mode,
-    canToggleMode,
-    isAdmin,
-    onToggleMode,
-    onOpenDrawer,
-    onNavigate,
-  }: Props = $props();
+  const { links, mode, canToggleMode, isAdmin, onToggleMode, onOpenDrawer, onNavigate }: Props =
+    $props();
 
   const navItems = [
     { id: "work", label: "work" },
