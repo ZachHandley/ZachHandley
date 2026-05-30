@@ -105,12 +105,16 @@
   function rowsToLinks(rows: any[]): Link[] {
     return rows.map((doc) => ({
       name: doc.title,
-      url: doc.url,
-      icon: doc.icon || undefined,
-      type: doc.type,
-      category: doc.category || undefined,
+      url: doc.url ?? undefined,
+      icon: doc.icon ?? undefined,
+      type: doc.type ?? "url",
+      category: doc.category ?? undefined,
       active: doc.active,
       order: doc.order,
+      featured: doc.featured ?? false,
+      stack: doc.stack ?? undefined,
+      repoUrl: doc.repoUrl ?? undefined,
+      description: doc.description ?? undefined,
     }));
   }
 

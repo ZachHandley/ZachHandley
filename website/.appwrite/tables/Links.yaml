@@ -1,0 +1,87 @@
+# yaml-language-server: $schema=../.yaml_schemas/collection.schema.json
+# Table Definition: Links
+name: Links
+id: links
+databaseId: main
+enabled: true
+permissions:
+  - permission: read
+    target: any
+  - permission: create
+    target: "label:admin"
+  - permission: update
+    target: "label:admin"
+  - permission: delete
+    target: "label:admin"
+rowSecurity: true
+indexes:
+  - key: by_active_order
+    type: key
+    columns:
+      - active
+      - order
+    orders:
+      - ASC
+      - ASC
+  - key: by_category_order
+    type: key
+    columns:
+      - category
+      - order
+    orders:
+      - ASC
+      - ASC
+  - key: by_featured_order
+    type: key
+    columns:
+      - featured
+      - order
+    orders:
+      - ASC
+      - ASC
+importDefs: []
+columns:
+  - key: title
+    type: string
+    size: 256
+    required: true
+  - key: url
+    type: string
+    size: 2048
+    required: false
+  - key: icon
+    type: string
+    size: 512
+    required: false
+  - key: order
+    type: integer
+    required: true
+  - key: active
+    type: boolean
+    required: true
+  - key: type
+    type: string
+    size: 24
+    required: false
+    default: url
+  - key: category
+    type: string
+    size: 64
+    required: false
+  - key: featured
+    type: boolean
+    required: false
+    default: false
+  - key: stack
+    type: string
+    size: 64
+    required: false
+    array: true
+  - key: repoUrl
+    type: string
+    size: 2048
+    required: false
+  - key: description
+    type: string
+    size: 512
+    required: false

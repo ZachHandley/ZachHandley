@@ -1,0 +1,349 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://appwrite-utils.dev/schemas/appwrite-config.schema.json",
+  "title": "Appwrite Configuration",
+  "description": "Schema for Appwrite project configuration in YAML",
+  "type": "object",
+  "properties": {
+    "appwrite": {
+      "type": "object",
+      "description": "Appwrite connection settings",
+      "properties": {
+        "endpoint": {
+          "type": "string",
+          "default": "https://cloud.appwrite.io/v1",
+          "description": "Appwrite server endpoint URL"
+        },
+        "project": {
+          "type": "string",
+          "description": "Appwrite project ID"
+        },
+        "key": {
+          "type": "string",
+          "description": "Appwrite API key with appropriate permissions"
+        }
+      },
+      "required": ["project", "key"],
+      "additionalProperties": false
+    },
+    "logging": {
+      "type": "object",
+      "description": "Logging configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable file logging"
+        },
+        "level": {
+          "type": "string",
+          "enum": ["error", "warn", "info", "debug"],
+          "default": "info",
+          "description": "Logging level"
+        },
+        "directory": {
+          "type": "string",
+          "description": "Custom log directory path (optional)"
+        },
+        "console": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable console logging"
+        }
+      },
+      "additionalProperties": false
+    },
+    "backups": {
+      "type": "object",
+      "description": "Backup configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable automatic backups"
+        },
+        "interval": {
+          "type": "number",
+          "default": 3600,
+          "description": "Backup interval in seconds"
+        },
+        "retention": {
+          "type": "number",
+          "default": 30,
+          "description": "Backup retention in days"
+        },
+        "cleanup": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable automatic backup cleanup"
+        }
+      },
+      "additionalProperties": false
+    },
+    "data": {
+      "type": "object",
+      "description": "Data management settings",
+      "properties": {
+        "enableMockData": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable mock data generation"
+        },
+        "documentBucketId": {
+          "type": "string",
+          "default": "documents",
+          "description": "Default bucket ID for document attachments"
+        },
+        "usersCollectionName": {
+          "type": "string",
+          "default": "Members",
+          "description": "Name of the users/members collection"
+        },
+        "importDirectory": {
+          "type": "string",
+          "default": "importData",
+          "description": "Directory containing import data files"
+        }
+      },
+      "additionalProperties": false
+    },
+    "schemas": {
+      "type": "object",
+      "description": "Schema generation settings",
+      "properties": {
+        "outputDirectory": {
+          "type": "string",
+          "default": "schemas",
+          "description": "Directory where generated schemas are saved"
+        },
+        "yamlSchemaDirectory": {
+          "type": "string",
+          "default": ".yaml_schemas",
+          "description": "Directory containing YAML validation schemas"
+        }
+      },
+      "additionalProperties": false
+    },
+    "migrations": {
+      "type": "object",
+      "description": "Migration settings",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable migration tracking database"
+        }
+      },
+      "additionalProperties": false
+    },
+    "databases": {
+      "type": "array",
+      "description": "Database configurations",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Database ID",
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,35}$"
+          },
+          "name": {
+            "type": "string",
+            "description": "Database display name"
+          },
+          "bucket": {
+            "type": "object",
+            "description": "Associated storage bucket",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "Bucket ID"
+              },
+              "name": {
+                "type": "string",
+                "description": "Bucket display name"
+              },
+              "permissions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Bucket permissions"
+              },
+              "fileSecurity": {
+                "type": "boolean",
+                "description": "Enable file-level security"
+              },
+              "enabled": {
+                "type": "boolean",
+                "default": true,
+                "description": "Enable the bucket"
+              },
+              "maximumFileSize": {
+                "type": "number",
+                "default": 30000000,
+                "description": "Maximum file size in bytes"
+              },
+              "allowedFileExtensions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Allowed file extensions (empty = all allowed)"
+              },
+              "compression": {
+                "type": "string",
+                "enum": ["none", "gzip", "zstd"],
+                "default": "none",
+                "description": "Compression algorithm"
+              },
+              "encryption": {
+                "type": "boolean",
+                "default": false,
+                "description": "Enable file encryption"
+              },
+              "antivirus": {
+                "type": "boolean",
+                "default": false,
+                "description": "Enable antivirus scanning"
+              }
+            },
+            "required": ["id", "name"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "name"],
+        "additionalProperties": false
+      }
+    },
+    "buckets": {
+      "type": "array",
+      "description": "Global storage buckets",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Bucket ID"
+          },
+          "name": {
+            "type": "string",
+            "description": "Bucket display name"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Bucket permissions"
+          },
+          "fileSecurity": {
+            "type": "boolean",
+            "description": "Enable file-level security"
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Enable the bucket"
+          },
+          "maximumFileSize": {
+            "type": "number",
+            "default": 30000000,
+            "description": "Maximum file size in bytes"
+          },
+          "allowedFileExtensions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Allowed file extensions (empty = all allowed)"
+          },
+          "compression": {
+            "type": "string",
+            "enum": ["none", "gzip", "zstd"],
+            "default": "none",
+            "description": "Compression algorithm"
+          },
+          "encryption": {
+            "type": "boolean",
+            "default": false,
+            "description": "Enable file encryption"
+          },
+          "antivirus": {
+            "type": "boolean",
+            "default": false,
+            "description": "Enable antivirus scanning"
+          }
+        },
+        "required": ["id", "name"],
+        "additionalProperties": false
+      }
+    },
+    "functions": {
+      "type": "array",
+      "description": "Appwrite Functions",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Function ID"
+          },
+          "name": {
+            "type": "string",
+            "description": "Function name"
+          },
+          "runtime": {
+            "type": "string",
+            "description": "Runtime environment"
+          },
+          "execute": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Execution permissions"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Event triggers"
+          },
+          "schedule": {
+            "type": "string",
+            "description": "Cron schedule"
+          },
+          "timeout": {
+            "type": "number",
+            "default": 15,
+            "description": "Execution timeout in seconds"
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Enable the function"
+          },
+          "logging": {
+            "type": "boolean",
+            "default": true,
+            "description": "Enable function logging"
+          },
+          "entrypoint": {
+            "type": "string",
+            "description": "Function entrypoint file"
+          },
+          "commands": {
+            "type": "string",
+            "description": "Build commands"
+          }
+        },
+        "required": ["id", "name", "runtime"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["appwrite"],
+  "additionalProperties": false
+}

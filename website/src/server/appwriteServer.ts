@@ -8,7 +8,7 @@ import {
   COLL_LINKS,
 } from "astro:env/client";
 import { getFileViewUrl } from "appwrite-utils";
-import { type Links } from "~/types/appwrite.d";
+import { type Links } from "~/types/links";
 
 export class AppwriteServer {
   private tablesDB: TablesDB;
@@ -52,6 +52,10 @@ export class AppwriteServer {
       category: payload.category ?? null,
       active: payload.active ?? true,
       order: payload.order ?? 0,
+      featured: payload.featured ?? false,
+      stack: payload.stack ?? null,
+      repoUrl: payload.repoUrl ?? null,
+      description: payload.description ?? null,
     };
     if (payload.fileId) {
       data.type = "download";
