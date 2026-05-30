@@ -21,15 +21,10 @@ export interface InlineRowResult {
  * Pure math — no Three.js types. Useful for inline icon+text rows, button
  * groups, etc.
  */
-export function layoutInlineRow(
-  items: InlineRowItem[],
-  gap: number,
-): InlineRowResult {
+export function layoutInlineRow(items: InlineRowItem[], gap: number): InlineRowResult {
   if (items.length === 0) return { positions: [], totalWidth: 0 };
 
-  const totalWidth =
-    items.reduce((sum, it) => sum + it.size.width, 0) +
-    gap * (items.length - 1);
+  const totalWidth = items.reduce((sum, it) => sum + it.size.width, 0) + gap * (items.length - 1);
 
   let cursor = -totalWidth / 2;
   const positions: number[] = [];

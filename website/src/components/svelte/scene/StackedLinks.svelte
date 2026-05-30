@@ -29,7 +29,7 @@
       position: THREE.Vector3,
       category?: string,
       action?: () => void | Promise<void>,
-      crateId?: string
+      crateId?: string,
     ) => void;
     visible?: boolean;
     useExplodingCrates?: boolean;
@@ -37,7 +37,10 @@
     sceneController?: any;
     screenWidth: number;
     screenHeight: number;
-    modalManager?: { showModal: (link: LinkType, x: number, y: number) => void; hideModal: () => void } | null;
+    modalManager?: {
+      showModal: (link: LinkType, x: number, y: number) => void;
+      hideModal: () => void;
+    } | null;
   } = $props();
 
   // Get Threlte context
@@ -139,15 +142,12 @@
     for (const category of allCategories) {
       try {
         const { prefix, name } = category.icon;
-        const response = await fetch(
-          `https://api.iconify.design/${prefix}.json?icons=${name}`,
-          {
-            mode: "cors",
-            headers: {
-              Accept: "application/json",
-            },
-          }
-        );
+        const response = await fetch(`https://api.iconify.design/${prefix}.json?icons=${name}`, {
+          mode: "cors",
+          headers: {
+            Accept: "application/json",
+          },
+        });
 
         if (!response.ok) {
           console.error(`Failed to fetch icon for ${category.name}`);
@@ -237,7 +237,7 @@
     // Make links smaller on mobile
     const linkSize = Math.min(
       (availableVerticalSpace * 0.8) / Math.max(maxPerSide, 1), // Use 80% of available height
-      maxLinkSize // Maximum size cap (smaller on mobile)
+      maxLinkSize, // Maximum size cap (smaller on mobile)
     );
 
     // Calculate positions with equidistant spacing
@@ -248,28 +248,19 @@
       // Calculate spacing for left column
       // For one link, it should be centered. For multiple links, they should be equidistant.
       const leftTotalSpace = leftLinks.length * linkSize;
-      const leftSpacing =
-        (availableVerticalSpace - leftTotalSpace) / (leftLinks.length + 1);
+      const leftSpacing = (availableVerticalSpace - leftTotalSpace) / (leftLinks.length + 1);
 
       // Position each link with equal spacing
       for (let i = 0; i < leftLinks.length; i++) {
         // Start from top boundary and work down with equal spacing
         // TOP_BOUNDARY - (spacing for top) - (i * (link size + spacing between links)) - (half linkSize)
-        const y =
-          TOP_BOUNDARY -
-          leftSpacing -
-          i * (linkSize + leftSpacing) -
-          linkSize / 2;
+        const y = TOP_BOUNDARY - leftSpacing - i * (linkSize + leftSpacing) - linkSize / 2;
 
         // Ensure we're not going below the floor
         if (y - linkSize / 2 < BOTTOM_BOUNDARY) {
           console.warn("Link would be below floor - adjusting position");
           // Position at floor level plus half link size to keep it above floor
-          leftPositions.push([
-            leftX,
-            BOTTOM_BOUNDARY + linkSize / 2,
-            LINKS_Z_DEPTH,
-          ]);
+          leftPositions.push([leftX, BOTTOM_BOUNDARY + linkSize / 2, LINKS_Z_DEPTH]);
         } else {
           leftPositions.push([leftX, y, LINKS_Z_DEPTH]);
         }
@@ -279,27 +270,18 @@
     if (rightLinks.length > 0) {
       // Calculate spacing for right column
       const rightTotalSpace = rightLinks.length * linkSize;
-      const rightSpacing =
-        (availableVerticalSpace - rightTotalSpace) / (rightLinks.length + 1);
+      const rightSpacing = (availableVerticalSpace - rightTotalSpace) / (rightLinks.length + 1);
 
       // Position each link with equal spacing
       for (let i = 0; i < rightLinks.length; i++) {
         // Start from top boundary and work down with equal spacing
-        const y =
-          TOP_BOUNDARY -
-          rightSpacing -
-          i * (linkSize + rightSpacing) -
-          linkSize / 2;
+        const y = TOP_BOUNDARY - rightSpacing - i * (linkSize + rightSpacing) - linkSize / 2;
 
         // Ensure we're not going below the floor
         if (y - linkSize / 2 < BOTTOM_BOUNDARY) {
           console.warn("Link would be below floor - adjusting position");
           // Position at floor level plus half link size to keep it above floor
-          rightPositions.push([
-            rightX,
-            BOTTOM_BOUNDARY + linkSize / 2,
-            LINKS_Z_DEPTH,
-          ]);
+          rightPositions.push([rightX, BOTTOM_BOUNDARY + linkSize / 2, LINKS_Z_DEPTH]);
         } else {
           rightPositions.push([rightX, y, LINKS_Z_DEPTH]);
         }
@@ -331,14 +313,11 @@
     showingCategories = false;
 
     // Wait for reactive systems to update grid layout
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise((resolve) => setTimeout(resolve, 50));
     await tick();
 
     // Fade in links and back button
-    await Promise.all([
-      linksOpacityTween.set(1),
-      backButtonOpacityTween.set(1),
-    ]);
+    await Promise.all([linksOpacityTween.set(1), backButtonOpacityTween.set(1)]);
 
     // Reset back button to default state when entering links view
     const backButtonComponent = crateComponents["back-button"];
@@ -355,10 +334,7 @@
     transitioning = true;
 
     // Fade out links and back button
-    await Promise.all([
-      linksOpacityTween.set(0),
-      backButtonOpacityTween.set(0),
-    ]);
+    await Promise.all([linksOpacityTween.set(0), backButtonOpacityTween.set(0)]);
 
     // Switch view
     selectedCategory = null;
@@ -429,8 +405,7 @@
     const screenEdgeX = visWidth / 2;
     const availableSpace = screenEdgeX - dragonEdgeX;
 
-    const distanceFromCenter =
-      dragonEdgeX + availableSpace * (layout.isMobile ? 0.75 : 0.5);
+    const distanceFromCenter = dragonEdgeX + availableSpace * (layout.isMobile ? 0.75 : 0.5);
 
     // Continuous category crate size from the layout lib (replaces `isMobile ? 3 : 4`).
     const categorySize = layout.categorySize.width;
@@ -450,17 +425,13 @@
     if (!isOnScreen(leftX)) {
       // Move it inward so it's visible (with a small margin)
       leftX = -screenEdgeX + categoryRadius + 0.5; // 0.5 is margin
-      console.warn(
-        "Left categories would be off-screen - adjusting X position"
-      );
+      console.warn("Left categories would be off-screen - adjusting X position");
     }
 
     if (!isOnScreen(rightX)) {
       // Move it inward so it's visible (with a small margin)
       rightX = screenEdgeX - categoryRadius - 0.5; // 0.5 is margin
-      console.warn(
-        "Right categories would be off-screen - adjusting X position"
-      );
+      console.warn("Right categories would be off-screen - adjusting X position");
     }
 
     // Define vertical boundaries
@@ -471,24 +442,15 @@
     // Calculate positions for left categories with equal spacing
     if (leftCategories.length > 0) {
       const leftTotalSpace = leftCategories.length * categorySize;
-      const leftSpacing =
-        (availableVerticalSpace - leftTotalSpace) / (leftCategories.length + 1);
+      const leftSpacing = (availableVerticalSpace - leftTotalSpace) / (leftCategories.length + 1);
 
       leftCategories.forEach((cat, i) => {
         // Start from top boundary and work down
-        const y =
-          TOP_BOUNDARY -
-          leftSpacing -
-          i * (categorySize + leftSpacing) -
-          categorySize / 2;
+        const y = TOP_BOUNDARY - leftSpacing - i * (categorySize + leftSpacing) - categorySize / 2;
 
         // Ensure we're not going below the floor
         if (y - categorySize / 2 < BOTTOM_BOUNDARY) {
-          categoryPositions[cat.id] = [
-            leftX,
-            BOTTOM_BOUNDARY + categorySize / 2,
-            LINKS_Z_DEPTH,
-          ];
+          categoryPositions[cat.id] = [leftX, BOTTOM_BOUNDARY + categorySize / 2, LINKS_Z_DEPTH];
         } else {
           categoryPositions[cat.id] = [leftX, y, LINKS_Z_DEPTH];
         }
@@ -499,24 +461,16 @@
     if (rightCategories.length > 0) {
       const rightTotalSpace = rightCategories.length * categorySize;
       const rightSpacing =
-        (availableVerticalSpace - rightTotalSpace) /
-        (rightCategories.length + 1);
+        (availableVerticalSpace - rightTotalSpace) / (rightCategories.length + 1);
 
       rightCategories.forEach((cat, i) => {
         // Start from top boundary and work down
         const y =
-          TOP_BOUNDARY -
-          rightSpacing -
-          i * (categorySize + rightSpacing) -
-          categorySize / 2;
+          TOP_BOUNDARY - rightSpacing - i * (categorySize + rightSpacing) - categorySize / 2;
 
         // Ensure we're not going below the floor
         if (y - categorySize / 2 < BOTTOM_BOUNDARY) {
-          categoryPositions[cat.id] = [
-            rightX,
-            BOTTOM_BOUNDARY + categorySize / 2,
-            LINKS_Z_DEPTH,
-          ];
+          categoryPositions[cat.id] = [rightX, BOTTOM_BOUNDARY + categorySize / 2, LINKS_Z_DEPTH];
         } else {
           categoryPositions[cat.id] = [rightX, y, LINKS_Z_DEPTH];
         }
@@ -537,7 +491,7 @@
     }
     return calculateGridLayout(filteredLinks);
   });
-  
+
   // Update gridLayout when calculatedGridLayout changes
   $effect(() => {
     gridLayout = calculatedGridLayout;
@@ -545,7 +499,7 @@
 
   // Store category positions with validation
   let categoryPositions = $state<Record<string, [number, number, number]>>({});
-  
+
   // Default/fallback positions for when calculations aren't ready
   const defaultPositions = {
     personal: [-6, 2, LINKS_Z_DEPTH] as [number, number, number],
@@ -553,34 +507,47 @@
     projects: [6, 2, LINKS_Z_DEPTH] as [number, number, number],
     downloads: [6, 0, LINKS_Z_DEPTH] as [number, number, number],
   };
-  
+
   // Function to get safe position with fallback
   function getSafePosition(categoryId: string): [number, number, number] {
     const calculated = categoryPositions[categoryId];
     const fallback = defaultPositions[categoryId as keyof typeof defaultPositions];
-    
-    if (calculated && calculated.every(coord => isFinite(coord))) {
+
+    if (calculated && calculated.every((coord) => isFinite(coord))) {
       return calculated;
     }
-    
+
     console.warn(`⚠️ Using fallback position for category: ${categoryId}`);
     return fallback || [0, 0, LINKS_Z_DEPTH];
   }
-  
+
   // Function to get safe link position with fallback
-  function getSafeLinkPosition(positions: [number, number, number][], index: number): [number, number, number] | null {
+  function getSafeLinkPosition(
+    positions: [number, number, number][],
+    index: number,
+  ): [number, number, number] | null {
     const position = positions[index];
-    
-    if (position && position.every(coord => isFinite(coord))) {
+
+    if (position && position.every((coord) => isFinite(coord))) {
       return position;
     }
-    
+
     console.warn(`⚠️ Link position at index ${index} is invalid:`, position);
     return null;
   }
 
   // Registry for exploding crate components
-  let crateComponents = $state<Record<string, { explodeCrate: () => void; resetCrate: () => void; resetToDefault: () => void; explodeWithAction: (action?: () => void) => Promise<void> }>>({});
+  let crateComponents = $state<
+    Record<
+      string,
+      {
+        explodeCrate: () => void;
+        resetCrate: () => void;
+        resetToDefault: () => void;
+        explodeWithAction: (action?: () => void) => Promise<void>;
+      }
+    >
+  >({});
 
   // Function to trigger explosion on a specific crate
   export async function triggerCrateExplosion(crateId: string): Promise<void> {
@@ -588,7 +555,7 @@
     if (crate && crate.explodeCrate) {
       crate.explodeCrate();
       // Wait for explosion animation to complete
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   }
 
@@ -619,7 +586,7 @@
   function syncCrate(
     id: string,
     handlers: { explode: () => void; reset: () => void },
-    pos: [number, number, number]
+    pos: [number, number, number],
   ) {
     if (!sceneController) return;
     const vec = vecFor(id, pos);
@@ -645,7 +612,7 @@
           explode: () => component.explodeWithAction?.(() => selectCategory(category.id)),
           reset: () => component.resetCrate?.(),
         },
-        getSafePosition(category.id)
+        getSafePosition(category.id),
       );
     });
 
@@ -659,14 +626,15 @@
           explode: () => component.explodeWithAction?.(() => selectCategory(category.id)),
           reset: () => component.resetCrate?.(),
         },
-        getSafePosition(category.id)
+        getSafePosition(category.id),
       );
     });
   });
 
   // Sync link crates with SceneController in links view.
   $effect(() => {
-    if (!sceneController || transitioning || showingCategories || filteredLinks.length === 0) return;
+    if (!sceneController || transitioning || showingCategories || filteredLinks.length === 0)
+      return;
 
     const half = Math.ceil(filteredLinks.length / 2);
     filteredLinks.forEach((link, i) => {
@@ -679,7 +647,7 @@
         syncCrate(
           id,
           { explode: () => component.explodeCrate?.(), reset: () => component.resetCrate?.() },
-          safePosition
+          safePosition,
         );
       } else {
         const rightIndex = i - half;
@@ -690,7 +658,7 @@
         syncCrate(
           id,
           { explode: () => component.explodeCrate?.(), reset: () => component.resetCrate?.() },
-          safePosition
+          safePosition,
         );
       }
     });
@@ -704,7 +672,7 @@
           explode: () => backButtonComponent.explodeWithAction?.(() => goBack()),
           reset: () => backButtonComponent.resetCrate?.(),
         },
-        [0, backButtonYPosition, LINKS_Z_DEPTH + 3]
+        [0, backButtonYPosition, LINKS_Z_DEPTH + 3],
       );
     }
   });
@@ -753,8 +721,13 @@
             bind:this={crateComponents[`category-left-${category.id}`]}
             onLinkClick={(url, type, position, action) => {
               // Use fireball system with immediate action execution for categories
-              onLinkClick!(url, type, position, category.name, () =>
-                selectCategory(category.id), `category-left-${category.id}`
+              onLinkClick!(
+                url,
+                type,
+                position,
+                category.name,
+                () => selectCategory(category.id),
+                `category-left-${category.id}`,
               );
             }}
           />
@@ -775,8 +748,13 @@
             opacity={categoryOpacity}
             onLinkClick={(url, type, position, action) => {
               // Use fireball system with immediate action execution for categories
-              onLinkClick!(url, type, position, category.name, () =>
-                selectCategory(category.id), `category-left-${category.id}`
+              onLinkClick!(
+                url,
+                type,
+                position,
+                category.name,
+                () => selectCategory(category.id),
+                `category-left-${category.id}`,
               );
             }}
           />
@@ -807,8 +785,13 @@
             bind:this={crateComponents[`category-right-${category.id}`]}
             onLinkClick={(url, type, position, action) => {
               // Use fireball system with immediate action execution for categories
-              onLinkClick!(url, type, position, category.name, () =>
-                selectCategory(category.id), `category-right-${category.id}`
+              onLinkClick!(
+                url,
+                type,
+                position,
+                category.name,
+                () => selectCategory(category.id),
+                `category-right-${category.id}`,
               );
             }}
           />
@@ -829,8 +812,13 @@
             opacity={categoryOpacity}
             onLinkClick={(url, type, position, action) => {
               // Use fireball system with immediate action execution for categories
-              onLinkClick!(url, type, position, category.name, () =>
-                selectCategory(category.id), `category-right-${category.id}`
+              onLinkClick!(
+                url,
+                type,
+                position,
+                category.name,
+                () => selectCategory(category.id),
+                `category-right-${category.id}`,
               );
             }}
           />
@@ -853,7 +841,7 @@
               columnKey="left"
               width={gridLayout.linkSize}
               height={gridLayout.linkSize}
-              onLinkClick={onLinkClick}
+              {onLinkClick}
               opacity={1}
               autoReset={true}
               crateId={`link-left-${link.name}-${i}`}
@@ -868,7 +856,7 @@
               columnKey="left"
               width={gridLayout.linkSize}
               height={gridLayout.linkSize}
-              onLinkClick={onLinkClick}
+              {onLinkClick}
               opacity={1}
             />
           {/if}
@@ -889,7 +877,7 @@
               columnKey="right"
               width={gridLayout.linkSize}
               height={gridLayout.linkSize}
-              onLinkClick={onLinkClick}
+              {onLinkClick}
               opacity={1}
               autoReset={true}
               crateId={`link-right-${link.name}-${i}`}
@@ -922,11 +910,7 @@
             icon: "mdi:arrow-left",
             inlineIcon: true,
           }}
-          position={[
-            0,
-            backButtonYPosition,
-            LINKS_Z_DEPTH + 2,
-          ]}
+          position={[0, backButtonYPosition, LINKS_Z_DEPTH + 2]}
           index={0}
           columnKey="bottom"
           height={layout.backButtonSize.height}
@@ -949,11 +933,7 @@
             icon: "mdi:arrow-left",
             inlineIcon: true,
           }}
-          position={[
-            0,
-            backButtonYPosition,
-            LINKS_Z_DEPTH + 4,
-          ]}
+          position={[0, backButtonYPosition, LINKS_Z_DEPTH + 4]}
           index={0}
           columnKey="bottom"
           height={layout.backButtonSize.height}
@@ -968,4 +948,3 @@
     </T.Group>
   {/if}
 {/if}
-

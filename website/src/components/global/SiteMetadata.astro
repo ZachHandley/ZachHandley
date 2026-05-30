@@ -11,12 +11,7 @@ interface Props {
   noindex?: boolean;
 }
 
-const {
-  title,
-  description,
-  image = "/og-image.png",
-  noindex = false,
-} = Astro.props;
+const { title, description, image = "/og-image.png", noindex = false } = Astro.props;
 
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 const siteName = "ZachHandley";
@@ -52,16 +47,8 @@ const fullTitle = `${title} - ${siteName}`;
 <link rel="icon" type="image/png" href="/favicon.png" />
 
 <!-- Theme Color -->
-<meta
-  name="theme-color"
-  content="#ffffff"
-  media="(prefers-color-scheme: light)"
-/>
-<meta
-  name="theme-color"
-  content="#333333"
-  media="(prefers-color-scheme: dark)"
-/>
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#333333" media="(prefers-color-scheme: dark)" />
 
 <!-- Client Router for Transitions -->
 <ClientRouter />

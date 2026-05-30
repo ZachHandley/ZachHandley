@@ -30,6 +30,7 @@ COLL_LINKS=links
 The script uses Node 20+'s `--env-file=.env` (no `dotenv` dep).
 
 Each created row gets:
+
 - `permissions`: `read(any)`, `update(label:admin)`, `delete(label:admin)`
 - `order`: array index
 - `active`: `true`

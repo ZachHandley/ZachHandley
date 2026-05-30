@@ -1,20 +1,12 @@
 import * as THREE from "three";
 
-type AnyCamera =
-  | THREE.PerspectiveCamera
-  | THREE.OrthographicCamera
-  | null
-  | undefined;
+type AnyCamera = THREE.PerspectiveCamera | THREE.OrthographicCamera | null | undefined;
 
 /**
  * Visible scene height in world units at a given world-Z plane.
  * Works for both PerspectiveCamera and OrthographicCamera.
  */
-export function visibleHeightAtDepth(
-  camera: AnyCamera,
-  worldZ: number,
-  fallback = 10,
-): number {
+export function visibleHeightAtDepth(camera: AnyCamera, worldZ: number, fallback = 10): number {
   if (!camera) return fallback;
 
   if ((camera as THREE.PerspectiveCamera).isPerspectiveCamera) {
@@ -34,11 +26,7 @@ export function visibleHeightAtDepth(
 /**
  * Visible scene width in world units at a given world-Z plane.
  */
-export function visibleWidthAtDepth(
-  camera: AnyCamera,
-  worldZ: number,
-  fallback = 10,
-): number {
+export function visibleWidthAtDepth(camera: AnyCamera, worldZ: number, fallback = 10): number {
   if (!camera) return fallback;
 
   if ((camera as THREE.OrthographicCamera).isOrthographicCamera) {

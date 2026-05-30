@@ -36,24 +36,30 @@
   });
 
   // Position animation for smooth positioning
-  const positionSpring = new Spring({ x: 0, y: 0 }, {
-    stiffness: 0.4,
-    damping: 0.7,
-  });
+  const positionSpring = new Spring(
+    { x: 0, y: 0 },
+    {
+      stiffness: 0.4,
+      damping: 0.7,
+    },
+  );
 
   let scale = $derived(scaleSpring.current);
   let opacity = $derived(opacityTween.current);
   let position = $derived(positionSpring.current);
 
   // Simple responsive modal positioning - just center it
-  function calculateModalPosition(clickPos: { x: number; y: number } | null): { x: number; y: number } {
+  function calculateModalPosition(clickPos: { x: number; y: number } | null): {
+    x: number;
+    y: number;
+  } {
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
-    
+
     // Center the modal on screen for reliability
     return {
       x: (viewportWidth - 320) / 2, // 320px modal width
-      y: (viewportHeight - 280) / 2  // 280px modal height
+      y: (viewportHeight - 280) / 2, // 280px modal height
     };
   }
 
@@ -65,19 +71,19 @@
       linkName: link?.name,
       hasClickPosition: !!clickPosition,
       clickPosition,
-      mounted
+      mounted,
     });
-    
+
     if (isVisible && link && clickPosition) {
       console.log(`🎬 Modal showing - calculating position and animating in`);
-      
+
       // Calculate safe position
       const safePosition = calculateModalPosition(clickPosition);
       console.log(`🎬 Safe position calculated:`, safePosition);
-      
+
       // Set initial position
       positionSpring.set(safePosition);
-      
+
       // Animate in
       setTimeout(() => {
         console.log(`🎬 Starting modal animation`);
@@ -171,34 +177,34 @@
   function getThemeColors(type: Link["type"]): { bg: string; border: string; accent: string } {
     switch (type) {
       case "download":
-        return { 
-          bg: "from-green-900/90 to-green-800/90", 
-          border: "border-green-500/50", 
-          accent: "text-green-400" 
+        return {
+          bg: "from-green-900/90 to-green-800/90",
+          border: "border-green-500/50",
+          accent: "text-green-400",
         };
       case "contact":
-        return { 
-          bg: "from-blue-900/90 to-blue-800/90", 
-          border: "border-blue-500/50", 
-          accent: "text-blue-400" 
+        return {
+          bg: "from-blue-900/90 to-blue-800/90",
+          border: "border-blue-500/50",
+          accent: "text-blue-400",
         };
       case "category":
-        return { 
-          bg: "from-purple-900/90 to-purple-800/90", 
-          border: "border-purple-500/50", 
-          accent: "text-purple-400" 
+        return {
+          bg: "from-purple-900/90 to-purple-800/90",
+          border: "border-purple-500/50",
+          accent: "text-purple-400",
         };
       case "action":
-        return { 
-          bg: "from-amber-900/90 to-amber-800/90", 
-          border: "border-amber-500/50", 
-          accent: "text-amber-400" 
+        return {
+          bg: "from-amber-900/90 to-amber-800/90",
+          border: "border-amber-500/50",
+          accent: "text-amber-400",
         };
       default:
-        return { 
-          bg: "from-orange-900/90 to-orange-800/90", 
-          border: "border-orange-500/50", 
-          accent: "text-orange-400" 
+        return {
+          bg: "from-orange-900/90 to-orange-800/90",
+          border: "border-orange-500/50",
+          accent: "text-orange-400",
         };
     }
   }
@@ -207,26 +213,25 @@
   function getDisplayIcon(): string {
     if (link?.icon) {
       // Convert icon object to string if needed
-      if (typeof link.icon === 'object' && 'prefix' in link.icon && 'name' in link.icon) {
+      if (typeof link.icon === "object" && "prefix" in link.icon && "name" in link.icon) {
         return `${link.icon.prefix}:${link.icon.name}`;
-      } else if (typeof link.icon === 'string') {
+      } else if (typeof link.icon === "string") {
         return link.icon;
       }
     }
-    return getTypeIcon(link?.type || 'url');
+    return getTypeIcon(link?.type || "url");
   }
 </script>
 
 {#if isVisible && link && mounted}
   <!-- Modal backdrop -->
-  <div 
-    class="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm"
-    style="opacity: {opacity}"
-  >
+  <div class="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm" style="opacity: {opacity}">
     <!-- Modal container -->
     <div
       bind:this={modalElement}
-      class="fixed bg-gradient-to-br {getThemeColors(link.type).bg} rounded-2xl shadow-2xl border {getThemeColors(link.type).border} p-6 max-w-sm backdrop-blur-lg"
+      class="fixed bg-gradient-to-br {getThemeColors(link.type)
+        .bg} rounded-2xl shadow-2xl border {getThemeColors(link.type)
+        .border} p-6 max-w-sm backdrop-blur-lg"
       style="
         left: {position.x}px;
         top: {position.y}px;
@@ -238,7 +243,9 @@
       <!-- Header -->
       <div class="flex items-start justify-between mb-4">
         <div class="flex items-center gap-3">
-          <div class="w-10 h-10 flex items-center justify-center rounded-lg bg-black/20 backdrop-blur-sm">
+          <div
+            class="w-10 h-10 flex items-center justify-center rounded-lg bg-black/20 backdrop-blur-sm"
+          >
             <Icon icon={getDisplayIcon()} class="w-6 h-6 {getThemeColors(link.type).accent}" />
           </div>
           <div>
@@ -250,7 +257,7 @@
             {/if}
           </div>
         </div>
-        
+
         <!-- Close button -->
         <button
           onclick={onClose}
@@ -264,17 +271,23 @@
       <!-- Content preview -->
       {#if link.type === "url" && link.url}
         <div class="mb-4 p-3 bg-black/20 rounded-lg backdrop-blur-sm">
-          <p class="text-xs {getThemeColors(link.type).accent} uppercase tracking-wide mb-1">Website</p>
+          <p class="text-xs {getThemeColors(link.type).accent} uppercase tracking-wide mb-1">
+            Website
+          </p>
           <p class="text-gray-200 text-sm break-all">{link.url}</p>
         </div>
       {:else if link.type === "download" && link.url}
         <div class="mb-4 p-3 bg-black/20 rounded-lg backdrop-blur-sm">
-          <p class="text-xs {getThemeColors(link.type).accent} uppercase tracking-wide mb-1">Download</p>
-          <p class="text-gray-200 text-sm">{link.url.split('/').pop() || 'File'}</p>
+          <p class="text-xs {getThemeColors(link.type).accent} uppercase tracking-wide mb-1">
+            Download
+          </p>
+          <p class="text-gray-200 text-sm">{link.url.split("/").pop() || "File"}</p>
         </div>
       {:else if link.type === "contact"}
         <div class="mb-4 p-3 bg-black/20 rounded-lg backdrop-blur-sm">
-          <p class="text-xs {getThemeColors(link.type).accent} uppercase tracking-wide mb-1">Contact Info</p>
+          <p class="text-xs {getThemeColors(link.type).accent} uppercase tracking-wide mb-1">
+            Contact Info
+          </p>
           <p class="text-gray-200 text-sm">vCard contact information</p>
         </div>
       {/if}
@@ -288,7 +301,7 @@
           <Icon icon={getDisplayIcon()} class="w-4 h-4" />
           {getActionText(link.type)}
         </button>
-        
+
         <button
           onclick={onClose}
           class="px-4 py-3 bg-black/30 hover:bg-black/40 text-gray-300 rounded-lg font-semibold transition-all duration-300 backdrop-blur-sm border border-gray-600/30 hover:border-gray-500/50"
@@ -298,12 +311,24 @@
       </div>
 
       <!-- Decorative elements that match your medieval theme -->
-      <div class="absolute -top-1 -right-1 w-4 h-4 bg-gradient-to-br {getThemeColors(link.type).accent.replace('text-', 'from-')} to-transparent rounded-full opacity-60"></div>
-      <div class="absolute -bottom-1 -left-1 w-3 h-3 bg-gradient-to-tr {getThemeColors(link.type).accent.replace('text-', 'from-')} to-transparent rounded-full opacity-40"></div>
-      
+      <div
+        class="absolute -top-1 -right-1 w-4 h-4 bg-gradient-to-br {getThemeColors(
+          link.type,
+        ).accent.replace('text-', 'from-')} to-transparent rounded-full opacity-60"
+      ></div>
+      <div
+        class="absolute -bottom-1 -left-1 w-3 h-3 bg-gradient-to-tr {getThemeColors(
+          link.type,
+        ).accent.replace('text-', 'from-')} to-transparent rounded-full opacity-40"
+      ></div>
+
       <!-- Medieval-style corner accents -->
-      <div class="absolute top-2 left-2 w-6 h-6 border-l-2 border-t-2 border-white/20 rounded-tl-lg"></div>
-      <div class="absolute bottom-2 right-2 w-6 h-6 border-r-2 border-b-2 border-white/20 rounded-br-lg"></div>
+      <div
+        class="absolute top-2 left-2 w-6 h-6 border-l-2 border-t-2 border-white/20 rounded-tl-lg"
+      ></div>
+      <div
+        class="absolute bottom-2 right-2 w-6 h-6 border-r-2 border-b-2 border-white/20 rounded-br-lg"
+      ></div>
     </div>
   </div>
 {/if}

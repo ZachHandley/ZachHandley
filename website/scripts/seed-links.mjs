@@ -14,19 +14,81 @@ import { Client, TablesDB, ID, Permission, Role, Query } from "node-appwrite";
 // Snapshot of DEFAULT_LINKS from src/components/svelte/LinkApp.svelte at the time
 // of seeding. Kept here as a one-shot — future edits go through the admin UI.
 const DEFAULT_LINKS = [
-  { name: "GitHub", url: "https://github.com/zachhandley", icon: "simple-icons:github", type: "url", category: "personal" },
-  { name: "LinkedIn", url: "https://linkedin.com/in/zachhandley", icon: "simple-icons:linkedin", type: "url", category: "personal" },
-  { name: "Resume", url: "/files/resume.pdf", icon: "mdi:file-pdf-box", type: "download", category: "downloads" },
-  { name: "Contact", url: "/files/contact.vcf", icon: "mdi:card-account-details", type: "contact", category: "downloads" },
-  { name: "Black Leaf", url: "https://blackleafdigital.com", type: "url", category: "professional" },
+  {
+    name: "GitHub",
+    url: "https://github.com/zachhandley",
+    icon: "simple-icons:github",
+    type: "url",
+    category: "personal",
+  },
+  {
+    name: "LinkedIn",
+    url: "https://linkedin.com/in/zachhandley",
+    icon: "simple-icons:linkedin",
+    type: "url",
+    category: "personal",
+  },
+  {
+    name: "Resume",
+    url: "/files/resume.pdf",
+    icon: "mdi:file-pdf-box",
+    type: "download",
+    category: "downloads",
+  },
+  {
+    name: "Contact",
+    url: "/files/contact.vcf",
+    icon: "mdi:card-account-details",
+    type: "contact",
+    category: "downloads",
+  },
+  {
+    name: "Black Leaf",
+    url: "https://blackleafdigital.com",
+    type: "url",
+    category: "professional",
+  },
   { name: "Socialaize", url: "https://socialaize.com", type: "url", category: "projects" },
-  { name: "Instagram", icon: "simple-icons:instagram", url: "https://instagram.com/zachhandley", type: "url", category: "personal" },
-  { name: "TikTok", icon: "simple-icons:tiktok", url: "https://tiktok.com/@zachhandley", type: "url", category: "personal" },
-  { name: "Cash App", icon: "simple-icons:cashapp", url: "https://cash.app/$zachhandley", type: "url", category: "personal" },
-  { name: "Server Hosting", url: "https://hetzner.cloud/?ref=qPYPJwLBdFg2", type: "url", category: "professional" },
+  {
+    name: "Instagram",
+    icon: "simple-icons:instagram",
+    url: "https://instagram.com/zachhandley",
+    type: "url",
+    category: "personal",
+  },
+  {
+    name: "TikTok",
+    icon: "simple-icons:tiktok",
+    url: "https://tiktok.com/@zachhandley",
+    type: "url",
+    category: "personal",
+  },
+  {
+    name: "Cash App",
+    icon: "simple-icons:cashapp",
+    url: "https://cash.app/$zachhandley",
+    type: "url",
+    category: "personal",
+  },
+  {
+    name: "Server Hosting",
+    url: "https://hetzner.cloud/?ref=qPYPJwLBdFg2",
+    type: "url",
+    category: "professional",
+  },
   { name: "DraxSocial", url: "https://draxsocial.com", type: "url", category: "projects" },
-  { name: "VibzTalentAgency", url: "https://vibztalentagency.com", type: "url", category: "projects" },
-  { name: "USA Parts & More", url: "https://usapartsandmore.com", type: "url", category: "projects" },
+  {
+    name: "VibzTalentAgency",
+    url: "https://vibztalentagency.com",
+    type: "url",
+    category: "projects",
+  },
+  {
+    name: "USA Parts & More",
+    url: "https://usapartsandmore.com",
+    type: "url",
+    category: "projects",
+  },
 ];
 
 const args = new Set(process.argv.slice(2));
@@ -40,7 +102,9 @@ const DATABASE_ID = process.env.APPWRITE_DATABASE_ID ?? "main";
 const TABLE_ID = process.env.COLL_LINKS ?? "links";
 
 if (!ENDPOINT || !PROJECT_ID || !API_KEY) {
-  console.error("Missing required env vars. Need APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, APPWRITE_API_KEY.");
+  console.error(
+    "Missing required env vars. Need APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, APPWRITE_API_KEY.",
+  );
   console.error("Hint: run with `node --env-file=.env scripts/seed-links.mjs`.");
   process.exit(1);
 }
@@ -48,8 +112,12 @@ if (!ENDPOINT || !PROJECT_ID || !API_KEY) {
 const client = new Client().setEndpoint(ENDPOINT).setProject(PROJECT_ID).setKey(API_KEY);
 const tablesDB = new TablesDB(client);
 
-console.log(`Seed target: ${ENDPOINT}  project=${PROJECT_ID}  db=${DATABASE_ID}  table=${TABLE_ID}`);
-console.log(`Mode: ${DRY_RUN ? "dry-run" : FORCE ? "force (delete + recreate matches)" : "create-if-missing"}`);
+console.log(
+  `Seed target: ${ENDPOINT}  project=${PROJECT_ID}  db=${DATABASE_ID}  table=${TABLE_ID}`,
+);
+console.log(
+  `Mode: ${DRY_RUN ? "dry-run" : FORCE ? "force (delete + recreate matches)" : "create-if-missing"}`,
+);
 console.log("");
 
 const existing = await tablesDB.listRows({
@@ -109,7 +177,9 @@ for (let i = 0; i < DEFAULT_LINKS.length; i++) {
   };
 
   if (DRY_RUN) {
-    console.log(`[would create]  ${title.padEnd(20)}  order=${i}  type=${data.type}  category=${data.category || "-"}`);
+    console.log(
+      `[would create]  ${title.padEnd(20)}  order=${i}  type=${data.type}  category=${data.category || "-"}`,
+    );
     continue;
   }
 

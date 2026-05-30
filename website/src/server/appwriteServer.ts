@@ -1,6 +1,12 @@
 import { TablesDB, Storage, Query, ID, Permission, Role } from "node-appwrite";
 import { getAppwriteClient } from "~/server/getAppwriteClient";
-import { APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, APPWRITE_DATABASE_ID, BUCKET_FILES, COLL_LINKS } from "astro:env/client";
+import {
+  APPWRITE_ENDPOINT,
+  APPWRITE_PROJECT_ID,
+  APPWRITE_DATABASE_ID,
+  BUCKET_FILES,
+  COLL_LINKS,
+} from "astro:env/client";
 import { getFileViewUrl } from "appwrite-utils";
 import { type Links } from "~/types/appwrite.d";
 
@@ -23,21 +29,16 @@ export class AppwriteServer {
     const res = await this.tablesDB.listRows({
       databaseId: APPWRITE_DATABASE_ID,
       tableId: COLL_LINKS,
-      queries: [
-        Query.equal("active", true),
-        Query.orderAsc("order"),
-        Query.limit(200),
-      ]
+      queries: [Query.equal("active", true), Query.orderAsc("order"), Query.limit(200)],
     });
     return res.rows as unknown as Links[];
   }
 
   async listAll(): Promise<Links[]> {
     const res = await this.tablesDB.listRows({
-      databaseId: APPWRITE_DATABASE_ID, tableId: COLL_LINKS, queries: [
-        Query.orderAsc("order"),
-        Query.limit(500),
-      ]
+      databaseId: APPWRITE_DATABASE_ID,
+      tableId: COLL_LINKS,
+      queries: [Query.orderAsc("order"), Query.limit(500)],
     });
     return res.rows as unknown as Links[];
   }
@@ -65,17 +66,20 @@ export class AppwriteServer {
         ...(data.active === true ? [Permission.read(Role.any())] : []),
         Permission.update(Role.label("admin")),
         Permission.delete(Role.label("admin")),
-      ]
+      ],
     });
 
     if (payload.fileId && data.active === true) {
       const bucketId = BUCKET_FILES || "files";
       await this.storage.updateFile({
-        bucketId: bucketId, fileId: payload.fileId, name: undefined, permissions: [
+        bucketId: bucketId,
+        fileId: payload.fileId,
+        name: undefined,
+        permissions: [
           ...(data.active === true ? [Permission.read(Role.any())] : []),
           Permission.update(Role.label("admin")),
           Permission.delete(Role.label("admin")),
-        ]
+        ],
       });
     }
     return created;
@@ -99,7 +103,7 @@ export class AppwriteServer {
         ...(data.active === true ? [Permission.read(Role.any())] : []),
         Permission.update(Role.label("admin")),
         Permission.delete(Role.label("admin")),
-      ]
+      ],
     });
 
     if (updates.fileId && (updates.active === true || (updated as any)?.active === true)) {
@@ -111,14 +115,18 @@ export class AppwriteServer {
           ...(data.active === true ? [Permission.read(Role.any())] : []),
           Permission.update(Role.label("admin")),
           Permission.delete(Role.label("admin")),
-        ]
+        ],
       });
     }
     return updated;
   }
 
   async deleteLink(id: string) {
-    return this.tablesDB.deleteRow({ databaseId: APPWRITE_DATABASE_ID, tableId: COLL_LINKS, rowId: id });
+    return this.tablesDB.deleteRow({
+      databaseId: APPWRITE_DATABASE_ID,
+      tableId: COLL_LINKS,
+      rowId: id,
+    });
   }
 }
 

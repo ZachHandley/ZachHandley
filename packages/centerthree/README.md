@@ -84,7 +84,10 @@ const row = layoutInlineRow(
 import { continuousCrateSize, backButtonDimensions } from "centerthree";
 
 const cat = continuousCrateSize({
-  frustumWidth: 18, frustumHeight: 10, aspect: 1.8, kind: "category",
+  frustumWidth: 18,
+  frustumHeight: 10,
+  aspect: 1.8,
+  kind: "category",
 });
 
 const back = backButtonDimensions({ frustumWidth: 18, frustumHeight: 10, aspect: 1.8 });

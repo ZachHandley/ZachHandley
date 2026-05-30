@@ -19,14 +19,11 @@
 
   // Category descriptions
   const categoryDescriptions = $state<{ [key: string]: string }>({
-    personal:
-      "My personal social media accounts where I share my daily life and interests.",
+    personal: "My personal social media accounts where I share my daily life and interests.",
     professional:
       "My professional profiles and work portfolio showcasing my expertise in software engineering and AI.",
-    projects:
-      "A collection of my recent work, including web, mobile, and AI projects.",
-    downloads:
-      "Downloadable resources including my resume and contact information.",
+    projects: "A collection of my recent work, including web, mobile, and AI projects.",
+    downloads: "Downloadable resources including my resume and contact information.",
   });
 
   // For keyboard navigation
@@ -38,7 +35,10 @@
   let loadingMessage = $state("Initializing medieval realm...");
 
   // Modal state for 2D overlay
-  let modalManager = $state<{ showModal: (link: Link, x: number, y: number) => void; hideModal: () => void } | null>(null);
+  let modalManager = $state<{
+    showModal: (link: Link, x: number, y: number) => void;
+    hideModal: () => void;
+  } | null>(null);
   let modalVisible = $state(false);
   let modalLink = $state<Link | null>(null);
   let modalClickPosition = $state<{ x: number; y: number } | null>(null);
@@ -167,9 +167,7 @@
 
 <svelte:window bind:innerWidth bind:innerHeight />
 
-<div
-  class="w-screen relative max-w-screen h-screen overflow-hidden bg-gray-900"
->
+<div class="w-screen relative max-w-screen h-screen overflow-hidden bg-gray-900">
   <!-- 3D Canvas with the scene -->
   <div class="h-full w-full pt-16 md:pt-11">
     <Canvas toneMapping={undefined}>
@@ -194,17 +192,18 @@
            min-height: {showInfoPanel ? 'auto' : '0'};
            overflow: {showInfoPanel ? 'visible' : 'hidden'};"
   >
-    <div class="w-full px-4 md:px-6 py-4 md:py-6 max-h-[calc(100vh-8rem)] md:max-h-none overflow-y-auto">
+    <div
+      class="w-full px-4 md:px-6 py-4 md:py-6 max-h-[calc(100vh-8rem)] md:max-h-none overflow-y-auto"
+    >
       <!-- Bio section -->
       <div class="mb-6 md:mb-8">
         <h2 class="text-lg sm:text-xl md:text-2xl lg:text-3xl font-bold mb-3 md:mb-4 text-white">
           About Me
         </h2>
         <p class="text-sm sm:text-base md:text-lg text-gray-100 leading-relaxed">
-          I'm Zach Handley, a software engineer, full-stack developer, and AI
-          specialist based in Los Angeles. At Black Leaf Digital, I create
-          innovative web, mobile, and AI solutions with expertise in Azure and
-          GPT integration. As a self-taught developer, I'm passionate about
+          I'm Zach Handley, a software engineer, full-stack developer, and AI specialist based in
+          Los Angeles. At Black Leaf Digital, I create innovative web, mobile, and AI solutions with
+          expertise in Azure and GPT integration. As a self-taught developer, I'm passionate about
           solving complex problems and making technology accessible.
         </p>
       </div>
@@ -215,44 +214,67 @@
           Explore My Work
         </h2>
         <p class="text-sm md:text-base text-gray-200 mb-4 md:mb-6">
-          Click on the crates in the 3D space to explore different categories of
-          links.
+          Click on the crates in the 3D space to explore different categories of links.
         </p>
 
         <!-- Category cards grid -->
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-          <div class="group relative bg-gradient-to-b from-orange-900/20 via-orange-900/10 to-black/30 hover:from-orange-800/30 hover:via-orange-900/20 hover:to-black/40 p-3 md:p-4 rounded-lg border border-orange-500/20 hover:border-orange-400/40 transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-orange-500/20 backdrop-blur-sm">
-            <h3 class="text-base md:text-lg font-semibold text-orange-200 capitalize mb-1 md:mb-2 group-hover:text-orange-100 transition-colors">
+          <div
+            class="group relative bg-gradient-to-b from-orange-900/20 via-orange-900/10 to-black/30 hover:from-orange-800/30 hover:via-orange-900/20 hover:to-black/40 p-3 md:p-4 rounded-lg border border-orange-500/20 hover:border-orange-400/40 transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-orange-500/20 backdrop-blur-sm"
+          >
+            <h3
+              class="text-base md:text-lg font-semibold text-orange-200 capitalize mb-1 md:mb-2 group-hover:text-orange-100 transition-colors"
+            >
               Personal
             </h3>
-            <p class="text-xs md:text-sm text-orange-100/80 group-hover:text-orange-50 transition-colors leading-relaxed">
+            <p
+              class="text-xs md:text-sm text-orange-100/80 group-hover:text-orange-50 transition-colors leading-relaxed"
+            >
               {categoryDescriptions.personal}
             </p>
           </div>
 
-          <div class="group relative bg-gradient-to-b from-orange-900/20 via-orange-900/10 to-black/30 hover:from-orange-800/30 hover:via-orange-900/20 hover:to-black/40 p-3 md:p-4 rounded-lg border border-orange-500/20 hover:border-orange-400/40 transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-orange-500/20 backdrop-blur-sm">
-            <h3 class="text-base md:text-lg font-semibold text-orange-200 capitalize mb-1 md:mb-2 group-hover:text-orange-100 transition-colors">
+          <div
+            class="group relative bg-gradient-to-b from-orange-900/20 via-orange-900/10 to-black/30 hover:from-orange-800/30 hover:via-orange-900/20 hover:to-black/40 p-3 md:p-4 rounded-lg border border-orange-500/20 hover:border-orange-400/40 transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-orange-500/20 backdrop-blur-sm"
+          >
+            <h3
+              class="text-base md:text-lg font-semibold text-orange-200 capitalize mb-1 md:mb-2 group-hover:text-orange-100 transition-colors"
+            >
               Professional
             </h3>
-            <p class="text-xs md:text-sm text-orange-100/80 group-hover:text-orange-50 transition-colors leading-relaxed">
+            <p
+              class="text-xs md:text-sm text-orange-100/80 group-hover:text-orange-50 transition-colors leading-relaxed"
+            >
               {categoryDescriptions.professional}
             </p>
           </div>
 
-          <div class="group relative bg-gradient-to-b from-orange-900/20 via-orange-900/10 to-black/30 hover:from-orange-800/30 hover:via-orange-900/20 hover:to-black/40 p-3 md:p-4 rounded-lg border border-orange-500/20 hover:border-orange-400/40 transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-orange-500/20 backdrop-blur-sm">
-            <h3 class="text-base md:text-lg font-semibold text-orange-200 capitalize mb-1 md:mb-2 group-hover:text-orange-100 transition-colors">
+          <div
+            class="group relative bg-gradient-to-b from-orange-900/20 via-orange-900/10 to-black/30 hover:from-orange-800/30 hover:via-orange-900/20 hover:to-black/40 p-3 md:p-4 rounded-lg border border-orange-500/20 hover:border-orange-400/40 transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-orange-500/20 backdrop-blur-sm"
+          >
+            <h3
+              class="text-base md:text-lg font-semibold text-orange-200 capitalize mb-1 md:mb-2 group-hover:text-orange-100 transition-colors"
+            >
               Projects
             </h3>
-            <p class="text-xs md:text-sm text-orange-100/80 group-hover:text-orange-50 transition-colors leading-relaxed">
+            <p
+              class="text-xs md:text-sm text-orange-100/80 group-hover:text-orange-50 transition-colors leading-relaxed"
+            >
               {categoryDescriptions.projects}
             </p>
           </div>
 
-          <div class="group relative bg-gradient-to-b from-orange-900/20 via-orange-900/10 to-black/30 hover:from-orange-800/30 hover:via-orange-900/20 hover:to-black/40 p-3 md:p-4 rounded-lg border border-orange-500/20 hover:border-orange-400/40 transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-orange-500/20 backdrop-blur-sm">
-            <h3 class="text-base md:text-lg font-semibold text-orange-200 capitalize mb-1 md:mb-2 group-hover:text-orange-100 transition-colors">
+          <div
+            class="group relative bg-gradient-to-b from-orange-900/20 via-orange-900/10 to-black/30 hover:from-orange-800/30 hover:via-orange-900/20 hover:to-black/40 p-3 md:p-4 rounded-lg border border-orange-500/20 hover:border-orange-400/40 transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-orange-500/20 backdrop-blur-sm"
+          >
+            <h3
+              class="text-base md:text-lg font-semibold text-orange-200 capitalize mb-1 md:mb-2 group-hover:text-orange-100 transition-colors"
+            >
               Downloads
             </h3>
-            <p class="text-xs md:text-sm text-orange-100/80 group-hover:text-orange-50 transition-colors leading-relaxed">
+            <p
+              class="text-xs md:text-sm text-orange-100/80 group-hover:text-orange-50 transition-colors leading-relaxed"
+            >
               {categoryDescriptions.downloads}
             </p>
           </div>
@@ -297,9 +319,7 @@
     <div class="md:hidden">
       <!-- Row 1: Title -->
       <div class="py-2 px-4 text-center">
-        <h1 class="text-base font-bold text-orange-100 drop-shadow-lg">
-          ZachHandley's Portfolio
-        </h1>
+        <h1 class="text-base font-bold text-orange-100 drop-shadow-lg">ZachHandley's Portfolio</h1>
       </div>
       <!-- Row 2: Controls -->
       <div class="pb-2 px-4 flex justify-center items-center gap-4">
@@ -351,7 +371,9 @@
     <!-- Desktop: Single-row layout -->
     <div class="hidden md:block">
       <div class="py-2 px-4 flex justify-between items-center h-11">
-        <h1 class="text-xl md:text-2xl lg:text-3xl font-bold text-orange-100 drop-shadow-lg whitespace-nowrap">
+        <h1
+          class="text-xl md:text-2xl lg:text-3xl font-bold text-orange-100 drop-shadow-lg whitespace-nowrap"
+        >
           ZachHandley's Portfolio
         </h1>
         <div class="flex items-center gap-3">
@@ -404,16 +426,15 @@
 
   <!-- Category description tooltip -->
   {#if activeCategory && !showInfoPanel}
-    <div
-      class="absolute bottom-8 left-0 right-0 text-center pointer-events-none z-30"
-    >
-      <div class="bg-gradient-to-r from-orange-900/40 via-black/70 to-orange-900/40 backdrop-blur-lg py-3 px-6 rounded-xl inline-block max-w-xs mx-auto shadow-2xl shadow-orange-500/30 border border-orange-500/30">
+    <div class="absolute bottom-8 left-0 right-0 text-center pointer-events-none z-30">
+      <div
+        class="bg-gradient-to-r from-orange-900/40 via-black/70 to-orange-900/40 backdrop-blur-lg py-3 px-6 rounded-xl inline-block max-w-xs mx-auto shadow-2xl shadow-orange-500/30 border border-orange-500/30"
+      >
         <h3 class="text-sm font-semibold capitalize mb-1 text-orange-200">
           {activeCategory}
         </h3>
         <p class="text-xs text-orange-100/90">
-          {categoryDescriptions[activeCategory.toLowerCase()] ||
-            "Explore this category."}
+          {categoryDescriptions[activeCategory.toLowerCase()] || "Explore this category."}
         </p>
       </div>
     </div>
@@ -447,9 +468,7 @@
                     class="bg-gray-600 hover:bg-gray-500 text-white p-2 rounded flex items-center"
                   >
                     <span class="flex-1">{link.name}</span>
-                    <span class="text-xs bg-gray-500 px-2 py-1 rounded"
-                      >{link.type}</span
-                    >
+                    <span class="text-xs bg-gray-500 px-2 py-1 rounded">{link.type}</span>
                   </a>
                 {/each}
               </div>
@@ -511,14 +530,10 @@
   </div>
 
   <!-- Loading Screen -->
-  <LoadingScreen 
-    visible={isLoading}
-    progress={loadingProgress}
-    message={loadingMessage}
-  />
+  <LoadingScreen visible={isLoading} progress={loadingProgress} message={loadingMessage} />
 
   <!-- 2D Modal Overlay (positioned outside 3D canvas) -->
-  <ModalManager 
+  <ModalManager
     bind:this={modalManager}
     bind:isVisible={modalVisible}
     bind:currentLink={modalLink}

@@ -36,8 +36,6 @@
     class="absolute bottom-4 left-4 right-4 z-10 text-white text-center
               sm:bottom-6 sm:left-6 sm:right-6 md:bottom-8 md:left-8 md:right-8"
   >
-    <p class="opacity-80 text-sm sm:text-base md:text-lg">
-      Click on skeletons to open links
-    </p>
+    <p class="opacity-80 text-sm sm:text-base md:text-lg">Click on skeletons to open links</p>
   </div>
 {/if}

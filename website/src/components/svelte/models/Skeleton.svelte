@@ -53,7 +53,7 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/model_src/Skeleton.gltf --types --
     {
       dracoLoader,
       meshoptDecoder: meshoptLoader,
-    }
+    },
   );
 
   const animations = useGltfAnimations<ActionName>(gltf, ref);

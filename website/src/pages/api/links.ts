@@ -2,7 +2,13 @@ import type { APIRoute } from "astro";
 import { TablesDB, Storage, ID, Permission, Role, Query } from "node-appwrite";
 import { getAppwriteClient } from "~/server/getAppwriteClient";
 import { requireAdmin } from "~/server/auth";
-import { APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, BUCKET_FILES, APPWRITE_DATABASE_ID, COLL_LINKS } from "astro:env/client";
+import {
+  APPWRITE_ENDPOINT,
+  APPWRITE_PROJECT_ID,
+  BUCKET_FILES,
+  APPWRITE_DATABASE_ID,
+  COLL_LINKS,
+} from "astro:env/client";
 import { getFileViewUrl } from "appwrite-utils";
 
 type Action = "create" | "update" | "delete" | "list";
@@ -47,17 +53,20 @@ export const POST: APIRoute = async ({ request, cookies }) => {
           Permission.read(Role.any()),
           Permission.update(Role.label("admin")),
           Permission.delete(Role.label("admin")),
-        ]
+        ],
       });
       if (payload?.fileId && data.active === true) {
         try {
           const bucketId = BUCKET_FILES || "files";
           await storage.updateFile({
-            bucketId, fileId: payload.fileId, name: undefined, permissions: [
+            bucketId,
+            fileId: payload.fileId,
+            name: undefined,
+            permissions: [
               Permission.read(Role.any()),
               Permission.update(Role.label("admin")),
               Permission.delete(Role.label("admin")),
-            ]
+            ],
           });
         } catch (e) {
           console.warn("Failed to sync file permissions", e);
@@ -77,7 +86,12 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       if (payload?.fileId) {
         const bucketId = BUCKET_FILES || "files";
         updates.type = "download";
-        updates.url = getFileViewUrl(APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, bucketId, payload.fileId);
+        updates.url = getFileViewUrl(
+          APPWRITE_ENDPOINT,
+          APPWRITE_PROJECT_ID,
+          bucketId,
+          payload.fileId,
+        );
       }
 
       const updated = await tablesDB.updateRow({

@@ -3,12 +3,7 @@
   import { Group, AnimationAction } from "three";
   import type { Snippet } from "svelte";
   import { T, type Props } from "@threlte/core";
-  import {
-    useGltf,
-    useGltfAnimations,
-    useSuspense,
-    useDraco,
-  } from "@threlte/extras";
+  import { useGltf, useGltfAnimations, useSuspense, useDraco } from "@threlte/extras";
   import { Tween } from "svelte/motion";
   import { cubicInOut } from "svelte/easing";
 
@@ -54,7 +49,7 @@
   // Tweened position for smooth dragon movement
   const dragonPosition = new Tween(
     { y: 0.5 }, // Initial floating position
-    { duration: 2000, easing: cubicInOut }
+    { duration: 2000, easing: cubicInOut },
   );
 
   // Create hover effect
@@ -106,11 +101,7 @@
       $gltf.materials.Eyes.emissive.set("red");
       $gltf.materials.Eyes.emissiveIntensity = dragonEyeGlow;
       currentColor = "red";
-    } else if (
-      dragonEyeGlow === 0 &&
-      $gltf?.materials?.Eyes &&
-      currentColor !== "white"
-    ) {
+    } else if (dragonEyeGlow === 0 && $gltf?.materials?.Eyes && currentColor !== "white") {
       $gltf.materials.Eyes.emissive.set("white");
       $gltf.materials.Eyes.emissiveIntensity = 0;
       currentColor = "white";
@@ -132,9 +123,7 @@
   });
 
   // Calculate rotation based on view mode
-  const rotation = $derived(
-    viewMode === "intro" ? [0, initialFacingDirection, 0] : [0, 0, 0]
-  );
+  const rotation = $derived(viewMode === "intro" ? [0, initialFacingDirection, 0] : [0, 0, 0]);
 </script>
 
 <T

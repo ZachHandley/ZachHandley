@@ -8,11 +8,9 @@ export const getAppwriteClient = (
   jwt?: string,
   useSessionKey: boolean = false,
   useApiKey: boolean = false,
-  sessionToken?: string
+  sessionToken?: string,
 ): Client => {
-  const client = new Client()
-    .setEndpoint(APPWRITE_ENDPOINT)
-    .setProject(APPWRITE_PROJECT_ID);
+  const client = new Client().setEndpoint(APPWRITE_ENDPOINT).setProject(APPWRITE_PROJECT_ID);
 
   // Priority: API Key > Session Key > User Session/JWT
   if (useApiKey) {
@@ -42,8 +40,8 @@ export const getAppwriteClient = (
 
 export const isUserAdmin = (user: Models.User<Models.Preferences>): boolean => {
   return user?.labels?.includes("admin") || false;
-}
+};
 
 export const isUserCreator = (user: Models.User<Models.Preferences>): boolean => {
   return user?.labels?.includes("creator") || false;
-}
+};

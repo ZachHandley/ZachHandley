@@ -15,14 +15,19 @@ export const POST: APIRoute = async ({ request, session, cookies }) => {
 
     const client = getAppwriteClient();
     const account = new Account(client);
-    const userSession = await account.createEmailPasswordSession({ email: email, password: password });
+    const userSession = await account.createEmailPasswordSession({
+      email: email,
+      password: password,
+    });
 
     cookies.set(SESSION_COOKIE_NAME, userSession.secret, {
       httpOnly: true,
       secure: true,
       sameSite: "lax",
       path: "/",
-      domain: import.meta.env.DEV ? 'localhost' : `${import.meta.env.SITE.replace("https://", ".")}`, // Use domain from SITE env var in production, localhost in dev
+      domain: import.meta.env.DEV
+        ? "localhost"
+        : `${import.meta.env.SITE.replace("https://", ".")}`, // Use domain from SITE env var in production, localhost in dev
       expires: DateTime.fromISO(userSession.expire).toJSDate(), // Set cookie to expire when session expires
     });
     session?.set("sessionToken", userSession.secret);

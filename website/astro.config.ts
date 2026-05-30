@@ -19,9 +19,7 @@ import { env } from "./src/env";
 export default defineConfig({
   trailingSlash: "ignore",
   output: "server",
-  site: import.meta.env.DEV
-    ? "http://localhost:3953"
-    : "https://zachhandley.com",
+  site: import.meta.env.DEV ? "http://localhost:3953" : "https://zachhandley.com",
 
   server: {
     port: import.meta.env.DEV ? 3953 : undefined,

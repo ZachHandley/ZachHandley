@@ -42,4 +42,3 @@ export async function deleteLink(id: string) {
   });
   if (!res.ok && res.status !== 204) throw new Error(`Delete failed: ${res.status}`);
 }
-
