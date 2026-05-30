@@ -1,32 +1,34 @@
-# Hi there 👋 I’m Zach Handley
+# zachhandley
 
-**Software Engineer | Full-Stack Developer | AI Specialist**  
-Founder & CTO @ Socialaize (Oct 2024–Present)  
-Founder @ Black Leaf Digital (2019–Present)  
-Los Angeles, CA | 🌐 [zachhandley.com](https://zachhandley.com) | ✉️ [zach@blackleafdigital.com](mailto:zach@blackleafdigital.com)
+Software engineer in LA. Rust, TypeScript, AI infra, Astro/Svelte/Vue full-stack.
+
+Founder/CTO @ **[Socialaize](https://socialaize.com)** · Founder @ **[Black Leaf Digital](https://blackleafdigital.com)** · [zachhandley.com](https://zachhandley.com) · [zach@blackleafdigital.com](mailto:zach@blackleafdigital.com)
 
 ---
 
-## What I’m building
+## What I'm shipping
 
-- **Socialaize** – AI-powered social media management from scratch: Vue 3 (Composition API) frontend, Astro SSR, TypeScript, Python, containerized AI (GPT + LlamaIndex), subscription billing, cross-platform scheduling & analytics.
-- **StreamFi** - NFT Blockchain Based Music streaming platform, own your own songs and sell your music without overreaching record labels
+- **[Socialaize](https://socialaize.com)** — AI-powered social media management. Astro SSR + Vue 3 + Python AI workers, subscription billing, cross-platform scheduling & analytics.
+- **[Black Leaf Digital](https://blackleafdigital.com)** — agency / consulting since 2019.
+- **[zachhandley.com](https://github.com/zachhandley/zachhandley)** — this site. Threlte/Svelte 3D scene + Appwrite-backed link CMS on Cloudflare Workers. Source ↗.
 
-## What I’m exploring
+## Recent Rust
 
-- **Flutter & Dart** for polished, cross-platform mobile apps.
-- Scalable cloud-native patterns (Appwrite, Azure Functions, Kubernetes).
-- High-throughput video encoding pipelines with WASM-FFmpeg.
+- **[ELID](https://github.com/zachhandley/ELID)** — sortable hash IDs for vector embeddings: ULID-shaped, but the IDs preserve "closeness" so neighbours sort near each other.
+- **[Blazen](https://github.com/zachhandley/Blazen)** — workflow & event-driven orchestration for agentic flows (works for any workflow).
+- **[FakeNotify](https://github.com/zachhandley/FakeNotify)** — inotify-shaped FS events for NFS mounts, because real inotify doesn't reach there.
+- **[ZVD](https://github.com/zachhandley/ZVD)** — FFmpeg, in Rust.
+- **[ZSync](https://github.com/zachhandley/ZSync)** — central-server file sync platform with SSH key management.
+- **[Z3Fungi](https://github.com/zachhandley/Z3Fungi)** — distributed caching layer for S3.
 
-### Tech stack highlights
+## Open source you might already use
 
-- **Languages:** TypeScript, Python, Dart (Flutter), Swift, C#, Rust
-- **Frontend:** Vue 3 (Composition API), Astro, React, Svelte
-- **Backend:** FastAPI, Node.js, Appwrite, Python
-- **Cloud & DevOps:** Azure Functions, Kubernetes (AKS), Docker, Terraform
+- **[AppwriteUtils](https://github.com/zachhandley/AppwriteUtils)** ⭐30 — migrations + dev-ergonomics toolkit for Appwrite. (Powers this site's schema.)
+- **[ez-i18n](https://github.com/zachhandley/ez-i18n)** ⭐7 — tiny i18n with first-class SSR.
+- **[ZAstroWebsockets](https://github.com/zachhandley/ZAstroWebsockets)** — Astro Node + Cloudflare SSR adapters with WebSocket server support.
+- **[ContentShield](https://github.com/zachhandley/ContentShield)** — multilingual profanity check.
+- **[amplify-astro-adapter](https://github.com/zachhandley/amplify-astro-adapter)** — AWS Amplify adapter for modern Astro (`GetEnv` + session support).
 
-### A bit of fun
+## Stack
 
-- 🥇 First place in an audio-generation hackathon building a lo-fi GPT-powered music extension
-- 🐱 Rustle, my 7-month-old cat, is a hide-and-seek ninja
-- 🌟 One-day goal: buy a town to start a foster-care & animal-rescue sanctuary
+Rust · TypeScript · Python · Svelte · Vue 3 · Astro · Threlte · Appwrite · Cloudflare Workers · Tailwind v4
