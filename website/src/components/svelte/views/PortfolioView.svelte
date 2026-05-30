@@ -7,9 +7,7 @@
   const { links }: Props = $props();
 
   const featured = $derived(
-    links
-      .filter((l) => l.featured)
-      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
+    links.filter((l) => l.featured).sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
   );
 
   const groupOrder = ["projects", "professional", "personal", "downloads"];
@@ -51,8 +49,8 @@
         <span class="text-fg-muted">rust, typescript, ai infra.</span>
       </h1>
       <p class="mt-5 max-w-xl text-base text-fg-muted md:text-lg">
-        Founder/CTO @ Socialaize · Founder @ Black Leaf Digital. I build fast, ship often,
-        and reach for Rust when the JVM-tax shows up.
+        Founder/CTO @ Socialaize · Founder @ Black Leaf Digital. I build fast, ship often, and reach
+        for Rust when the JVM-tax shows up.
       </p>
       <div class="mt-7 flex flex-wrap items-center gap-3">
         <a
@@ -80,7 +78,9 @@
       <p class="mb-6 text-sm text-fg-muted">Currently shipping these.</p>
       {#if featured.length === 0}
         <p class="text-sm text-fg-muted">
-          No featured projects yet. Add some via <a href="/admin" class="text-accent underline">/admin</a>.
+          No featured projects yet. Add some via <a href="/admin" class="text-accent underline"
+            >/admin</a
+          >.
         </p>
       {:else}
         <ul class="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -103,7 +103,9 @@
                 {#if link.stack && link.stack.length > 0}
                   <div class="mb-3 flex flex-wrap gap-1.5">
                     {#each link.stack as chip}
-                      <span class="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-fg-muted">
+                      <span
+                        class="rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-fg-muted"
+                      >
                         {chip}
                       </span>
                     {/each}

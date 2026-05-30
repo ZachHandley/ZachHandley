@@ -61,9 +61,7 @@
     const root = drawer;
     if (!root) return;
     const focusables = Array.from(
-      root.querySelectorAll<HTMLElement>(
-        "a, button, [tabindex]:not([tabindex='-1'])",
-      ),
+      root.querySelectorAll<HTMLElement>("a, button, [tabindex]:not([tabindex='-1'])"),
     ).filter((el) => !el.hasAttribute("disabled"));
     if (focusables.length === 0) return;
     const first = focusables[0];
@@ -105,7 +103,9 @@
   aria-label="All links"
   aria-hidden={!open}
   class="fixed right-0 top-0 z-50 flex h-full w-[min(28rem,90vw)] flex-col border-l border-border bg-bg-elev shadow-2xl transition-transform"
-  style="transition-duration: var(--dur-mid); transition-timing-function: var(--ease-out); transform: translateX({open ? '0' : '100%'});"
+  style="transition-duration: var(--dur-mid); transition-timing-function: var(--ease-out); transform: translateX({open
+    ? '0'
+    : '100%'});"
 >
   <div class="flex items-center justify-between border-b border-border px-4 py-3">
     <span class="font-mono text-sm text-fg-muted">all links</span>
