@@ -34,7 +34,7 @@
     modalManager?: { showModal: (link: Link, x: number, y: number) => void; hideModal: () => void } | null;
   } = $props();
 
-  const { size: rendererSize } = useThrelte();
+  const { size: rendererSize, renderer } = useThrelte();
 
   // Core scene references
   let cameraRef = $state<THREE.PerspectiveCamera | undefined>(undefined);
@@ -83,16 +83,17 @@
     }
   });
 
-  // Firefox optimization: Camera update throttling
-  let lastCameraUpdate = 0;
+  // Clamp DPR to reduce GPU cost
+  $effect(() => {
+    try { renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1)); } catch {}
+  });
+
+  // Camera update debounce timer (trailing-edge debounce guarantees final value fires)
+  let cameraUpdateTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Setup for perspective camera
   $effect(() => {
     if (!cameraRef || !$rendererSize) return;
-
-    // Firefox optimization: Throttle camera updates to reduce GC pressure
-    const now = performance.now();
-    if (lastCameraUpdate && now - lastCameraUpdate < 200) return;
 
     // Only update if dimensions actually changed by a meaningful amount
     if (
@@ -100,15 +101,25 @@
       Math.abs($rendererSize.width - prevRendererSize.width) > 5 ||
       Math.abs($rendererSize.height - prevRendererSize.height) > 5
     ) {
-      console.log("Camera aspect updated");
-      cameraRef.aspect = $rendererSize.width / $rendererSize.height;
-      cameraRef.updateProjectionMatrix();
-      prevRendererSize = {
-        width: $rendererSize.width,
-        height: $rendererSize.height,
+      const doUpdate = () => {
+        if (!cameraRef || !$rendererSize) return;
+        console.log("Camera aspect updated");
+        cameraRef.aspect = $rendererSize.width / $rendererSize.height;
+        cameraRef.updateProjectionMatrix();
+        prevRendererSize = {
+          width: $rendererSize.width,
+          height: $rendererSize.height,
+        };
+        if (!mounted) mounted = true;
       };
-      if (!mounted) mounted = true;
-      lastCameraUpdate = now;
+
+      // First call (no prevRendererSize) executes immediately; subsequent calls debounce
+      if (!prevRendererSize) {
+        doUpdate();
+      } else {
+        if (cameraUpdateTimer) clearTimeout(cameraUpdateTimer);
+        cameraUpdateTimer = setTimeout(doUpdate, 100);
+      }
     }
   });
 
@@ -192,36 +203,26 @@
   onMount(async () => {
     // Initialize scene using SceneController
     await sceneController.initialize();
-    
-    // Initialize particle pool container after assets are loaded
-    // Wait for particle pre-warming to complete, then initialize pool
-    setTimeout(() => {
-      initializeParticlePool();
-    }, 1000);
+
+    // Initialize particle pool container immediately after assets are loaded
+    initializeParticlePool();
   });
   
   // Initialize the particle pool container
   function initializeParticlePool(): void {
-    console.log('🎯 Starting particle pool initialization...');
-    
     if (!particlePoolContainer) {
       console.warn('Particle pool container not available yet');
       return;
     }
-    
+
     // Position the pool container far off-screen
     particlePoolContainer.position.set(1000, 1000, 1000);
-    console.log('📍 Pool container positioned at (1000, 1000, 1000)');
-    
+
     // Get all pre-warmed systems from AssetManager and add them to pool container
     const prewarmedSystems = sceneController.getAssetManager().getAllPrewarmedSystems();
-    console.log(`🔥 Found ${prewarmedSystems.length} pre-warmed systems`);
-    
+
     if (prewarmedSystems.length === 0) {
-      console.warn('⚠️ No pre-warmed systems found! Particle effects may not work.');
-      // Log pool stats to understand why
-      const poolStats = sceneController.getAssetManager().getPoolStats();
-      console.log('📊 Pool stats:', poolStats);
+      console.warn('No pre-warmed systems found. Particle effects may not work.');
       return;
     }
     
@@ -230,14 +231,25 @@
         // Spread systems out a bit to avoid overlap (though they're scaled to 0)
         system.position.set(index * 10, 0, 0);
         particlePoolContainer.add(system);
-        console.log(`✅ Added system ${index + 1}/${prewarmedSystems.length} to pool container`);
       }
     });
-    
-    console.log(`✅ Pool initialization complete: ${prewarmedSystems.length} systems ready`);
+
+    // Force shader pre-compilation to eliminate first-fire lag
+    if (renderer && cameraRef && particlePoolContainer) {
+      try {
+        renderer.compile(particlePoolContainer, cameraRef);
+        console.log('Particle shaders pre-compiled');
+      } catch (e) {
+        console.warn('Could not pre-compile particle shaders:', e);
+      }
+    }
+
+    console.log(`Pool initialization complete: ${prewarmedSystems.length} systems ready`);
   }
 
   onDestroy(() => {
+    // Clean up debounce timer
+    if (cameraUpdateTimer) clearTimeout(cameraUpdateTimer);
     // Clean up scene using SceneController
     sceneController.dispose();
   });

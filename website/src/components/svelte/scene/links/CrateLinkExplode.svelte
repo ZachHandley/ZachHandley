@@ -69,8 +69,8 @@
   // Get Threlte context
   const { size, camera } = useThrelte();
 
-  // Mobile detection based on screenWidth
-  let isMobile = $derived(screenWidth < 768);
+  // Mobile detection - prefer Threlte renderer size, fallback to passed screenWidth
+  let isMobile = $derived(($size?.width ?? screenWidth) < 768);
 
   // Extract link properties
   const {
@@ -123,9 +123,9 @@
     }
   }
 
-  // Position and rotation
-  const positionArray = Array.isArray(position) ? position : [position, 0, 0];
-  const rotationArray = Array.isArray(rotation) ? rotation : [0, rotation, 0];
+  // Position and rotation (reactive to respond to parent resize recalculations)
+  let positionArray = $derived(Array.isArray(position) ? position as [number, number, number] : [position, 0, 0] as [number, number, number]);
+  let rotationArray = $derived(Array.isArray(rotation) ? rotation as [number, number, number] : [0, rotation, 0] as [number, number, number]);
 
   // States
   let group = $state<THREE.Group>();
@@ -227,9 +227,8 @@
     modelDepth = size.z;
 
     // Ensure content appears in front of crate
-    // Compensate for container Z offset (dynamic based on containerZOffset)
     // Reduced base offset from 0.3 to 0.15 to bring text closer to crate
-    contentZOffset = modelDepth / 2 + 0.15 - containerZOffset;
+    contentZOffset = modelDepth / 2 + 0.15;
 
     // Calculate content positions sequentially
     calculateContentPositions();
@@ -276,33 +275,18 @@
 
   // Calculate content positions based on crate dimensions
   function calculateContentPositions() {
-    // Compensate for container being moved down by containerYOffset
-    // Since containerYOffset is negative (down), compensation is positive (up)
-    const yCompensation = Math.abs(containerYOffset);
-    
-    // Perspective compensation for crates below camera level
-    // Get dynamic camera position from Threlte context
-    const cameraY = camera.current?.position.y || 7.5; // fallback to 7.5
-    const crateWorldY = positionArray[1] + containerYOffset;
+    const cameraY = camera.current?.position.y || 7.5;
+    const crateWorldY = positionArray[1]; // Use intended position, not displaced
     const perspectiveOffset = crateWorldY < cameraY ? (cameraY - crateWorldY) * 0.03 : 0;
-    
-    // Improve positioning for small crates to prevent text from going off-screen
+
     const isSmallCrate = height < 2.5;
     const titlePercent = isSmallCrate ? 0.75 : 0.9;
     const iconPercent = isSmallCrate ? 0.5 : 0.8;
     const domainPercent = isSmallCrate ? 0.25 : 0.1;
-    
-    // Apply all compensations (container offset + perspective)
-    const totalYOffset = yCompensation + perspectiveOffset;
-    
-    // Title position - top with all compensations
-    titleY = height * titlePercent + totalYOffset;
 
-    // Icon position - centered vertically with all compensations
-    iconY = height * iconPercent + totalYOffset;
-
-    // Domain position - bottom with all compensations
-    domainY = height * domainPercent + totalYOffset;
+    titleY = height * titlePercent + perspectiveOffset;
+    iconY = height * iconPercent + perspectiveOffset;
+    domainY = height * domainPercent + perspectiveOffset;
   }
 
   // Simple animation functions using CrateExplode component
@@ -1030,14 +1014,15 @@
 
 <!-- Main container -->
 <T.Group
-  position={[positionArray[0], positionArray[1] + containerYOffset, positionArray[2] + containerZOffset]}
+  position={[positionArray[0], positionArray[1], positionArray[2]]}
   rotation={[rotationArray[0], rotationArray[1], rotationArray[2]]}
   name={`crate-link-${columnKey}-${index}`}
 >
-  <!-- Crate model container -->
+  <!-- Crate model container (offsets applied here so only the model moves, not the content) -->
   <T.Group
     bind:ref={group}
     scale={getCalculatedScale() as [number, number, number]}
+    position={[0, containerYOffset, containerZOffset]}
     {height}
     {width}
     {depth}
@@ -1055,7 +1040,7 @@
   <!-- Content Container -->
   {#if contentVisible}
     <T.Group
-      position={[link.inlineIcon ? 0 : (positionArray[0] > 0 ? -modelWidth / (isMobile ? 10 : 4) : modelWidth / (isMobile ? 10 : 4)), 0, contentZOffset]}
+      position={[link.inlineIcon ? 0 : (positionArray[0] > 0 ? -width * 0.05 : width * 0.05), 0, contentZOffset]}
       rotation={[0, 0, 0]}
       name={`crate-content-${columnKey}-${index}`}
       onclick={handleClick}

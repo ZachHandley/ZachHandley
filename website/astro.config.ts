@@ -14,6 +14,8 @@ import { nodePolyfills} from "vite-plugin-node-polyfills";
 
 import cloudflare from "@astrojs/cloudflare";
 
+import { env } from "./src/env";
+
 // https://astro.build/config
 export default defineConfig({
   trailingSlash: "ignore",
@@ -25,6 +27,8 @@ export default defineConfig({
   server: {
     port: import.meta.env.DEV ? 3000 : undefined,
   },
+
+  env: env,
 
   vite: {
     plugins: [
@@ -67,5 +71,6 @@ export default defineConfig({
 
   adapter: cloudflare({
     imageService: "passthrough",
+    sessionKVBindingName: "ZSESSION",
   }),
 });

@@ -134,3 +134,8 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# Claude Code / agent transcript dumps
+.code/
+.claude/
+CLAUDE.md

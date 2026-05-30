@@ -1,0 +1,30 @@
+{
+  "name": "centerthree",
+  "version": "0.1.0",
+  "description": "Camera-aware positioning and bbox measurement helpers for Three.js scenes.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./frustum": "./src/frustum.ts",
+    "./bbox": "./src/bbox.ts",
+    "./perspective": "./src/perspective.ts",
+    "./layout": "./src/layout.ts",
+    "./sizing": "./src/sizing.ts",
+    "./types": "./src/types.ts"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "three": ">=0.150.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.184.0",
+    "three": "^0.184.0",
+    "typescript": "^5.8.3"
+  }
+}

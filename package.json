@@ -1,0 +1,17 @@
+{
+  "name": "zachhandley-monorepo",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "dev": "pnpm --filter website dev",
+    "build": "pnpm --filter website build",
+    "preview": "pnpm --filter website preview",
+    "typecheck": "pnpm -r typecheck",
+    "seed:links": "pnpm --filter website seed:links"
+  },
+  "pnpm": {
+    "overrides": {
+      "three": "^0.184.0"
+    }
+  }
+}
