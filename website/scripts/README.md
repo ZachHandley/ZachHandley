@@ -36,4 +36,4 @@ Each created row gets:
 - `active`: `true`
 - name → title, url/icon/type/category passed through (missing fields default to empty string / `"url"`)
 
-After seeding, edit links via `/admin` (LinksManagerView). `DEFAULT_LINKS` in `LinkApp.svelte` remains as the SSR fallback for when the collection is unreachable or empty.
+After seeding, edit links via `/admin` (LinksManagerView). The hardcoded fallback in `LinkApp.svelte` has been removed — Appwrite is the single source of truth.
