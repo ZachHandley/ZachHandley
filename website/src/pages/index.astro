@@ -2,6 +2,7 @@
 import Layout from "../layouts/Layout.astro";
 import LinkApp from "~/components/svelte/LinkApp.svelte";
 import { AppwriteServer } from "~/server/appwriteServer";
+import { requireAdmin } from "~/server/auth";
 
 const appwriteServer = new AppwriteServer();
 const rawLinks = await appwriteServer.listPublished();
@@ -14,10 +15,12 @@ const links = rawLinks.map((doc) => ({
   active: doc.active,
   order: doc.order,
 }));
+
+const isAdmin = (await requireAdmin(Astro.cookies)).ok;
 ---
 
 <Layout title="Home" description="Use Steve the dragon to navigate my site">
   <main class="w-full min-h-screen min-w-screen relative bg-gray-900">
-    <LinkApp client:only="svelte" {links} />
+    <LinkApp client:only="svelte" {links} {isAdmin} />
   </main>
 </Layout>

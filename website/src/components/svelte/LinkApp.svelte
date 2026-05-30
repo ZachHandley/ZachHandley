@@ -6,6 +6,13 @@
   import type { Link } from "~/types/baseSchemas";
   import { onMount } from "svelte";
   import Icon from "@iconify/svelte";
+  import { Client, TablesDB, Query } from "appwrite";
+  import {
+    APPWRITE_ENDPOINT,
+    APPWRITE_PROJECT_ID,
+    APPWRITE_DATABASE_ID,
+    COLL_LINKS,
+  } from "astro:env/client";
 
   // Reactive viewport dimensions
   let innerWidth = $state(0);
@@ -51,15 +58,31 @@
 
   onMount(() => {
     // Set up keyboard listeners for accessibility
-    window.addEventListener("keydown", (e) => {
-      if (e.key === "Tab") {
-        keyboardMode = true;
-      }
+    const onKeydown = (e: KeyboardEvent) => {
+      if (e.key === "Tab") keyboardMode = true;
+    };
+    const onMousedown = () => {
+      keyboardMode = false;
+    };
+    window.addEventListener("keydown", onKeydown);
+    window.addEventListener("mousedown", onMousedown);
+
+    // Subscribe to Appwrite Realtime so admin edits propagate without a refresh.
+    // The `links` table has `read(any)` permission, so a public client suffices.
+    const client = new Client().setEndpoint(APPWRITE_ENDPOINT).setProject(APPWRITE_PROJECT_ID);
+    const tablesDB = new TablesDB(client);
+    const channel = `databases.${APPWRITE_DATABASE_ID}.tables.${COLL_LINKS}.rows`;
+    const unsubscribe = client.subscribe(channel, () => {
+      refetchLinks(tablesDB).catch(() => {
+        /* network blip; next event will retry */
+      });
     });
 
-    window.addEventListener("mousedown", () => {
-      keyboardMode = false;
-    });
+    return () => {
+      window.removeEventListener("keydown", onKeydown);
+      window.removeEventListener("mousedown", onMousedown);
+      unsubscribe();
+    };
   });
 
   function handleDragonClick() {
@@ -74,8 +97,31 @@
     showInfoPanel = !showInfoPanel;
   }
 
-  const __p = $props<{ links: Link[] }>();
-  let links = $derived(__p.links);
+  const __p = $props<{ links: Link[]; isAdmin?: boolean }>();
+  let liveLinks = $state<Link[] | null>(null);
+  let links = $derived(liveLinks ?? __p.links);
+  let isAdmin = $derived(__p.isAdmin ?? false);
+
+  function rowsToLinks(rows: any[]): Link[] {
+    return rows.map((doc) => ({
+      name: doc.title,
+      url: doc.url,
+      icon: doc.icon || undefined,
+      type: doc.type,
+      category: doc.category || undefined,
+      active: doc.active,
+      order: doc.order,
+    }));
+  }
+
+  async function refetchLinks(tablesDB: TablesDB): Promise<void> {
+    const res = await tablesDB.listRows({
+      databaseId: APPWRITE_DATABASE_ID,
+      tableId: COLL_LINKS,
+      queries: [Query.equal("active", true), Query.orderAsc("order"), Query.limit(200)],
+    });
+    liveLinks = rowsToLinks(res.rows);
+  }
 </script>
 
 <svelte:window bind:innerWidth bind:innerHeight />
@@ -245,11 +291,11 @@
         >
           <Icon icon="simple-icons:github" width="18" height="18" />
         </a>
-        {#if import.meta.env.DEV}
+        {#if isAdmin}
           <a
-            href="/admin/login"
+            href="/admin"
             class="text-orange-200 hover:text-orange-100 transition-all duration-300 hover:scale-110 text-xs px-2 py-1 rounded bg-orange-900/40 border border-orange-500/30 hover:border-orange-400/50"
-            title="Admin (DEV ONLY)"
+            title="Admin"
           >
             Admin
           </a>
