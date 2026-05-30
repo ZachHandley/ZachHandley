@@ -1,5 +1,5 @@
 import { atom } from "nanostores";
-import type { Links as LinksDoc } from "~types/appwrite";
+import type { Links as LinksDoc } from "~/types/links";
 import { BaseStore, type ListOptions } from "./baseStore";
 import { APPWRITE_DATABASE_ID, COLL_LINKS } from "astro:env/client";
 

@@ -17,11 +17,25 @@ interface LinkItem {
   active: boolean;
   type: string;
   category: string;
+  featured?: boolean;
+  stack?: string[] | null;
+  repoUrl?: string | null;
+  description?: string | null;
 }
 
 type LinkField = keyof Pick<
   LinkItem,
-  "title" | "url" | "icon" | "order" | "active" | "type" | "category"
+  | "title"
+  | "url"
+  | "icon"
+  | "order"
+  | "active"
+  | "type"
+  | "category"
+  | "featured"
+  | "stack"
+  | "repoUrl"
+  | "description"
 >;
 
 interface CreateForm {
@@ -32,8 +46,22 @@ interface CreateForm {
   category: string;
   order: number;
   active: boolean;
+  featured: boolean;
+  stack: string;
+  repoUrl: string;
+  description: string;
   fileId?: string;
 }
+
+// stack is stored as string[] but edited as a comma-separated string in the form
+const parseStack = (s: string): string[] | null => {
+  const arr = s
+    .split(",")
+    .map((x) => x.trim())
+    .filter(Boolean);
+  return arr.length ? arr : null;
+};
+const formatStack = (arr: string[] | null | undefined): string => (arr ?? []).join(", ");
 
 // ─── API Helpers ─────────────────────────────────────────────────────────────
 
@@ -135,8 +163,16 @@ const startEdit = (row: LinkItem) => {
     category: row.category,
     order: row.order,
     active: row.active,
+    featured: row.featured ?? false,
+    stack: row.stack ?? null,
+    repoUrl: row.repoUrl ?? null,
+    description: row.description ?? null,
   };
+  editStackText.value = formatStack(row.stack);
 };
+
+// Comma-separated buffer for stack while editing
+const editStackText = ref("");
 
 const cancelEdit = () => {
   editId.value = null;
@@ -156,12 +192,30 @@ const saveEdit = async () => {
     const original = items.value.find((i) => i.$id === id);
     if (!original) throw new Error("Item not found");
 
-    const fields: LinkField[] = ["title", "url", "icon", "type", "category", "order", "active"];
+    // Sync the comma-separated stack buffer back into the edit buffer
+    (editBuffer.value as any).stack = parseStack(editStackText.value);
+
+    const fields: LinkField[] = [
+      "title",
+      "url",
+      "icon",
+      "type",
+      "category",
+      "order",
+      "active",
+      "featured",
+      "stack",
+      "repoUrl",
+      "description",
+    ];
     for (const field of fields) {
       const newVal = (editBuffer.value as any)[field];
-      if (newVal !== undefined && newVal !== (original as any)[field]) {
-        payload[field] = newVal;
-      }
+      const oldVal = (original as any)[field];
+      const changed =
+        field === "stack"
+          ? JSON.stringify(newVal ?? null) !== JSON.stringify(oldVal ?? null)
+          : newVal !== undefined && newVal !== oldVal;
+      if (changed) payload[field] = newVal;
     }
 
     // Only send if there are actual changes
@@ -208,6 +262,10 @@ const resetCreateForm = () => {
     category: "",
     order: 0,
     active: true,
+    featured: false,
+    stack: "",
+    repoUrl: "",
+    description: "",
   };
   previewUrl.value = null;
   fileError.value = null;
@@ -243,6 +301,10 @@ const createLink = async () => {
       category: createForm.value.category.trim() || null,
       order: createForm.value.order,
       active: createForm.value.active,
+      featured: createForm.value.featured,
+      stack: parseStack(createForm.value.stack),
+      repoUrl: createForm.value.repoUrl.trim() || null,
+      description: createForm.value.description.trim() || null,
     };
     if (createForm.value.fileId) {
       payload.fileId = createForm.value.fileId;
@@ -418,205 +480,269 @@ onUnmounted(() => {
               <th class="px-3 py-3 text-left w-48">Icon</th>
               <th class="px-3 py-3 text-left w-32">Category</th>
               <th class="px-3 py-3 text-center w-20">Active</th>
+              <th class="px-3 py-3 text-center w-20">★</th>
               <th class="px-3 py-3 text-right w-44">Actions</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-white/5">
             <tr v-if="filteredItems.length === 0 && !loading">
-              <td colspan="8" class="px-3 py-12 text-center text-gray-500">
+              <td colspan="9" class="px-3 py-12 text-center text-gray-500">
                 <template v-if="search || onlyActive">No links match your filters.</template>
                 <template v-else>No links yet. Click "New Link" to create one.</template>
               </td>
             </tr>
-            <tr
-              v-for="row in filteredItems"
-              :key="row.$id"
-              :class="[
-                'transition-colors',
-                editId === row.$id ? 'bg-gray-700/30' : 'hover:bg-gray-800/30',
-              ]"
-            >
-              <!-- Order -->
-              <td class="px-3 py-2">
-                <input
-                  v-if="editId === row.$id"
-                  type="number"
-                  v-model.number="(editBuffer as any).order"
-                  class="w-14 bg-gray-700 border border-white/10 text-white px-2 py-1 rounded text-sm focus:outline-none focus:ring-1 focus:ring-orange-500/50"
-                />
-                <span v-else class="text-gray-400 font-mono text-xs">{{ row.order }}</span>
-              </td>
+            <template v-for="row in filteredItems" :key="row.$id">
+              <tr
+                :class="[
+                  'transition-colors',
+                  editId === row.$id ? 'bg-gray-700/30' : 'hover:bg-gray-800/30',
+                ]"
+              >
+                <!-- Order -->
+                <td class="px-3 py-2">
+                  <input
+                    v-if="editId === row.$id"
+                    type="number"
+                    v-model.number="(editBuffer as any).order"
+                    class="w-14 bg-gray-700 border border-white/10 text-white px-2 py-1 rounded text-sm focus:outline-none focus:ring-1 focus:ring-orange-500/50"
+                  />
+                  <span v-else class="text-gray-400 font-mono text-xs">{{ row.order }}</span>
+                </td>
 
-              <!-- Title -->
-              <td class="px-3 py-2">
-                <input
-                  v-if="editId === row.$id"
-                  v-model="(editBuffer as any).title"
-                  class="w-full bg-gray-700 border border-white/10 text-white px-2 py-1 rounded text-sm focus:outline-none focus:ring-1 focus:ring-orange-500/50"
-                />
-                <span v-else class="font-medium text-white">{{ row.title }}</span>
-              </td>
+                <!-- Title -->
+                <td class="px-3 py-2">
+                  <input
+                    v-if="editId === row.$id"
+                    v-model="(editBuffer as any).title"
+                    class="w-full bg-gray-700 border border-white/10 text-white px-2 py-1 rounded text-sm focus:outline-none focus:ring-1 focus:ring-orange-500/50"
+                  />
+                  <span v-else class="font-medium text-white">{{ row.title }}</span>
+                </td>
 
-              <!-- Type -->
-              <td class="px-3 py-2">
-                <select
-                  v-if="editId === row.$id"
-                  v-model="(editBuffer as any).type"
-                  class="w-full bg-gray-700 border border-white/10 text-white px-2 py-1 rounded text-sm focus:outline-none focus:ring-1 focus:ring-orange-500/50"
-                >
-                  <option value="url">url</option>
-                  <option value="download">download</option>
-                  <option value="contact">contact</option>
-                  <option value="action">action</option>
-                  <option value="category">category</option>
-                </select>
-                <span
-                  v-else
-                  class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
-                  :class="{
-                    'bg-blue-900/40 text-blue-300': row.type === 'url',
-                    'bg-green-900/40 text-green-300': row.type === 'download',
-                    'bg-purple-900/40 text-purple-300': row.type === 'contact',
-                    'bg-yellow-900/40 text-yellow-300': row.type === 'action',
-                    'bg-gray-700/40 text-gray-300': row.type === 'category',
-                  }"
-                >
-                  {{ row.type }}
-                </span>
-              </td>
-
-              <!-- URL -->
-              <td class="px-3 py-2 max-w-[20rem]">
-                <input
-                  v-if="editId === row.$id"
-                  v-model="(editBuffer as any).url"
-                  class="w-full bg-gray-700 border border-white/10 text-white px-2 py-1 rounded text-sm focus:outline-none focus:ring-1 focus:ring-orange-500/50"
-                  placeholder="https://..."
-                />
-                <a
-                  v-else-if="row.url"
-                  :href="row.url"
-                  target="_blank"
-                  rel="noopener"
-                  class="text-orange-300 hover:text-orange-200 hover:underline truncate block text-sm"
-                  :title="row.url"
-                >
-                  {{ row.url }}
-                </a>
-                <span v-else class="text-gray-600 text-xs italic">none</span>
-              </td>
-
-              <!-- Icon -->
-              <td class="px-3 py-2">
-                <input
-                  v-if="editId === row.$id"
-                  v-model="(editBuffer as any).icon"
-                  class="w-full bg-gray-700 border border-white/10 text-white px-2 py-1 rounded text-sm focus:outline-none focus:ring-1 focus:ring-orange-500/50"
-                  placeholder="simple-icons:github"
-                />
-                <span
-                  v-else-if="row.icon"
-                  class="text-gray-300 text-xs font-mono truncate block"
-                  :title="row.icon"
-                  >{{ row.icon }}</span
-                >
-                <span v-else class="text-gray-600 text-xs italic">none</span>
-              </td>
-
-              <!-- Category -->
-              <td class="px-3 py-2">
-                <input
-                  v-if="editId === row.$id"
-                  v-model="(editBuffer as any).category"
-                  class="w-full bg-gray-700 border border-white/10 text-white px-2 py-1 rounded text-sm focus:outline-none focus:ring-1 focus:ring-orange-500/50"
-                />
-                <span v-else-if="row.category" class="text-gray-300 text-sm">{{
-                  row.category
-                }}</span>
-                <span v-else class="text-gray-600 text-xs italic">none</span>
-              </td>
-
-              <!-- Active -->
-              <td class="px-3 py-2 text-center">
-                <input
-                  v-if="editId === row.$id"
-                  type="checkbox"
-                  v-model="(editBuffer as any).active"
-                  class="rounded bg-gray-700 border-gray-600 text-orange-500 focus:ring-orange-500/50"
-                />
-                <button
-                  v-else
-                  @click="toggleActive(row)"
-                  :class="[
-                    'inline-flex items-center justify-center w-8 h-8 rounded-full transition-colors',
-                    row.active
-                      ? 'bg-green-900/40 text-green-400 hover:bg-green-900/60'
-                      : 'bg-gray-700/40 text-gray-500 hover:bg-gray-700/60',
-                  ]"
-                  :title="
-                    row.active ? 'Active - click to deactivate' : 'Inactive - click to activate'
-                  "
-                >
-                  <svg
-                    v-if="row.active"
-                    class="w-4 h-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
+                <!-- Type -->
+                <td class="px-3 py-2">
+                  <select
+                    v-if="editId === row.$id"
+                    v-model="(editBuffer as any).type"
+                    class="w-full bg-gray-700 border border-white/10 text-white px-2 py-1 rounded text-sm focus:outline-none focus:ring-1 focus:ring-orange-500/50"
                   >
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M5 13l4 4L19 7"
-                    />
-                  </svg>
-                  <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      stroke-linecap="round"
-                      stroke-linejoin="round"
-                      stroke-width="2"
-                      d="M6 18L18 6M6 6l12 12"
-                    />
-                  </svg>
-                </button>
-              </td>
+                    <option value="url">url</option>
+                    <option value="download">download</option>
+                    <option value="contact">contact</option>
+                    <option value="action">action</option>
+                    <option value="category">category</option>
+                  </select>
+                  <span
+                    v-else
+                    class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                    :class="{
+                      'bg-blue-900/40 text-blue-300': row.type === 'url',
+                      'bg-green-900/40 text-green-300': row.type === 'download',
+                      'bg-purple-900/40 text-purple-300': row.type === 'contact',
+                      'bg-yellow-900/40 text-yellow-300': row.type === 'action',
+                      'bg-gray-700/40 text-gray-300': row.type === 'category',
+                    }"
+                  >
+                    {{ row.type }}
+                  </span>
+                </td>
 
-              <!-- Actions -->
-              <td class="px-3 py-2 text-right">
-                <div class="flex items-center justify-end gap-1.5">
-                  <template v-if="editId === row.$id">
-                    <button
-                      @click="saveEdit"
-                      :disabled="saving"
-                      class="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-50"
+                <!-- URL -->
+                <td class="px-3 py-2 max-w-[20rem]">
+                  <input
+                    v-if="editId === row.$id"
+                    v-model="(editBuffer as any).url"
+                    class="w-full bg-gray-700 border border-white/10 text-white px-2 py-1 rounded text-sm focus:outline-none focus:ring-1 focus:ring-orange-500/50"
+                    placeholder="https://..."
+                  />
+                  <a
+                    v-else-if="row.url"
+                    :href="row.url"
+                    target="_blank"
+                    rel="noopener"
+                    class="text-orange-300 hover:text-orange-200 hover:underline truncate block text-sm"
+                    :title="row.url"
+                  >
+                    {{ row.url }}
+                  </a>
+                  <span v-else class="text-gray-600 text-xs italic">none</span>
+                </td>
+
+                <!-- Icon -->
+                <td class="px-3 py-2">
+                  <input
+                    v-if="editId === row.$id"
+                    v-model="(editBuffer as any).icon"
+                    class="w-full bg-gray-700 border border-white/10 text-white px-2 py-1 rounded text-sm focus:outline-none focus:ring-1 focus:ring-orange-500/50"
+                    placeholder="simple-icons:github"
+                  />
+                  <span
+                    v-else-if="row.icon"
+                    class="text-gray-300 text-xs font-mono truncate block"
+                    :title="row.icon"
+                    >{{ row.icon }}</span
+                  >
+                  <span v-else class="text-gray-600 text-xs italic">none</span>
+                </td>
+
+                <!-- Category -->
+                <td class="px-3 py-2">
+                  <input
+                    v-if="editId === row.$id"
+                    v-model="(editBuffer as any).category"
+                    class="w-full bg-gray-700 border border-white/10 text-white px-2 py-1 rounded text-sm focus:outline-none focus:ring-1 focus:ring-orange-500/50"
+                  />
+                  <span v-else-if="row.category" class="text-gray-300 text-sm">{{
+                    row.category
+                  }}</span>
+                  <span v-else class="text-gray-600 text-xs italic">none</span>
+                </td>
+
+                <!-- Active -->
+                <td class="px-3 py-2 text-center">
+                  <input
+                    v-if="editId === row.$id"
+                    type="checkbox"
+                    v-model="(editBuffer as any).active"
+                    class="rounded bg-gray-700 border-gray-600 text-orange-500 focus:ring-orange-500/50"
+                  />
+                  <button
+                    v-else
+                    @click="toggleActive(row)"
+                    :class="[
+                      'inline-flex items-center justify-center w-8 h-8 rounded-full transition-colors',
+                      row.active
+                        ? 'bg-green-900/40 text-green-400 hover:bg-green-900/60'
+                        : 'bg-gray-700/40 text-gray-500 hover:bg-gray-700/60',
+                    ]"
+                    :title="
+                      row.active ? 'Active - click to deactivate' : 'Inactive - click to activate'
+                    "
+                  >
+                    <svg
+                      v-if="row.active"
+                      class="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
                     >
-                      {{ saving ? "Saving..." : "Save" }}
-                    </button>
-                    <button
-                      @click="cancelEdit"
-                      class="px-3 py-1.5 text-xs font-medium rounded-md bg-gray-600 hover:bg-gray-500 text-gray-200 transition-colors"
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M5 13l4 4L19 7"
+                      />
+                    </svg>
+                    <svg
+                      v-else
+                      class="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
                     >
-                      Cancel
-                    </button>
-                  </template>
-                  <template v-else>
-                    <button
-                      @click="startEdit(row)"
-                      class="px-3 py-1.5 text-xs font-medium rounded-md bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      @click="deleteLink(row.$id)"
-                      class="px-3 py-1.5 text-xs font-medium rounded-md bg-red-700/60 hover:bg-red-600 text-red-200 transition-colors"
-                    >
-                      Delete
-                    </button>
-                  </template>
-                </div>
-              </td>
-            </tr>
+                      <path
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M6 18L18 6M6 6l12 12"
+                      />
+                    </svg>
+                  </button>
+                </td>
+
+                <!-- Featured -->
+                <td class="px-3 py-2 text-center">
+                  <input
+                    v-if="editId === row.$id"
+                    type="checkbox"
+                    v-model="(editBuffer as any).featured"
+                    class="rounded bg-gray-700 border-gray-600 text-orange-500 focus:ring-orange-500/50"
+                  />
+                  <span
+                    v-else
+                    :class="[
+                      'inline-block text-lg leading-none',
+                      row.featured ? 'text-yellow-400' : 'text-gray-700',
+                    ]"
+                    :title="row.featured ? 'Featured project' : 'Not featured'"
+                  >
+                    ★
+                  </span>
+                </td>
+
+                <!-- Actions -->
+                <td class="px-3 py-2 text-right">
+                  <div class="flex items-center justify-end gap-1.5">
+                    <template v-if="editId === row.$id">
+                      <button
+                        @click="saveEdit"
+                        :disabled="saving"
+                        class="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-50"
+                      >
+                        {{ saving ? "Saving..." : "Save" }}
+                      </button>
+                      <button
+                        @click="cancelEdit"
+                        class="px-3 py-1.5 text-xs font-medium rounded-md bg-gray-600 hover:bg-gray-500 text-gray-200 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </template>
+                    <template v-else>
+                      <button
+                        @click="startEdit(row)"
+                        class="px-3 py-1.5 text-xs font-medium rounded-md bg-gray-700 hover:bg-gray-600 text-gray-200 transition-colors"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        @click="deleteLink(row.$id)"
+                        class="px-3 py-1.5 text-xs font-medium rounded-md bg-red-700/60 hover:bg-red-600 text-red-200 transition-colors"
+                      >
+                        Delete
+                      </button>
+                    </template>
+                  </div>
+                </td>
+              </tr>
+              <!-- Expanded project-details row, only while editing -->
+              <tr v-if="editId === row.$id" class="bg-gray-700/15">
+                <td colspan="9" class="px-3 py-3">
+                  <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                      <label class="block text-xs uppercase tracking-wider text-gray-500 mb-1"
+                        >Stack (comma-separated)</label
+                      >
+                      <input
+                        v-model="editStackText"
+                        placeholder="Rust, TypeScript, Astro"
+                        class="w-full bg-gray-700 border border-white/10 text-white px-2 py-1.5 rounded text-sm focus:outline-none focus:ring-1 focus:ring-orange-500/50"
+                      />
+                    </div>
+                    <div>
+                      <label class="block text-xs uppercase tracking-wider text-gray-500 mb-1"
+                        >Repo URL</label
+                      >
+                      <input
+                        v-model="(editBuffer as any).repoUrl"
+                        placeholder="https://github.com/..."
+                        class="w-full bg-gray-700 border border-white/10 text-white px-2 py-1.5 rounded text-sm focus:outline-none focus:ring-1 focus:ring-orange-500/50"
+                      />
+                    </div>
+                    <div>
+                      <label class="block text-xs uppercase tracking-wider text-gray-500 mb-1"
+                        >Description</label
+                      >
+                      <input
+                        v-model="(editBuffer as any).description"
+                        placeholder="One-line project blurb"
+                        class="w-full bg-gray-700 border border-white/10 text-white px-2 py-1.5 rounded text-sm focus:outline-none focus:ring-1 focus:ring-orange-500/50"
+                      />
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </template>
           </tbody>
         </table>
       </div>
@@ -713,8 +839,8 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <!-- Order + Active row -->
-            <div class="grid grid-cols-2 gap-3">
+            <!-- Order + Active + Featured row -->
+            <div class="grid grid-cols-3 gap-3">
               <div>
                 <label class="block text-sm font-medium text-gray-300 mb-1">Order</label>
                 <input
@@ -735,7 +861,55 @@ onUnmounted(() => {
                   Active
                 </label>
               </div>
+              <div class="flex items-end pb-2">
+                <label
+                  class="flex items-center gap-2 text-sm text-gray-300 cursor-pointer select-none"
+                >
+                  <input
+                    type="checkbox"
+                    v-model="createForm.featured"
+                    class="rounded bg-gray-700 border-gray-600 text-orange-500 focus:ring-orange-500/50"
+                  />
+                  Featured
+                </label>
+              </div>
             </div>
+
+            <!-- Project details (shown for any link; mainly useful for featured projects) -->
+            <details class="rounded-lg border border-white/10 bg-gray-900/40 p-4">
+              <summary class="text-sm font-medium text-gray-300 cursor-pointer select-none">
+                Project details (stack, repo, description)
+              </summary>
+              <div class="mt-3 space-y-3">
+                <div>
+                  <label class="block text-sm font-medium text-gray-300 mb-1"
+                    >Stack (comma-separated)</label
+                  >
+                  <input
+                    v-model="createForm.stack"
+                    placeholder="Rust, TypeScript, Astro"
+                    class="w-full px-3 py-2 rounded-lg bg-gray-700 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50"
+                  />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-300 mb-1">Repo URL</label>
+                  <input
+                    v-model="createForm.repoUrl"
+                    placeholder="https://github.com/..."
+                    class="w-full px-3 py-2 rounded-lg bg-gray-700 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50"
+                  />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-300 mb-1">Description</label>
+                  <textarea
+                    v-model="createForm.description"
+                    rows="2"
+                    placeholder="One-line project blurb shown on the 2D portfolio card."
+                    class="w-full px-3 py-2 rounded-lg bg-gray-700 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50 resize-none"
+                  ></textarea>
+                </div>
+              </div>
+            </details>
 
             <!-- File Upload -->
             <div class="rounded-lg border border-white/10 bg-gray-900/50 p-4">

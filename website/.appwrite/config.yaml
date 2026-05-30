@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=./.yaml_schemas/appwrite-config.schema.json
+appwrite:
+  endpoint: https://appwrite.blackleafdigital.com/v1
+  project: 68c3bb35001fe37018e4
+  key: YOUR_API_KEY
+  authMethod: auto
+logging:
+  enabled: false
+  level: info
+  console: false
+data:
+  enableMockData: false
+  documentBucketId: files
+  importDirectory: importData
+schemas:
+  outputDirectory: schemas
+  yamlSchemaDirectory: .yaml_schemas
+  tablesDirectory: tables
+migrations:
+  enabled: true
+databases:
+  - id: main
+    name: Main Database
+buckets:
+  - id: files
+    name: Files
+    permissions:
+      - permission: read
+        target: any
+      - permission: create
+        target: "label:admin"
+      - permission: update
+        target: "label:admin"
+      - permission: delete
+        target: "label:admin"
+    fileSecurity: true
+    enabled: true
+    maximumFileSize: 52428800
+    allowedFileExtensions: []
+    compression: none
+    encryption: false
+    antivirus: false
+functions: []
+sites: []

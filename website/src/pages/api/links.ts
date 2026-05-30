@@ -37,6 +37,10 @@ export const POST: APIRoute = async ({ request, cookies }) => {
         category: payload?.category ?? null,
         active: payload?.active ?? true,
         order: payload?.order ?? 0,
+        featured: payload?.featured ?? false,
+        stack: payload?.stack ?? null,
+        repoUrl: payload?.repoUrl ?? null,
+        description: payload?.description ?? null,
       };
 
       if (payload?.fileId) {
