@@ -39,9 +39,9 @@ Command: npx @threlte/gltf@3.0.1 ./public/models/Temple_SecondAge_Level3.gltf --
     }
   }
 
-  const gltf = useGltf<GLTFResult>('/models/Temple_SecondAge_Level3-transformed.glb', {
+  const gltf = (() => useGltf<GLTFResult>('/models/Temple_SecondAge_Level3-transformed.glb', {
     dracoLoader,
-  })
+  }))()
 </script>
 
 <T.Group

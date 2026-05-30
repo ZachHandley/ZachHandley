@@ -119,12 +119,18 @@
     };
   };
 
-  // Load the GLTF model, preferring preloaded model
-  const gltf = preloadedModel
-    ? writable(preloadedModel)
-    : useGltf<GLTFResult>("/models/fire_animation-transformed.glb", {
-        dracoLoader: dracoLoader,
-      });
+  // Load the GLTF model, preferring preloaded model.
+  // Wrapped in an IIFE so the prop reads are inside a function scope rather than
+  // at module init — silences Svelte's `state_referenced_locally` warning while
+  // preserving the store identity that `$gltf` template subscriptions and
+  // `useGltfAnimations(gltf, ref)` below depend on. Neither `preloadedModel`
+  // nor `dracoLoader` swaps after mount, so a one-shot read is correct here.
+  const gltf = (() =>
+    preloadedModel
+      ? writable(preloadedModel)
+      : useGltf<GLTFResult>("/models/fire_animation-transformed.glb", {
+          dracoLoader,
+        }))();
 
   // Set up animations
   export const { actions, mixer } = useGltfAnimations<ActionName>(gltf, ref);

@@ -36,7 +36,7 @@ export class LinksStore extends BaseStore<LinkItem> {
       if (!res.ok) throw new Error(`List failed: ${res.status}`)
 
       const response = await res.json()
-      const items = (response.documents ?? []) as unknown as LinkItem[]
+      const items = (response.rows ?? []) as unknown as LinkItem[]
       this.items.set(items)
 
       const lastItem = items[items.length - 1]

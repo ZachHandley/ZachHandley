@@ -233,6 +233,20 @@ export class SceneController {
   }
 
   /**
+   * Update a registered crate's position in place.
+   */
+  updateCratePosition(id: string, position: THREE.Vector3): void {
+    this.crateController.updateCratePosition(id, position);
+  }
+
+  /**
+   * Check whether a crate is already registered.
+   */
+  hasCrate(id: string): boolean {
+    return this.crateController.hasCrate(id);
+  }
+
+  /**
    * Get system statistics for debugging
    */
   getSystemStats(): {

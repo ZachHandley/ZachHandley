@@ -65,8 +65,9 @@
     zDepth: 6, // LINKS_Z_DEPTH
     dragonWidth: 6 * ENVIRONMENT_SCALE,
     maxFireballs: 10,
-    onLoadingStateChange,
-    onCategoryInteraction: handleInteract
+    onLoadingStateChange: (loading, progress, message) =>
+      onLoadingStateChange?.(loading, progress, message),
+    onCategoryInteraction: (category) => handleInteract?.(category),
   });
 
   // Update scene controller when camera changes

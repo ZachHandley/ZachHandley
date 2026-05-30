@@ -1,16 +1,16 @@
-import { Databases, Storage, Query, ID, Permission, Role, type Models } from "node-appwrite";
+import { TablesDB, Storage, Query, ID, Permission, Role } from "node-appwrite";
 import { getAppwriteClient } from "~/server/getAppwriteClient";
 import { APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, APPWRITE_DATABASE_ID, BUCKET_FILES, COLL_LINKS } from "astro:env/client";
 import { getFileViewUrl } from "appwrite-utils";
 import { type Links } from "~/types/appwrite.d";
 
 export class AppwriteServer {
-  private db: Databases;
+  private tablesDB: TablesDB;
   private storage: Storage;
 
   constructor() {
     const client = getAppwriteClient(undefined, undefined, false, true);
-    this.db = new Databases(client);
+    this.tablesDB = new TablesDB(client);
     this.storage = new Storage(client);
   }
 
@@ -20,26 +20,26 @@ export class AppwriteServer {
   }
 
   async listPublished(): Promise<Links[]> {
-    const res = await this.db.listDocuments({
-      databaseId: APPWRITE_DATABASE_ID, 
-      collectionId: COLL_LINKS, 
+    const res = await this.tablesDB.listRows({
+      databaseId: APPWRITE_DATABASE_ID,
+      tableId: COLL_LINKS,
       queries: [
         Query.equal("active", true),
         Query.orderAsc("order"),
         Query.limit(200),
       ]
     });
-    return res.documents as unknown as Links[];
+    return res.rows as unknown as Links[];
   }
 
   async listAll(): Promise<Links[]> {
-    const res = await this.db.listDocuments({
-      databaseId: APPWRITE_DATABASE_ID, collectionId: COLL_LINKS, queries: [
+    const res = await this.tablesDB.listRows({
+      databaseId: APPWRITE_DATABASE_ID, tableId: COLL_LINKS, queries: [
         Query.orderAsc("order"),
         Query.limit(500),
       ]
     });
-    return res.documents as unknown as Links[];
+    return res.rows as unknown as Links[];
   }
 
   async createLink(payload: Partial<Links> & { fileId?: string }) {
@@ -56,13 +56,13 @@ export class AppwriteServer {
       data.type = "download";
       data.url = this.fileUrl(payload.fileId);
     }
-    const created = await this.db.createDocument({
+    const created = await this.tablesDB.createRow({
       databaseId: APPWRITE_DATABASE_ID,
-      collectionId: COLL_LINKS,
-      documentId: ID.unique(),
+      tableId: COLL_LINKS,
+      rowId: ID.unique(),
       data,
       permissions: [
-        ...(data.active === true ? Permission.read(Role.any()) : []),
+        ...(data.active === true ? [Permission.read(Role.any())] : []),
         Permission.update(Role.label("admin")),
         Permission.delete(Role.label("admin")),
       ]
@@ -70,10 +70,9 @@ export class AppwriteServer {
 
     if (payload.fileId && data.active === true) {
       const bucketId = BUCKET_FILES || "files";
-      // In Appwrite 1.x, updateFile(name?, permissions?) signature varies; keep name undefined and pass permissions
       await this.storage.updateFile({
         bucketId: bucketId, fileId: payload.fileId, name: undefined, permissions: [
-          ...(data.active === true ? Permission.read(Role.any()) : []),
+          ...(data.active === true ? [Permission.read(Role.any())] : []),
           Permission.update(Role.label("admin")),
           Permission.delete(Role.label("admin")),
         ]
@@ -91,10 +90,10 @@ export class AppwriteServer {
       data.type = "download";
       data.url = this.fileUrl(updates.fileId);
     }
-    const updated = await this.db.updateDocument({
+    const updated = await this.tablesDB.updateRow({
       databaseId: APPWRITE_DATABASE_ID,
-      collectionId: COLL_LINKS,
-      documentId: id,
+      tableId: COLL_LINKS,
+      rowId: id,
       data,
       permissions: [
         ...(data.active === true ? [Permission.read(Role.any())] : []),
@@ -105,19 +104,22 @@ export class AppwriteServer {
 
     if (updates.fileId && (updates.active === true || (updated as any)?.active === true)) {
       const bucketId = BUCKET_FILES || "files";
-      await this.storage.updateFile(bucketId, updates.fileId, undefined as any, [
-        ...(data.active === true ? Permission.read(Role.any()) : []),
-        Permission.update(Role.label("admin")),
-        Permission.delete(Role.label("admin")),
-      ]);
+      await this.storage.updateFile({
+        bucketId,
+        fileId: updates.fileId,
+        permissions: [
+          ...(data.active === true ? [Permission.read(Role.any())] : []),
+          Permission.update(Role.label("admin")),
+          Permission.delete(Role.label("admin")),
+        ]
+      });
     }
     return updated;
   }
 
   async deleteLink(id: string) {
-    return this.db.deleteDocument({ databaseId: APPWRITE_DATABASE_ID, collectionId: COLL_LINKS, documentId: id });
+    return this.tablesDB.deleteRow({ databaseId: APPWRITE_DATABASE_ID, tableId: COLL_LINKS, rowId: id });
   }
 }
 
 export default AppwriteServer;
-

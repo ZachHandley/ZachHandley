@@ -37,9 +37,9 @@ Command: npx @threlte/gltf@3.0.1 ./public/models/Crate.gltf --types --shadows --
     }
   }
 
-  const gltf = useGltf<GLTFResult>('/models/Crate-transformed.glb', {
+  const gltf = (() => useGltf<GLTFResult>('/models/Crate-transformed.glb', {
     dracoLoader,
-  })
+  }))()
 </script>
 
 <T.Group

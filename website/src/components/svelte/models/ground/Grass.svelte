@@ -30,9 +30,9 @@
     }
   }
 
-  const gltf = useGltf<GLTFResult>(`/models/Grass-transformed.glb?${Date.now()}`, {
+  const gltf = (() => useGltf<GLTFResult>(`/models/Grass-transformed.glb?${Date.now()}`, {
     dracoLoader
-  })
+  }))()
 </script>
 
 <T.Group

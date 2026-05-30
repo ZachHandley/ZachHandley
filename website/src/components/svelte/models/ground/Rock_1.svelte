@@ -30,9 +30,9 @@
     }
   }
 
-  const gltf = useGltf<GLTFResult>('/models/Rock_1-transformed.glb', {
+  const gltf = (() => useGltf<GLTFResult>('/models/Rock_1-transformed.glb', {
     dracoLoader,
-  })
+  }))()
 </script>
 
 <T.Group

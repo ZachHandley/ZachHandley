@@ -3,7 +3,13 @@
 ---
 <script>
     import Clarity from "@microsoft/clarity";
-  
+
+    declare global {
+      interface Window {
+        ms_clarity?: typeof Clarity;
+      }
+    }
+
     // Wait for document to be ready since Clarity needs the DOM
     document.addEventListener("astro:page-load", () => {
       try {
