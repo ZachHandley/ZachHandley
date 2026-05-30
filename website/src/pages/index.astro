@@ -1,11 +1,11 @@
 ---
-import Layout from '../layouts/Layout.astro';
-import LinkApp from '~/components/svelte/LinkApp.svelte';
+import Layout from "../layouts/Layout.astro";
+import LinkApp from "~/components/svelte/LinkApp.svelte";
 import { AppwriteServer } from "~/server/appwriteServer";
 
 const appwriteServer = new AppwriteServer();
 const rawLinks = await appwriteServer.listPublished();
-const links = rawLinks.map(doc => ({
+const links = rawLinks.map((doc) => ({
   name: doc.title,
   url: doc.url,
   icon: doc.icon || undefined,

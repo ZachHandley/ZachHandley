@@ -1,128 +1,132 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, computed } from 'vue'
-import { ID, Query } from 'appwrite'
-import { BUCKET_FILES } from 'astro:env/client'
-import { useAppwrite } from '~/components/vue/composables/useAppwrite'
+import { onMounted, onUnmounted, ref, computed } from "vue";
+import { ID, Query } from "appwrite";
+import { BUCKET_FILES } from "astro:env/client";
+import { useAppwrite } from "~/components/vue/composables/useAppwrite";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface LinkItem {
-  $id: string
-  $createdAt: string
-  $updatedAt: string
-  title: string
-  url: string
-  icon: string
-  order: number
-  active: boolean
-  type: string
-  category: string
+  $id: string;
+  $createdAt: string;
+  $updatedAt: string;
+  title: string;
+  url: string;
+  icon: string;
+  order: number;
+  active: boolean;
+  type: string;
+  category: string;
 }
 
-type LinkField = keyof Pick<LinkItem, 'title' | 'url' | 'icon' | 'order' | 'active' | 'type' | 'category'>
+type LinkField = keyof Pick<
+  LinkItem,
+  "title" | "url" | "icon" | "order" | "active" | "type" | "category"
+>;
 
 interface CreateForm {
-  title: string
-  url: string
-  icon: string
-  type: string
-  category: string
-  order: number
-  active: boolean
-  fileId?: string
+  title: string;
+  url: string;
+  icon: string;
+  type: string;
+  category: string;
+  order: number;
+  active: boolean;
+  fileId?: string;
 }
 
 // ─── API Helpers ─────────────────────────────────────────────────────────────
 
 const api = async (action: string, payload: Record<string, any> = {}) => {
-  const res = await fetch('/api/links', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
+  const res = await fetch("/api/links", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
     body: JSON.stringify({ action, payload }),
-  })
+  });
   if (!res.ok && res.status !== 204) {
-    const text = await res.text().catch(() => 'Request failed')
-    throw new Error(text || `HTTP ${res.status}`)
+    const text = await res.text().catch(() => "Request failed");
+    throw new Error(text || `HTTP ${res.status}`);
   }
-  if (res.status === 204) return null
-  return res.json()
-}
+  if (res.status === 204) return null;
+  return res.json();
+};
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
-const items = ref<LinkItem[]>([])
-const loading = ref(false)
-const error = ref<string | null>(null)
-const search = ref('')
-const onlyActive = ref(false)
+const items = ref<LinkItem[]>([]);
+const loading = ref(false);
+const error = ref<string | null>(null);
+const search = ref("");
+const onlyActive = ref(false);
 
 // Inline editing
-const editId = ref<string | null>(null)
-const editBuffer = ref<Partial<LinkItem>>({})
-const saving = ref(false)
+const editId = ref<string | null>(null);
+const editBuffer = ref<Partial<LinkItem>>({});
+const saving = ref(false);
 
 // Create modal
-const showCreate = ref(false)
+const showCreate = ref(false);
 const createForm = ref<CreateForm>({
-  title: '',
-  url: '',
-  icon: '',
-  type: 'url',
-  category: '',
+  title: "",
+  url: "",
+  icon: "",
+  type: "url",
+  category: "",
   order: 0,
   active: true,
-})
-const creating = ref(false)
-const createError = ref<string | null>(null)
+});
+const creating = ref(false);
+const createError = ref<string | null>(null);
 
 // File upload
-const fileUploading = ref(false)
-const fileError = ref<string | null>(null)
-const previewUrl = ref<string | null>(null)
+const fileUploading = ref(false);
+const fileError = ref<string | null>(null);
+const previewUrl = ref<string | null>(null);
 
 // ─── Computed ────────────────────────────────────────────────────────────────
 
 const filteredItems = computed(() => {
-  let result = items.value
+  let result = items.value;
   if (onlyActive.value) {
-    result = result.filter(item => item.active)
+    result = result.filter((item) => item.active);
   }
   if (search.value.trim()) {
-    const q = search.value.trim().toLowerCase()
-    result = result.filter(item =>
-      item.title?.toLowerCase().includes(q) ||
-      item.url?.toLowerCase().includes(q) ||
-      item.icon?.toLowerCase().includes(q) ||
-      item.category?.toLowerCase().includes(q)
-    )
+    const q = search.value.trim().toLowerCase();
+    result = result.filter(
+      (item) =>
+        item.title?.toLowerCase().includes(q) ||
+        item.url?.toLowerCase().includes(q) ||
+        item.icon?.toLowerCase().includes(q) ||
+        item.category?.toLowerCase().includes(q),
+    );
   }
-  return result
-})
+  return result;
+});
 
-const totalCount = computed(() => items.value.length)
-const filteredCount = computed(() => filteredItems.value.length)
+const totalCount = computed(() => items.value.length);
+const filteredCount = computed(() => filteredItems.value.length);
 
 // ─── Data Fetching ───────────────────────────────────────────────────────────
 
 const fetchLinks = async () => {
-  loading.value = true
-  error.value = null
+  loading.value = true;
+  error.value = null;
   try {
-    const queries: string[] = [Query.orderAsc('order')]
-    const response = await api('list', { queries, limit: 500 })
-    items.value = (response?.documents ?? []) as LinkItem[]
+    const queries: string[] = [Query.orderAsc("order")];
+    const response = await api("list", { queries, limit: 500 });
+    items.value = (response?.documents ?? []) as LinkItem[];
   } catch (err: any) {
-    error.value = err?.message || 'Failed to load links'
+    error.value = err?.message || "Failed to load links";
   } finally {
-    loading.value = false
+    loading.value = false;
   }
-}
+};
 
 // ─── Inline Editing ──────────────────────────────────────────────────────────
 
 const startEdit = (row: LinkItem) => {
-  editId.value = row.$id
+  editId.value = row.$id;
   editBuffer.value = {
     title: row.title,
     url: row.url,
@@ -131,105 +135,105 @@ const startEdit = (row: LinkItem) => {
     category: row.category,
     order: row.order,
     active: row.active,
-  }
-}
+  };
+};
 
 const cancelEdit = () => {
-  editId.value = null
-  editBuffer.value = {}
-  saving.value = false
-}
+  editId.value = null;
+  editBuffer.value = {};
+  saving.value = false;
+};
 
 const saveEdit = async () => {
-  const id = editId.value
-  if (!id) return
+  const id = editId.value;
+  if (!id) return;
 
-  saving.value = true
-  error.value = null
+  saving.value = true;
+  error.value = null;
   try {
-    const payload: Record<string, any> = { id }
+    const payload: Record<string, any> = { id };
     // Only send changed fields
-    const original = items.value.find(i => i.$id === id)
-    if (!original) throw new Error('Item not found')
+    const original = items.value.find((i) => i.$id === id);
+    if (!original) throw new Error("Item not found");
 
-    const fields: LinkField[] = ['title', 'url', 'icon', 'type', 'category', 'order', 'active']
+    const fields: LinkField[] = ["title", "url", "icon", "type", "category", "order", "active"];
     for (const field of fields) {
-      const newVal = (editBuffer.value as any)[field]
+      const newVal = (editBuffer.value as any)[field];
       if (newVal !== undefined && newVal !== (original as any)[field]) {
-        payload[field] = newVal
+        payload[field] = newVal;
       }
     }
 
     // Only send if there are actual changes
     if (Object.keys(payload).length <= 1) {
-      cancelEdit()
-      return
+      cancelEdit();
+      return;
     }
 
-    const updated = await api('update', payload)
+    const updated = await api("update", payload);
     // Replace item in local array
-    const idx = items.value.findIndex(i => i.$id === id)
+    const idx = items.value.findIndex((i) => i.$id === id);
     if (idx !== -1 && updated) {
-      items.value[idx] = updated as LinkItem
+      items.value[idx] = updated as LinkItem;
     }
-    cancelEdit()
+    cancelEdit();
   } catch (err: any) {
-    error.value = err?.message || 'Failed to save'
-    saving.value = false
+    error.value = err?.message || "Failed to save";
+    saving.value = false;
   }
-}
+};
 
 // ─── Quick Toggle Active ─────────────────────────────────────────────────────
 
 const toggleActive = async (row: LinkItem) => {
   try {
-    const updated = await api('update', { id: row.$id, active: !row.active })
-    const idx = items.value.findIndex(i => i.$id === row.$id)
+    const updated = await api("update", { id: row.$id, active: !row.active });
+    const idx = items.value.findIndex((i) => i.$id === row.$id);
     if (idx !== -1 && updated) {
-      items.value[idx] = updated as LinkItem
+      items.value[idx] = updated as LinkItem;
     }
   } catch (err: any) {
-    error.value = err?.message || 'Failed to toggle active'
+    error.value = err?.message || "Failed to toggle active";
   }
-}
+};
 
 // ─── Create ──────────────────────────────────────────────────────────────────
 
 const resetCreateForm = () => {
   createForm.value = {
-    title: '',
-    url: '',
-    icon: '',
-    type: 'url',
-    category: '',
+    title: "",
+    url: "",
+    icon: "",
+    type: "url",
+    category: "",
     order: 0,
     active: true,
-  }
-  previewUrl.value = null
-  fileError.value = null
-  createError.value = null
-}
+  };
+  previewUrl.value = null;
+  fileError.value = null;
+  createError.value = null;
+};
 
 const openCreate = () => {
-  resetCreateForm()
+  resetCreateForm();
   // Default order to one beyond the max
-  const maxOrder = items.value.reduce((max, i) => Math.max(max, i.order ?? 0), 0)
-  createForm.value.order = maxOrder + 1
-  showCreate.value = true
-}
+  const maxOrder = items.value.reduce((max, i) => Math.max(max, i.order ?? 0), 0);
+  createForm.value.order = maxOrder + 1;
+  showCreate.value = true;
+};
 
 const closeCreate = () => {
-  showCreate.value = false
-  resetCreateForm()
-}
+  showCreate.value = false;
+  resetCreateForm();
+};
 
 const createLink = async () => {
   if (!createForm.value.title.trim()) {
-    createError.value = 'Title is required'
-    return
+    createError.value = "Title is required";
+    return;
   }
-  creating.value = true
-  createError.value = null
+  creating.value = true;
+  createError.value = null;
   try {
     const payload: Record<string, any> = {
       title: createForm.value.title.trim(),
@@ -239,87 +243,89 @@ const createLink = async () => {
       category: createForm.value.category.trim() || null,
       order: createForm.value.order,
       active: createForm.value.active,
-    }
+    };
     if (createForm.value.fileId) {
-      payload.fileId = createForm.value.fileId
+      payload.fileId = createForm.value.fileId;
     }
-    const created = await api('create', payload)
+    const created = await api("create", payload);
     if (created) {
-      items.value = [...items.value, created as LinkItem].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+      items.value = [...items.value, created as LinkItem].sort(
+        (a, b) => (a.order ?? 0) - (b.order ?? 0),
+      );
     }
-    closeCreate()
+    closeCreate();
   } catch (err: any) {
-    createError.value = err?.message || 'Failed to create link'
+    createError.value = err?.message || "Failed to create link";
   } finally {
-    creating.value = false
+    creating.value = false;
   }
-}
+};
 
 // ─── File Upload ─────────────────────────────────────────────────────────────
 
 const onFileSelected = async (e: Event) => {
-  const input = e.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
+  const input = e.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
 
-  fileError.value = null
-  fileUploading.value = true
+  fileError.value = null;
+  fileUploading.value = true;
   try {
-    const { storage } = useAppwrite()
-    const bucketId = BUCKET_FILES || 'files'
-    const result = await storage.createFile(bucketId, ID.unique(), file)
-    createForm.value.fileId = result.$id
+    const { storage } = useAppwrite();
+    const bucketId = BUCKET_FILES || "files";
+    const result = await storage.createFile(bucketId, ID.unique(), file);
+    createForm.value.fileId = result.$id;
     // Build preview URL
     try {
-      const url = storage.getFilePreview(bucketId, result.$id, 256, 256)
-      previewUrl.value = typeof url === 'string' ? url : (url as any)?.href ?? null
+      const url = storage.getFilePreview(bucketId, result.$id, 256, 256);
+      previewUrl.value = typeof url === "string" ? url : ((url as any)?.href ?? null);
     } catch {
-      previewUrl.value = null
+      previewUrl.value = null;
     }
   } catch (err: any) {
-    fileError.value = err?.message || 'Upload failed'
+    fileError.value = err?.message || "Upload failed";
   } finally {
-    fileUploading.value = false
+    fileUploading.value = false;
   }
-}
+};
 
 const clearFile = () => {
-  createForm.value.fileId = undefined
-  previewUrl.value = null
-  fileError.value = null
-}
+  createForm.value.fileId = undefined;
+  previewUrl.value = null;
+  fileError.value = null;
+};
 
 // ─── Delete ──────────────────────────────────────────────────────────────────
 
 const deleteLink = async (id: string) => {
-  if (!confirm('Are you sure you want to delete this link?')) return
+  if (!confirm("Are you sure you want to delete this link?")) return;
   try {
-    await api('delete', { id })
-    items.value = items.value.filter(i => i.$id !== id)
+    await api("delete", { id });
+    items.value = items.value.filter((i) => i.$id !== id);
     // If we were editing this item, cancel
-    if (editId.value === id) cancelEdit()
+    if (editId.value === id) cancelEdit();
   } catch (err: any) {
-    error.value = err?.message || 'Failed to delete'
+    error.value = err?.message || "Failed to delete";
   }
-}
+};
 
 // ─── Keyboard Shortcuts ──────────────────────────────────────────────────────
 
 const onKeydown = (e: KeyboardEvent) => {
-  if (e.key === 'Escape') {
-    if (showCreate.value) closeCreate()
-    else if (editId.value) cancelEdit()
+  if (e.key === "Escape") {
+    if (showCreate.value) closeCreate();
+    else if (editId.value) cancelEdit();
   }
-}
+};
 
 onMounted(() => {
-  fetchLinks()
-  window.addEventListener('keydown', onKeydown)
-})
+  fetchLinks();
+  window.addEventListener("keydown", onKeydown);
+});
 
 onUnmounted(() => {
-  window.removeEventListener('keydown', onKeydown)
-})
+  window.removeEventListener("keydown", onKeydown);
+});
 </script>
 
 <template>
@@ -333,11 +339,23 @@ onUnmounted(() => {
             placeholder="Search by title, URL, icon, or category..."
             class="w-full px-3 py-2 pl-9 rounded-lg bg-gray-800 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50"
           />
-          <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          <svg
+            class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+            />
           </svg>
         </div>
-        <label class="flex items-center gap-2 text-sm text-gray-300 cursor-pointer select-none whitespace-nowrap">
+        <label
+          class="flex items-center gap-2 text-sm text-gray-300 cursor-pointer select-none whitespace-nowrap"
+        >
           <input
             type="checkbox"
             v-model="onlyActive"
@@ -348,7 +366,8 @@ onUnmounted(() => {
       </div>
       <div class="flex items-center gap-3">
         <span class="text-xs text-gray-500">
-          {{ filteredCount }}<template v-if="filteredCount !== totalCount"> / {{ totalCount }}</template> links
+          {{ filteredCount
+          }}<template v-if="filteredCount !== totalCount"> / {{ totalCount }}</template> links
         </span>
         <button
           @click="fetchLinks"
@@ -368,7 +387,10 @@ onUnmounted(() => {
     </div>
 
     <!-- Error banner -->
-    <div v-if="error" class="flex items-center gap-2 px-4 py-3 rounded-lg bg-red-900/30 border border-red-500/30 text-red-300 text-sm">
+    <div
+      v-if="error"
+      class="flex items-center gap-2 px-4 py-3 rounded-lg bg-red-900/30 border border-red-500/30 text-red-300 text-sm"
+    >
       <span class="flex-1">{{ error }}</span>
       <button @click="error = null" class="text-red-400 hover:text-red-200">&times;</button>
     </div>
@@ -376,7 +398,9 @@ onUnmounted(() => {
     <!-- Loading state -->
     <div v-if="loading && items.length === 0" class="flex items-center justify-center py-16">
       <div class="flex flex-col items-center gap-3">
-        <div class="w-8 h-8 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin"></div>
+        <div
+          class="w-8 h-8 border-2 border-orange-500/30 border-t-orange-500 rounded-full animate-spin"
+        ></div>
         <span class="text-gray-400 text-sm">Loading links...</span>
       </div>
     </div>
@@ -409,7 +433,7 @@ onUnmounted(() => {
               :key="row.$id"
               :class="[
                 'transition-colors',
-                editId === row.$id ? 'bg-gray-700/30' : 'hover:bg-gray-800/30'
+                editId === row.$id ? 'bg-gray-700/30' : 'hover:bg-gray-800/30',
               ]"
             >
               <!-- Order -->
@@ -446,7 +470,9 @@ onUnmounted(() => {
                   <option value="action">action</option>
                   <option value="category">category</option>
                 </select>
-                <span v-else class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                <span
+                  v-else
+                  class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
                   :class="{
                     'bg-blue-900/40 text-blue-300': row.type === 'url',
                     'bg-green-900/40 text-green-300': row.type === 'download',
@@ -488,7 +514,12 @@ onUnmounted(() => {
                   class="w-full bg-gray-700 border border-white/10 text-white px-2 py-1 rounded text-sm focus:outline-none focus:ring-1 focus:ring-orange-500/50"
                   placeholder="simple-icons:github"
                 />
-                <span v-else-if="row.icon" class="text-gray-300 text-xs font-mono truncate block" :title="row.icon">{{ row.icon }}</span>
+                <span
+                  v-else-if="row.icon"
+                  class="text-gray-300 text-xs font-mono truncate block"
+                  :title="row.icon"
+                  >{{ row.icon }}</span
+                >
                 <span v-else class="text-gray-600 text-xs italic">none</span>
               </td>
 
@@ -499,7 +530,9 @@ onUnmounted(() => {
                   v-model="(editBuffer as any).category"
                   class="w-full bg-gray-700 border border-white/10 text-white px-2 py-1 rounded text-sm focus:outline-none focus:ring-1 focus:ring-orange-500/50"
                 />
-                <span v-else-if="row.category" class="text-gray-300 text-sm">{{ row.category }}</span>
+                <span v-else-if="row.category" class="text-gray-300 text-sm">{{
+                  row.category
+                }}</span>
                 <span v-else class="text-gray-600 text-xs italic">none</span>
               </td>
 
@@ -518,15 +551,33 @@ onUnmounted(() => {
                     'inline-flex items-center justify-center w-8 h-8 rounded-full transition-colors',
                     row.active
                       ? 'bg-green-900/40 text-green-400 hover:bg-green-900/60'
-                      : 'bg-gray-700/40 text-gray-500 hover:bg-gray-700/60'
+                      : 'bg-gray-700/40 text-gray-500 hover:bg-gray-700/60',
                   ]"
-                  :title="row.active ? 'Active - click to deactivate' : 'Inactive - click to activate'"
+                  :title="
+                    row.active ? 'Active - click to deactivate' : 'Inactive - click to activate'
+                  "
                 >
-                  <svg v-if="row.active" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                  <svg
+                    v-if="row.active"
+                    class="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M5 13l4 4L19 7"
+                    />
                   </svg>
                   <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M6 18L18 6M6 6l12 12"
+                    />
                   </svg>
                 </button>
               </td>
@@ -540,7 +591,7 @@ onUnmounted(() => {
                       :disabled="saving"
                       class="px-3 py-1.5 text-xs font-medium rounded-md bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-50"
                     >
-                      {{ saving ? 'Saving...' : 'Save' }}
+                      {{ saving ? "Saving..." : "Save" }}
                     </button>
                     <button
                       @click="cancelEdit"
@@ -583,18 +634,27 @@ onUnmounted(() => {
         <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="closeCreate"></div>
 
         <!-- Modal -->
-        <div class="relative bg-gray-800 border border-white/10 rounded-xl shadow-2xl w-[560px] max-w-[95vw] max-h-[90vh] overflow-y-auto">
+        <div
+          class="relative bg-gray-800 border border-white/10 rounded-xl shadow-2xl w-[560px] max-w-[95vw] max-h-[90vh] overflow-y-auto"
+        >
           <!-- Header -->
           <div class="flex items-center justify-between px-5 py-4 border-b border-white/10">
             <h3 class="text-lg font-semibold text-white">Create New Link</h3>
-            <button @click="closeCreate" class="text-gray-400 hover:text-white transition-colors text-xl leading-none">&times;</button>
+            <button
+              @click="closeCreate"
+              class="text-gray-400 hover:text-white transition-colors text-xl leading-none"
+            >
+              &times;
+            </button>
           </div>
 
           <!-- Form -->
           <div class="px-5 py-4 space-y-4">
             <!-- Title -->
             <div>
-              <label class="block text-sm font-medium text-gray-300 mb-1">Title <span class="text-red-400">*</span></label>
+              <label class="block text-sm font-medium text-gray-300 mb-1"
+                >Title <span class="text-red-400">*</span></label
+              >
               <input
                 v-model="createForm.title"
                 placeholder="My Link"
@@ -610,7 +670,9 @@ onUnmounted(() => {
                 placeholder="https://example.com"
                 class="w-full px-3 py-2 rounded-lg bg-gray-700 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50"
               />
-              <p v-if="createForm.fileId" class="mt-1 text-xs text-gray-500">URL will be overridden by the uploaded file.</p>
+              <p v-if="createForm.fileId" class="mt-1 text-xs text-gray-500">
+                URL will be overridden by the uploaded file.
+              </p>
             </div>
 
             <!-- Icon -->
@@ -621,7 +683,9 @@ onUnmounted(() => {
                 placeholder="simple-icons:github"
                 class="w-full px-3 py-2 rounded-lg bg-gray-700 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50"
               />
-              <p class="mt-1 text-xs text-gray-500">Iconify icon name (e.g. simple-icons:github, mdi:email)</p>
+              <p class="mt-1 text-xs text-gray-500">
+                Iconify icon name (e.g. simple-icons:github, mdi:email)
+              </p>
             </div>
 
             <!-- Type + Category row -->
@@ -660,7 +724,9 @@ onUnmounted(() => {
                 />
               </div>
               <div class="flex items-end pb-2">
-                <label class="flex items-center gap-2 text-sm text-gray-300 cursor-pointer select-none">
+                <label
+                  class="flex items-center gap-2 text-sm text-gray-300 cursor-pointer select-none"
+                >
                   <input
                     type="checkbox"
                     v-model="createForm.active"
@@ -699,7 +765,12 @@ onUnmounted(() => {
               </div>
               <p v-if="fileUploading" class="mt-2 text-xs text-gray-400">Uploading...</p>
               <p v-if="fileError" class="mt-2 text-xs text-red-400">{{ fileError }}</p>
-              <p v-if="createForm.fileId && !fileError && !fileUploading" class="mt-2 text-xs text-green-400">File uploaded successfully</p>
+              <p
+                v-if="createForm.fileId && !fileError && !fileUploading"
+                class="mt-2 text-xs text-green-400"
+              >
+                File uploaded successfully
+              </p>
             </div>
 
             <!-- Create error -->
@@ -719,7 +790,7 @@ onUnmounted(() => {
               :disabled="creating || fileUploading"
               class="px-4 py-2 text-sm font-medium rounded-lg bg-orange-600 hover:bg-orange-500 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {{ creating ? 'Creating...' : 'Create Link' }}
+              {{ creating ? "Creating..." : "Create Link" }}
             </button>
           </div>
         </div>

@@ -33,9 +33,9 @@
     preloadedModel?: FireballGLTFResult;
     preloadedFireballParticles?: THREE.Object3D;
     preloadedExplosionParticles?: THREE.Object3D;
-    getParticleSystemFromPool?: (type: 'fireball' | 'explosion') => THREE.Object3D | null;
-    returnParticleSystemToPool?: (system: THREE.Object3D, type: 'fireball' | 'explosion') => void;
-    createParticleSystemAsync?: (type: 'fireball' | 'explosion') => Promise<THREE.Object3D | null>;
+    getParticleSystemFromPool?: (type: "fireball" | "explosion") => THREE.Object3D | null;
+    returnParticleSystemToPool?: (system: THREE.Object3D, type: "fireball" | "explosion") => void;
+    createParticleSystemAsync?: (type: "fireball" | "explosion") => Promise<THREE.Object3D | null>;
     particlePoolContainer?: THREE.Group | null | undefined;
   } = $props();
 
@@ -69,9 +69,8 @@
   let animationStartTime = $state<number>(performance.now());
 
   // Calculate direction vector for orientation
-  const travelDirection = $derived.by(() =>
-    direction ||
-    new THREE.Vector3().subVectors(endPosition, startPosition).normalize()
+  const travelDirection = $derived.by(
+    () => direction || new THREE.Vector3().subVectors(endPosition, startPosition).normalize(),
   );
 
   // Precompute the bezier control point once
@@ -100,11 +99,13 @@
 
   // Calculate initial tangent direction for orientation
   // This gives us the starting direction of movement
-  const initialTangent = $derived.by(() => new THREE.Vector3(
-    2 * (bezierControlPoint.x - startPosition.x),
-    2 * (bezierControlPoint.y - startPosition.y),
-    2 * (bezierControlPoint.z - startPosition.z)
-  ).normalize());
+  const initialTangent = $derived.by(() =>
+    new THREE.Vector3(
+      2 * (bezierControlPoint.x - startPosition.x),
+      2 * (bezierControlPoint.y - startPosition.y),
+      2 * (bezierControlPoint.z - startPosition.z),
+    ).normalize(),
+  );
 
   // Calculate the rotation to face the direction of travel
   function calculateRotationFromDirection(dir: THREE.Vector3): THREE.Euler {
@@ -207,17 +208,11 @@
           // Use the precomputed control point
           // Quadratic bezier formula for position
           const x =
-            t1 * t1 * startPosition.x +
-            2 * t1 * t * bezierControlPoint.x +
-            t * t * endPosition.x;
+            t1 * t1 * startPosition.x + 2 * t1 * t * bezierControlPoint.x + t * t * endPosition.x;
           const y =
-            t1 * t1 * startPosition.y +
-            2 * t1 * t * bezierControlPoint.y +
-            t * t * endPosition.y;
+            t1 * t1 * startPosition.y + 2 * t1 * t * bezierControlPoint.y + t * t * endPosition.y;
           const z =
-            t1 * t1 * startPosition.z +
-            2 * t1 * t * bezierControlPoint.z +
-            t * t * endPosition.z;
+            t1 * t1 * startPosition.z + 2 * t1 * t * bezierControlPoint.z + t * t * endPosition.z;
 
           // Update fireball position
           if (fireballRef) {
@@ -244,18 +239,10 @@
                 2 * t * (endPosition.z - bezierControlPoint.z);
 
               // Create normalized tangent vector (direction of movement)
-              const tangent = new THREE.Vector3(
-                tangentX,
-                tangentY,
-                tangentZ
-              ).normalize();
+              const tangent = new THREE.Vector3(tangentX, tangentY, tangentZ).normalize();
 
               // Calculate a point along the tangent to look at
-              const lookTarget = new THREE.Vector3(
-                x + tangent.x,
-                y + tangent.y,
-                z + tangent.z
-              );
+              const lookTarget = new THREE.Vector3(x + tangent.x, y + tangent.y, z + tangent.z);
 
               // Use lookAt for orientation
               const tempObj = new THREE.Object3D();
@@ -266,7 +253,7 @@
               fireballRef.rotation.set(
                 tempObj.rotation.x - Math.PI / 2, // -90 degrees X for flame direction
                 tempObj.rotation.y,
-                tempObj.rotation.z
+                tempObj.rotation.z,
               );
 
               // Update last Y position
@@ -304,9 +291,7 @@
           const progress = elapsedTime / EXPLOSION_DURATION;
 
           // Use elasticOut for explosive appearance
-          const scale =
-            TRAVEL_SCALE +
-            (MAX_EXPLOSION_SCALE - TRAVEL_SCALE) * elasticOut(progress);
+          const scale = TRAVEL_SCALE + (MAX_EXPLOSION_SCALE - TRAVEL_SCALE) * elasticOut(progress);
 
           // Animate light during explosion
           if (fireballLightRef) {
@@ -381,7 +366,7 @@
         const initialLookTarget = new THREE.Vector3(
           startPosition.x + initialTangent.x,
           startPosition.y + initialTangent.y,
-          startPosition.z + initialTangent.z
+          startPosition.z + initialTangent.z,
         );
 
         // Create a temp object to calculate the look rotation
@@ -393,7 +378,7 @@
         group.rotation.set(
           tempObj.rotation.x - Math.PI / 2, // -90 degrees X for flame direction
           tempObj.rotation.y,
-          tempObj.rotation.z
+          tempObj.rotation.z,
         );
       }
     }}

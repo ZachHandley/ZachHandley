@@ -1,5 +1,5 @@
-import * as THREE from 'three';
-import type { Link } from '~/types/baseSchemas';
+import * as THREE from "three";
+import type { Link } from "~/types/baseSchemas";
 
 /**
  * FireballSystem - Centralized fireball management and coordination
@@ -12,7 +12,7 @@ export interface FireballData {
   endPosition: THREE.Vector3;
   direction: THREE.Vector3;
   url: string;
-  type: Link['type'];
+  type: Link["type"];
   category?: string;
   crateId?: string;
   action?: () => void | Promise<void>; // Store the action to execute after visual sequence
@@ -29,8 +29,11 @@ export class FireballSystem {
   private nextFireballId = 0;
   private vectorPool: THREE.Vector3[] = [];
   private updateCallback?: () => void;
-  
-  constructor(private options: FireballSystemOptions, updateCallback?: () => void) {
+
+  constructor(
+    private options: FireballSystemOptions,
+    updateCallback?: () => void,
+  ) {
     this.updateCallback = updateCallback;
     this.initializePool();
   }
@@ -56,8 +59,8 @@ export class FireballSystem {
         startPosition: new THREE.Vector3(),
         endPosition: new THREE.Vector3(),
         direction: new THREE.Vector3(0, 0, 1),
-        url: '',
-        type: 'url',
+        url: "",
+        type: "url",
         category: undefined,
         action: undefined,
       });
@@ -67,7 +70,7 @@ export class FireballSystem {
     this.vectorPool = Array(this.options.maxFireballs * 4)
       .fill(null)
       .map(() => new THREE.Vector3());
-      
+
     this.nextFireballId = this.options.maxFireballs;
   }
 
@@ -89,7 +92,7 @@ export class FireballSystem {
 
     // Calculate mouth position using orientation vectors
     const mouthPosition = this.getVector(0).copy(dragonRef.position);
-    
+
     // Add offsets in each direction
     mouthPosition.add(dragonRight.multiplyScalar(this.options.dragonMouthOffset.x));
     mouthPosition.add(dragonUp.multiplyScalar(this.options.dragonMouthOffset.y));
@@ -105,7 +108,7 @@ export class FireballSystem {
     dragonRef: THREE.Group,
     targetPosition: THREE.Vector3,
     rotationTween: any,
-    dragonRotationTask: any
+    dragonRotationTask: any,
   ): Promise<void> {
     // Calculate direction from dragon to target
     const direction = new THREE.Vector3()
@@ -115,7 +118,9 @@ export class FireballSystem {
     // Calculate Y rotation (horizontal turning) to face the target
     const targetYRotation = Math.atan2(direction.x, direction.z);
 
-    console.log(`🔄 Dragon rotation: Current Y=${dragonRef.rotation.y.toFixed(2)}, Target Y=${targetYRotation.toFixed(2)}`);
+    console.log(
+      `🔄 Dragon rotation: Current Y=${dragonRef.rotation.y.toFixed(2)}, Target Y=${targetYRotation.toFixed(2)}`,
+    );
 
     // Set up rotation tween
     rotationTween.set({ y: targetYRotation });
@@ -141,19 +146,19 @@ export class FireballSystem {
     dragonRef: THREE.Group,
     targetPosition: THREE.Vector3,
     url: string,
-    type: Link['type'],
+    type: Link["type"],
     category?: string,
     crateId?: string,
     rotationTween?: any,
     dragonRotationTask?: any,
-    action?: () => void | Promise<void>
+    action?: () => void | Promise<void>,
   ): Promise<number | null> {
     console.log(`🔥 FireballSystem.createFireball called:`, { url, type, category });
-    
+
     // Find available fireball slot
-    const availableIndex = this.fireballPool.findIndex(f => !f.active);
+    const availableIndex = this.fireballPool.findIndex((f) => !f.active);
     if (availableIndex === -1) {
-      console.warn('🚫 FireballSystem: No available fireball slots');
+      console.warn("🚫 FireballSystem: No available fireball slots");
       return null;
     }
 
@@ -169,9 +174,7 @@ export class FireballSystem {
 
     // Calculate fireball trajectory
     const mouthPosition = this.calculateMouthPosition(dragonRef);
-    const direction = this.getVector(1)
-      .subVectors(targetPosition, mouthPosition)
-      .normalize();
+    const direction = this.getVector(1).subVectors(targetPosition, mouthPosition).normalize();
 
     console.log(`📐 Calculated trajectory:`, { mouthPosition, targetPosition, direction });
 
@@ -189,10 +192,10 @@ export class FireballSystem {
     fireball.action = action; // Store the action to execute after visual sequence
 
     console.log(`🚀 Fireball created with ID: ${fireball.id}`);
-    
+
     // Trigger update to notify reactive subscribers
     this.triggerUpdate();
-    
+
     return fireball.id;
   }
 
@@ -203,9 +206,9 @@ export class FireballSystem {
     id: number,
     onExplodeCrate?: (crateId: string) => void,
     onUrlNavigation?: (url: string, type: string) => void,
-    onCategoryInteraction?: (category?: string) => void
+    onCategoryInteraction?: (category?: string) => void,
   ): Promise<void> {
-    const fireball = this.fireballPool.find(f => f.active && f.id === id);
+    const fireball = this.fireballPool.find((f) => f.active && f.id === id);
     if (!fireball) return;
 
     const { url, type, category, crateId, action } = fireball;
@@ -215,9 +218,9 @@ export class FireballSystem {
       if (crateId && onExplodeCrate) {
         console.log(`💥 Exploding crate: ${crateId}`);
         onExplodeCrate(crateId);
-        
+
         // Wait for explosion animation to complete before executing action
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        await new Promise((resolve) => setTimeout(resolve, 1500));
       }
 
       // Execute the stored action after the visual sequence completes
@@ -226,18 +229,17 @@ export class FireballSystem {
         try {
           await action();
         } catch (error) {
-          console.error('Error executing stored action:', error);
+          console.error("Error executing stored action:", error);
         }
       } else {
         console.warn(`⚠️ No stored action found for ${type} link: ${url}`);
       }
-
     } catch (error) {
-      console.error('FireballSystem: Error executing fireball completion:', error);
+      console.error("FireballSystem: Error executing fireball completion:", error);
     } finally {
       // Mark as inactive
       fireball.active = false;
-      
+
       // Trigger update to notify reactive subscribers
       this.triggerUpdate();
     }
@@ -247,27 +249,27 @@ export class FireballSystem {
    * Get all active fireballs
    */
   getActiveFireballs(): FireballData[] {
-    return this.fireballPool.filter(f => f.active);
+    return this.fireballPool.filter((f) => f.active);
   }
 
   /**
    * Get fireball by ID
    */
   getFireball(id: number): FireballData | undefined {
-    return this.fireballPool.find(f => f.id === id);
+    return this.fireballPool.find((f) => f.id === id);
   }
 
   /**
    * Clear all active fireballs
    */
   clearAll(): void {
-    this.fireballPool.forEach(fireball => {
+    this.fireballPool.forEach((fireball) => {
       fireball.active = false;
       fireball.startPosition.set(0, 0, 0);
       fireball.endPosition.set(0, 0, 0);
       fireball.direction.set(0, 0, 1);
-      fireball.url = '';
-      fireball.category = '';
+      fireball.url = "";
+      fireball.category = "";
       fireball.crateId = undefined;
       fireball.action = undefined;
     });
@@ -277,11 +279,11 @@ export class FireballSystem {
    * Get pool statistics for debugging
    */
   getStats(): { active: number; available: number; total: number } {
-    const active = this.fireballPool.filter(f => f.active).length;
+    const active = this.fireballPool.filter((f) => f.active).length;
     return {
       active,
       available: this.fireballPool.length - active,
-      total: this.fireballPool.length
+      total: this.fireballPool.length,
     };
   }
 }

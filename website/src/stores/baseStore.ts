@@ -1,6 +1,6 @@
-import { atom, computed } from 'nanostores';
-import { useAppwrite } from '~vue/composables/useAppwrite';
-import { ID, Query, TablesDB, type Models } from 'appwrite';
+import { atom, computed } from "nanostores";
+import { useAppwrite } from "~vue/composables/useAppwrite";
+import { ID, Query, TablesDB, type Models } from "appwrite";
 
 export interface BaseStoreState<T> {
   items: T[];
@@ -41,14 +41,16 @@ export interface UpdateOptions {
   permissions?: string[];
 }
 
-export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '$permissions' | '$sequence'>> {
+export class BaseStore<
+  T extends Omit<Models.Row, "$databaseId" | "$tableId" | "$permissions" | "$sequence">,
+> {
   // State atoms
   public readonly items = atom<T[]>([]);
   // Fast lookup index: Map of $id -> item (derived from items)
   public readonly itemsMap = computed([this.items], (items) => {
     const map = new Map<string, T>();
     for (const it of items) {
-      const id = String((it as any).$id || '');
+      const id = String((it as any).$id || "");
       if (!id) continue;
       if (!map.has(id)) map.set(id, it);
     }
@@ -76,7 +78,7 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
       loading,
       error,
       pagination,
-    })
+    }),
   );
 
   public readonly hasItems = computed([this.items], (items) => items.length > 0);
@@ -100,7 +102,7 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
     const seen = new Set<string>();
     const result: T[] = [];
     for (const item of items) {
-      const id = String((item as any).$id || '');
+      const id = String((item as any).$id || "");
       if (!id || seen.has(id)) continue;
       seen.add(id);
       result.push(item);
@@ -125,54 +127,56 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
   // Get Appwrite client with session waiting and retry logic
   private async getClient(retryCount: number = 0): Promise<any> {
     const { client, tablesDB, isAuthenticated, setSession, waitForReady } = useAppwrite();
-    
+
     // First, wait for the client to be ready (with a timeout)
     try {
       await waitForReady(2000); // Wait up to 2 seconds
     } catch (error) {
       // Continue anyway, we'll check the session below
     }
-    
+
     // If not authenticated, try to get session from API
     if (!client || !client.config.session) {
       try {
-        const response = await fetch('/api/auth/verify.json', {
-          method: 'GET',
-          credentials: 'include',
+        const response = await fetch("/api/auth/verify.json", {
+          method: "GET",
+          credentials: "include",
         });
-        
+
         if (response.ok) {
           const data = await response.json();
           if (data.success && data.data.authenticated && data.data.session) {
             // Set the session token on the client
             const sessionId = data.data.session.$id || data.data.session;
             setSession(sessionId);
-            
+
             // Small delay to ensure session is set
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await new Promise((resolve) => setTimeout(resolve, 100));
           }
         }
       } catch (error) {
-        console.error('Failed to verify session:', error);
+        console.error("Failed to verify session:", error);
       }
     }
-    
+
     // Check if we have a valid session now
     if (!client || !client.config.session) {
       // If this is our first attempt and we're in a Vue component lifecycle,
       // try waiting a bit and retry
       if (retryCount < 3) {
         const delay = (retryCount + 1) * 500; // 500ms, 1000ms, 1500ms
-        console.log(`Appwrite client not ready, retrying in ${delay}ms (attempt ${retryCount + 1}/3)`);
-        await new Promise(resolve => setTimeout(resolve, delay));
+        console.log(
+          `Appwrite client not ready, retrying in ${delay}ms (attempt ${retryCount + 1}/3)`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, delay));
         return this.getClient(retryCount + 1);
       }
-      
-      throw new Error('User not authenticated');
+
+      throw new Error("User not authenticated");
     }
-    
+
     if (!tablesDB) {
-      throw new Error('TablesDB service not available');
+      throw new Error("TablesDB service not available");
     }
 
     return tablesDB!; // Non-null assertion since we checked above
@@ -202,12 +206,12 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
       const response = await tablesDB.listRows({
         databaseId: this.config.databaseId,
         tableId: this.config.tableId,
-        queries: finalQueries
+        queries: finalQueries,
       });
 
       const items = response.rows as unknown as T[];
       this.items.set(this.ensureUnique(items));
-      
+
       // Update pagination with cursor from last item
       const lastItem = items[items.length - 1];
       this.pagination.set({
@@ -224,9 +228,9 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
       };
     } catch (error) {
       console.error(`Failed to list ${this.config.tableId}:`, error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch items';
+      const errorMessage = error instanceof Error ? error.message : "Failed to fetch items";
       this.error.set(errorMessage);
-      
+
       return {
         success: false,
         error: errorMessage,
@@ -239,10 +243,10 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
   // List all matching documents using cursor-based pagination (streaming)
   async *listAllMatching(options: ListAllMatchingOptions = {}) {
     const { queries = [], chunkSize = 100, onProgress } = options;
-    
+
     // Ensure chunk size is within Appwrite limits
     const finalChunkSize = Math.min(Math.max(1, chunkSize), 1000);
-    
+
     let lastDocumentId: string | null = null;
     let totalLoaded = 0;
     let estimatedTotal: number | null = null;
@@ -257,10 +261,10 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
       while (hasMore) {
         // Build queries for this chunk
         const chunkQueries = [...queries];
-        
+
         // Add limit query
         chunkQueries.push(Query.limit(finalChunkSize));
-        
+
         // Add cursor if we have one (for pagination)
         if (lastDocumentId) {
           chunkQueries.push(Query.cursorAfter(lastDocumentId));
@@ -270,14 +274,14 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
           const response = await tablesDB.listRows({
             databaseId: this.config.databaseId,
             tableId: this.config.tableId,
-            queries: chunkQueries
+            queries: chunkQueries,
           });
 
           const items = response.rows as unknown as T[];
-          
+
           // Update our tracking
           totalLoaded += items.length;
-          
+
           // Determine total count
           if (estimatedTotal === null) {
             // First request - check if we can trust the total
@@ -314,7 +318,6 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
             // Set up for next iteration
             lastDocumentId = items[items.length - 1].$id;
           }
-
         } catch (chunkError) {
           console.error(`Failed to fetch chunk for ${this.config.tableId}:`, chunkError);
           // Re-throw to be caught by outer try-catch
@@ -328,10 +331,9 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
         estimatedTotal = totalLoaded;
         onProgress(totalLoaded, estimatedTotal);
       }
-
     } catch (error) {
       console.error(`Failed to list all matching ${this.config.tableId}:`, error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch items';
+      const errorMessage = error instanceof Error ? error.message : "Failed to fetch items";
       this.error.set(errorMessage);
       throw error; // Re-throw for the caller to handle
     } finally {
@@ -350,7 +352,7 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
       const row = await tablesDB.getRow({
         databaseId: this.config.databaseId,
         tableId: this.config.tableId,
-        rowId: documentId
+        rowId: documentId,
       });
 
       const item = row as unknown as T;
@@ -359,8 +361,8 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
       // CRITICAL FIX: Add the loaded item to the main items array
       // This prevents previously loaded items from being wiped out
       const currentItems = this.items.get();
-      const existingIndex = currentItems.findIndex(existingItem => existingItem.$id === item.$id);
-      
+      const existingIndex = currentItems.findIndex((existingItem) => existingItem.$id === item.$id);
+
       if (existingIndex >= 0) {
         // Update existing item
         const updatedItems = [...currentItems];
@@ -377,9 +379,9 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
       };
     } catch (error) {
       console.error(`Failed to get ${this.config.tableId} ${documentId}:`, error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch item';
+      const errorMessage = error instanceof Error ? error.message : "Failed to fetch item";
       this.currentItemError.set(errorMessage);
-      
+
       return {
         success: false,
         error: errorMessage,
@@ -403,7 +405,7 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
         tableId: this.config.tableId,
         rowId: documentId || ID.unique(),
         data: this.cleanAppwriteAttributes(data, false),
-        permissions
+        permissions,
       });
 
       const newItem = row as unknown as T;
@@ -411,7 +413,7 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
       // Add to items list
       const currentItems = this.items.get();
       this.items.set(this.ensureUnique([newItem, ...currentItems]));
-      
+
       // Update pagination total
       const currentPagination = this.pagination.get();
       this.pagination.set({
@@ -425,9 +427,9 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
       };
     } catch (error) {
       console.error(`Failed to create ${this.config.tableId}:`, error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to create item';
+      const errorMessage = error instanceof Error ? error.message : "Failed to create item";
       this.error.set(errorMessage);
-      
+
       return {
         success: false,
         error: errorMessage,
@@ -438,7 +440,11 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
   }
 
   // Update document
-  async update(documentId: string, data: Partial<Omit<T, keyof Models.Row>>, options: UpdateOptions = {}) {
+  async update(
+    documentId: string,
+    data: Partial<Omit<T, keyof Models.Row>>,
+    options: UpdateOptions = {},
+  ) {
     this.loading.set(true);
     this.error.set(null);
 
@@ -451,7 +457,7 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
         tableId: this.config.tableId,
         rowId: documentId,
         data: this.cleanAppwriteAttributes(data),
-        permissions
+        permissions,
       });
 
       const updatedItem = row as unknown as T;
@@ -460,26 +466,28 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
       if (!updatedItem.$id || updatedItem.$id !== documentId) {
         console.error(`BaseStore - Update validation failed: document ID mismatch`, {
           expected: documentId,
-          received: updatedItem.$id
+          received: updatedItem.$id,
         });
-        throw new Error('Update validation failed: document ID mismatch');
+        throw new Error("Update validation failed: document ID mismatch");
       }
 
       // Update in items list with validation
       const currentItems = this.items.get();
-      const itemIndex = currentItems.findIndex(item => item.$id === documentId);
-      
+      const itemIndex = currentItems.findIndex((item) => item.$id === documentId);
+
       if (itemIndex === -1) {
-        console.warn(`BaseStore - Item ${documentId} not found in current items during update. Adding to list.`);
+        console.warn(
+          `BaseStore - Item ${documentId} not found in current items during update. Adding to list.`,
+        );
         // Add the updated item if it wasn't found (could happen during race conditions)
         this.items.set([...currentItems, updatedItem]);
       } else {
-        const updatedItems = currentItems.map(item => 
-          item.$id === documentId ? updatedItem : item
+        const updatedItems = currentItems.map((item) =>
+          item.$id === documentId ? updatedItem : item,
         );
         this.items.set(updatedItems);
       }
-      
+
       // Update current item if it matches
       const currentItem = this.currentItem.get();
       if (currentItem?.$id === documentId) {
@@ -490,7 +498,7 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
       console.log(`BaseStore - Successfully updated ${this.config.tableId} ${documentId}:`, {
         itemsCount: this.items.get().length,
         updatedItemStatus: (updatedItem as any).status,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
       });
 
       return {
@@ -499,9 +507,9 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
       };
     } catch (error) {
       console.error(`Failed to update ${this.config.tableId} ${documentId}:`, error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to update item';
+      const errorMessage = error instanceof Error ? error.message : "Failed to update item";
       this.error.set(errorMessage);
-      
+
       return {
         success: false,
         error: errorMessage,
@@ -527,18 +535,18 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
           tableId: this.config.tableId,
           rowId: documentId,
           data: this.cleanAppwriteAttributes(data, false),
-          permissions
-      });
+          permissions,
+        });
 
         const updatedItem = row as unknown as T;
 
         // Update in items list
         const currentItems = this.items.get();
-        const updatedItems = currentItems.map(item => 
-          item.$id === documentId ? updatedItem : item
+        const updatedItems = currentItems.map((item) =>
+          item.$id === documentId ? updatedItem : item,
         );
         this.items.set(updatedItems);
-        
+
         // Update current item if it matches
         const currentItem = this.currentItem.get();
         if (currentItem?.$id === documentId) {
@@ -551,13 +559,13 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
         };
       } catch (updateError) {
         // If update fails because document doesn't exist, create it
-        if (updateError instanceof Error && updateError.message.includes('not found')) {
+        if (updateError instanceof Error && updateError.message.includes("not found")) {
           const row = await tablesDB.createRow({
             databaseId: this.config.databaseId,
             tableId: this.config.tableId,
             rowId: documentId,
             data: this.cleanAppwriteAttributes(data),
-            permissions
+            permissions,
           });
 
           const newItem = row as unknown as T;
@@ -565,7 +573,7 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
           // Add to items list
           const currentItems = this.items.get();
           this.items.set([newItem, ...currentItems]);
-          
+
           // Update pagination total
           const currentPagination = this.pagination.get();
           this.pagination.set({
@@ -578,15 +586,15 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
             item: newItem,
           };
         }
-        
+
         // Re-throw if it's a different error
         throw updateError;
       }
     } catch (error) {
       console.error(`Failed to upsert ${this.config.tableId} ${documentId}:`, error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to upsert item';
+      const errorMessage = error instanceof Error ? error.message : "Failed to upsert item";
       this.error.set(errorMessage);
-      
+
       return {
         success: false,
         error: errorMessage,
@@ -607,21 +615,21 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
       await tablesDB.deleteRow({
         databaseId: this.config.databaseId,
         tableId: this.config.tableId,
-        rowId: rowId
+        rowId: rowId,
       });
 
       // Remove from items list
       const currentItems = this.items.get();
-      const filteredItems = currentItems.filter(item => item.$id !== rowId);
+      const filteredItems = currentItems.filter((item) => item.$id !== rowId);
       this.items.set(filteredItems);
-      
+
       // Update pagination total
       const currentPagination = this.pagination.get();
       this.pagination.set({
         ...currentPagination,
         total: Math.max(0, currentPagination.total - 1),
       });
-      
+
       // Clear current item if it matches
       const currentItem = this.currentItem.get();
       if (currentItem?.$id === rowId) {
@@ -633,9 +641,9 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
       };
     } catch (error) {
       console.error(`Failed to delete ${this.config.tableId} ${rowId}:`, error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to delete item';
+      const errorMessage = error instanceof Error ? error.message : "Failed to delete item";
       this.error.set(errorMessage);
-      
+
       return {
         success: false,
         error: errorMessage,
@@ -670,7 +678,7 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
   // Local helpers for realtime and merges
   // -----------------------------
   upsertLocal(item: T) {
-    const id = String((item as any).$id || '');
+    const id = String((item as any).$id || "");
     if (!id) return;
     const current = this.items.get();
     const idx = current.findIndex((x) => x.$id === id);
@@ -692,80 +700,65 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
 // Helper to create query strings for common operations
 export const QueryHelper = {
   // Equal comparison
-  equal: (attribute: string, value: string | string[] | number | boolean) => 
+  equal: (attribute: string, value: string | string[] | number | boolean) =>
     Query.equal(attribute, value),
-  
+
   // Not equal
-  notEqual: (attribute: string, value: string | number | boolean) => 
+  notEqual: (attribute: string, value: string | number | boolean) =>
     Query.notEqual(attribute, value),
-  
+
   // Greater than
-  greaterThan: (attribute: string, value: string | number) => 
-    Query.greaterThan(attribute, value),
-  
+  greaterThan: (attribute: string, value: string | number) => Query.greaterThan(attribute, value),
+
   // Less than
-  lessThan: (attribute: string, value: string | number) => 
-    Query.lessThan(attribute, value),
-  
+  lessThan: (attribute: string, value: string | number) => Query.lessThan(attribute, value),
+
   // Greater than or equal
-  greaterThanEqual: (attribute: string, value: string | number) => 
+  greaterThanEqual: (attribute: string, value: string | number) =>
     Query.greaterThanEqual(attribute, value),
-  
+
   // Less than or equal
-  lessThanEqual: (attribute: string, value: string | number) => 
+  lessThanEqual: (attribute: string, value: string | number) =>
     Query.lessThanEqual(attribute, value),
-  
+
   // Search (text search)
-  search: (attribute: string, value: string) => 
-    Query.search(attribute, value),
+  search: (attribute: string, value: string) => Query.search(attribute, value),
 
   // Contains (text or array contains)
-  contains: (attribute: string, value: string | string[]) => 
-    Query.contains(attribute, value),
-  
+  contains: (attribute: string, value: string | string[]) => Query.contains(attribute, value),
+
   // Is null
-  isNull: (attribute: string) => 
-    Query.isNull(attribute),
-  
+  isNull: (attribute: string) => Query.isNull(attribute),
+
   // Is not null
-  isNotNull: (attribute: string) => 
-    Query.isNotNull(attribute),
-  
+  isNotNull: (attribute: string) => Query.isNotNull(attribute),
+
   // Between values
-  between: (attribute: string, start: string | number, end: string | number) => 
+  between: (attribute: string, start: string | number, end: string | number) =>
     Query.between(attribute, start, end),
-  
+
   // Starts with
-  startsWith: (attribute: string, value: string) => 
-    Query.startsWith(attribute, value),
-  
+  startsWith: (attribute: string, value: string) => Query.startsWith(attribute, value),
+
   // Ends with
-  endsWith: (attribute: string, value: string) => 
-    Query.endsWith(attribute, value),
-  
+  endsWith: (attribute: string, value: string) => Query.endsWith(attribute, value),
+
   // Select specific attributes
-  select: (attributes: string[]) => 
-    Query.select(attributes),
-  
+  select: (attributes: string[]) => Query.select(attributes),
+
   // Order by
-  orderAsc: (attribute: string) => 
-    Query.orderAsc(attribute),
-  
-  orderDesc: (attribute: string) => 
-    Query.orderDesc(attribute),
-  
+  orderAsc: (attribute: string) => Query.orderAsc(attribute),
+
+  orderDesc: (attribute: string) => Query.orderDesc(attribute),
+
   // Limit results
-  limit: (count: number) => 
-    Query.limit(count),
-  
+  limit: (count: number) => Query.limit(count),
+
   // Offset results
-  offset: (count: number) => 
-    Query.offset(count),
-  
+  offset: (count: number) => Query.offset(count),
+
   // Cursor pagination
-  cursorAfter: (documentId: string) => 
-    Query.cursorAfter(documentId),
-  
-  cursorBefore: (documentId: string) => 
-    Query.cursorBefore(documentId),
+  cursorAfter: (documentId: string) => Query.cursorAfter(documentId),
+
+  cursorBefore: (documentId: string) => Query.cursorBefore(documentId),
 };

@@ -30,12 +30,12 @@
   // Fireball (travel) tuning
   const TRAVEL_EMIT_RATE = 60; // particles / sec
   const TRAVEL_LIFETIME_MIN = 0.35;
-  const TRAVEL_LIFETIME_MAX = 0.60;
+  const TRAVEL_LIFETIME_MAX = 0.6;
   const TRAVEL_SPEED_MIN = 0.4;
   const TRAVEL_SPEED_MAX = 0.9;
   const TRAVEL_SIZE_MIN = 0.6;
   const TRAVEL_SIZE_MAX = 1.4;
-  const TRAVEL_SPAWN_RADIUS = 0.20;
+  const TRAVEL_SPAWN_RADIUS = 0.2;
 
   // Explosion tuning
   const EXPLOSION_BURST_COUNT = 60; // instant burst
@@ -189,11 +189,7 @@
    * Sums three sin waves at irrational-ish frequencies.
    */
   function noise1D(t: number): number {
-    return (
-      Math.sin(t * 7.13) * 0.5 +
-      Math.sin(t * 13.37) * 0.3 +
-      Math.sin(t * 23.71) * 0.2
-    );
+    return Math.sin(t * 7.13) * 0.5 + Math.sin(t * 13.37) * 0.3 + Math.sin(t * 23.71) * 0.2;
   }
 
   /** Emit a single particle at the given ring-buffer slot */

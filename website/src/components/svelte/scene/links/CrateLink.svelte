@@ -18,9 +18,9 @@
 
   // Typography scale factors (fractions of crate height). Design knobs, not measurements.
   const TITLE_FONT_RATIO = 0.15;
-  const ICON_SCALE_RATIO = 0.30;
-  const DOMAIN_FONT_RATIO = 0.10;
-  const INLINE_ICON_RATIO = 0.20;
+  const ICON_SCALE_RATIO = 0.3;
+  const DOMAIN_FONT_RATIO = 0.1;
+  const INLINE_ICON_RATIO = 0.2;
   const INLINE_TEXT_RATIO = 0.16;
   const INLINE_GAP_RATIO = 0.06;
 
@@ -64,7 +64,7 @@
       type: LinkType["type"],
       position: THREE.Vector3,
       category?: string,
-      action?: () => void
+      action?: () => void,
     ) => void;
     dracoLoader: DRACOLoader;
     opacity?: number;
@@ -102,10 +102,7 @@
     action: "#9C27B0",
   };
 
-  function getLinkColor(
-    linkType: LinkType["type"] = "url",
-    hovered = false
-  ): string {
+  function getLinkColor(linkType: LinkType["type"] = "url", hovered = false): string {
     if (hovered) return colorCache.urlHover;
 
     switch (linkType) {
@@ -123,8 +120,16 @@
   }
 
   // Position and rotation (reactive to respond to parent resize recalculations)
-  let positionArray = $derived(Array.isArray(position) ? position as [number, number, number] : [position, 0, 0] as [number, number, number]);
-  let rotationArray = $derived(Array.isArray(rotation) ? rotation as [number, number, number] : [0, rotation, 0] as [number, number, number]);
+  let positionArray = $derived(
+    Array.isArray(position)
+      ? (position as [number, number, number])
+      : ([position, 0, 0] as [number, number, number]),
+  );
+  let rotationArray = $derived(
+    Array.isArray(rotation)
+      ? (rotation as [number, number, number])
+      : ([0, rotation, 0] as [number, number, number]),
+  );
 
   // States
   let group = $state<THREE.Group>();
@@ -166,14 +171,9 @@
     iconLocalSize !== null && textLocalSize !== null && modelCenterY !== null,
   );
   const normalMeasured = $derived(
-    titleSize !== null &&
-      iconLocalSize !== null &&
-      domainSize !== null &&
-      modelCenterY !== null,
+    titleSize !== null && iconLocalSize !== null && domainSize !== null && modelCenterY !== null,
   );
-  const contentMeasured = $derived(
-    link.inlineIcon ? inlineMeasured : normalMeasured,
-  );
+  const contentMeasured = $derived(link.inlineIcon ? inlineMeasured : normalMeasured);
 
   // ---- inline (icon + text) layout ----
   const inlineIconScale = $derived(height * INLINE_ICON_RATIO);
@@ -260,12 +260,13 @@
   // function scope (silences `state_referenced_locally`) while keeping `gltf` as a
   // direct store binding — required for the `$gltf` auto-subscription used below.
   // `dracoLoader` is set once by the parent and never swaps, so a one-shot read is correct.
-  const gltf = (() => useGltf<{
-    nodes: { Cube200: THREE.Mesh; Cube200_1: THREE.Mesh };
-    materials: { Wood_Light: THREE.MeshStandardMaterial; Wood: THREE.MeshStandardMaterial };
-  }>("/models/Crate-transformed.glb", {
-    dracoLoader,
-  }))();
+  const gltf = (() =>
+    useGltf<{
+      nodes: { Cube200: THREE.Mesh; Cube200_1: THREE.Mesh };
+      materials: { Wood_Light: THREE.MeshStandardMaterial; Wood: THREE.MeshStandardMaterial };
+    }>("/models/Crate-transformed.glb", {
+      dracoLoader,
+    }))();
 
   // Calculate bounding box and content positions
   const boundingBoxTask = useTask(() => {
@@ -404,7 +405,7 @@
     const positionVector = new THREE.Vector3(
       positionArray[0],
       positionArray[1] + height / 2,
-      positionArray[2]
+      positionArray[2],
     );
 
     onLinkClick?.(url, type, positionVector, category, explode);
@@ -419,9 +420,7 @@
   // completion so the icon stays invisible until layout positions are stable.
   function updateSvgMaterials() {
     if (!svgGroup) return;
-    const gate = link.inlineIcon
-      ? (inlineMeasured ? 1 : 0)
-      : (normalMeasured ? 1 : 0);
+    const gate = link.inlineIcon ? (inlineMeasured ? 1 : 0) : normalMeasured ? 1 : 0;
     const targetOpacity = contentOpacity * opacity * gate;
 
     // Recursively traverse all objects in the group
@@ -483,18 +482,15 @@
   }
 
   // Load favicon using fetch to avoid CORS issues
-  async function loadFaviconWithFetch(
-    url: string
-  ): Promise<THREE.Texture | null> {
+  async function loadFaviconWithFetch(url: string): Promise<THREE.Texture | null> {
     try {
       // Use a proxy service or create a server-side proxy for CORS issues
       // For local development/demo, we'll try a direct fetch but this often fails due to CORS
       const response = await fetch(
-        `${import.meta.env.SITE}/api/utils/${encodeURIComponent(url)}.json`
+        `${import.meta.env.SITE}/api/utils/${encodeURIComponent(url)}.json`,
       );
 
-      if (!response.ok)
-        throw new Error(`HTTP error! status: ${response.status}`);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
       // Get the blob
       const blob = await response.blob();
@@ -521,7 +517,7 @@
           (error) => {
             URL.revokeObjectURL(blobUrl); // Clean up on error too
             reject(error);
-          }
+          },
         );
       });
     } catch (error) {
@@ -545,8 +541,7 @@
 
         // Calculate aspect ratio for proper scaling
         if (texture.image) {
-          faviconAspectRatio =
-            texture.image.width / Math.max(texture.image.height, 1);
+          faviconAspectRatio = texture.image.width / Math.max(texture.image.height, 1);
         }
 
         return; // Success, no need to try other URLs
@@ -868,11 +863,7 @@
           {:else if faviconLoaded && faviconTexture}
             <!-- Use favicon texture with proper scaling -->
             <T.Mesh
-              scale={[
-                getFaviconScale()[0],
-                getFaviconScale()[1],
-                getFaviconScale()[2],
-              ]}
+              scale={[getFaviconScale()[0], getFaviconScale()[1], getFaviconScale()[2]]}
               position.y={-height / 3}
             >
               <T.PlaneGeometry args={[1, 1, 1]} />

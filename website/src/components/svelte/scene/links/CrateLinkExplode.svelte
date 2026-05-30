@@ -21,8 +21,8 @@
   // Typography scale factors (fractions of crate height). These are design knobs,
   // not measurements — adjust as needed but don't pretend they're derived from anything.
   const TITLE_FONT_RATIO = 0.15;
-  const ICON_SCALE_RATIO = 0.30;
-  const DOMAIN_FONT_RATIO = 0.10;
+  const ICON_SCALE_RATIO = 0.3;
+  const DOMAIN_FONT_RATIO = 0.1;
   const INLINE_ICON_RATIO = 0.28;
   const INLINE_TEXT_RATIO = 0.18;
   const INLINE_GAP_RATIO = 0.06;
@@ -74,13 +74,16 @@
       position: THREE.Vector3,
       category?: string,
       action?: () => void,
-      crateId?: string
+      crateId?: string,
     ) => void;
     dracoLoader: DRACOLoader;
     opacity?: number;
     crateId?: string;
     screenWidth?: number;
-    modalManager?: { showModal: (link: LinkType, x: number, y: number) => void; hideModal: () => void } | null;
+    modalManager?: {
+      showModal: (link: LinkType, x: number, y: number) => void;
+      hideModal: () => void;
+    } | null;
     /** When true, the crate mounts with content faded out, then plays the
      *  reassembly animation once. Used for the back button to give it a
      *  little entrance flourish on category view. */
@@ -122,10 +125,7 @@
     action: "#9C27B0",
   };
 
-  function getLinkColor(
-    linkType: LinkType["type"] = "url",
-    hovered = false
-  ): string {
+  function getLinkColor(linkType: LinkType["type"] = "url", hovered = false): string {
     if (hovered) return colorCache.urlHover;
 
     switch (linkType) {
@@ -143,8 +143,16 @@
   }
 
   // Position and rotation (reactive to respond to parent resize recalculations)
-  let positionArray = $derived(Array.isArray(position) ? position as [number, number, number] : [position, 0, 0] as [number, number, number]);
-  let rotationArray = $derived(Array.isArray(rotation) ? rotation as [number, number, number] : [0, rotation, 0] as [number, number, number]);
+  let positionArray = $derived(
+    Array.isArray(position)
+      ? (position as [number, number, number])
+      : ([position, 0, 0] as [number, number, number]),
+  );
+  let rotationArray = $derived(
+    Array.isArray(rotation)
+      ? (rotation as [number, number, number])
+      : ([0, rotation, 0] as [number, number, number]),
+  );
 
   // States
   let group = $state<THREE.Group>();
@@ -162,7 +170,7 @@
   let actionExecuted = $state(false); // Flag to prevent duplicate coordinatedAction execution
   let materialsCloned = $state(false); // Flag to track if materials have been cloned for this instance
   let clonedMaterials = $state<THREE.Material[]>([]); // Store cloned materials for this instance
-  
+
   // Tweens for smooth opacity animations
   const modelOpacityTween = new Tween(1, {
     duration: 500,
@@ -172,7 +180,7 @@
     duration: 300,
     easing: cubicInOut,
   });
-  
+
   // Reactive opacity values from tweens
   let modelOpacity = $derived(modelOpacityTween.current);
   let contentOpacity = $derived(contentOpacityTween.current * opacity);
@@ -187,7 +195,7 @@
 
   // Content Z position - store as state instead of derived
   let contentZOffset = $state(0.3);
-  
+
   // Dynamic container offsets based on crate dimensions (using $derived for reactive computation)
   let containerZOffset = $derived(depth * 0.4);
 
@@ -211,21 +219,14 @@
     iconLocalSize !== null && textLocalSize !== null && modelCenterY !== null,
   );
   const normalMeasured = $derived(
-    titleSize !== null &&
-      iconLocalSize !== null &&
-      domainSize !== null &&
-      modelCenterY !== null,
+    titleSize !== null && iconLocalSize !== null && domainSize !== null && modelCenterY !== null,
   );
-  const contentMeasured = $derived(
-    link.inlineIcon ? inlineMeasured : normalMeasured,
-  );
+  const contentMeasured = $derived(link.inlineIcon ? inlineMeasured : normalMeasured);
 
   // Push the model so its visible bbox center sits at parent Y=0. Falls back
   // to the legacy estimate while the measurement is still pending so first
   // frame doesn't snap.
-  const containerYOffset = $derived(
-    modelCenterY !== null ? -modelCenterY : height * -0.7,
-  );
+  const containerYOffset = $derived(modelCenterY !== null ? -modelCenterY : height * -0.7);
 
   // ---- inline (icon + text) layout ----
   const inlineIconScale = $derived(height * INLINE_ICON_RATIO);
@@ -328,12 +329,11 @@
 
   // CrateExplode component reference for animations
   let crateExplodeRef: any = null;
-  
 
   // Calculate bounding box and content positions reactively
   $effect(() => {
     if (!group || !$gltf) return;
-    
+
     if (boundingBoxCalculated) return;
 
     // Temporarily reset scale to measure
@@ -365,7 +365,7 @@
         if (object instanceof THREE.Mesh && object.material) {
           if (Array.isArray(object.material)) {
             // Clone each material in the array
-            const clonedMaterialArray = object.material.map(mat => {
+            const clonedMaterialArray = object.material.map((mat) => {
               const cloned = mat.clone();
               clonedMaterials.push(cloned);
               return cloned;
@@ -391,7 +391,7 @@
   // Simple animation functions using CrateExplode component
   function playExplosion() {
     console.log(`🎬 playExplosion called for '${title}' - crateExplodeRef:`, crateExplodeRef);
-    if (crateExplodeRef && typeof crateExplodeRef.explode === 'function') {
+    if (crateExplodeRef && typeof crateExplodeRef.explode === "function") {
       console.log(`🎬 Calling crateExplodeRef.explode() for '${title}'`);
       crateExplodeRef.explode();
     } else {
@@ -400,7 +400,7 @@
   }
 
   function playReassembly() {
-    if (crateExplodeRef && typeof crateExplodeRef.reset === 'function') {
+    if (crateExplodeRef && typeof crateExplodeRef.reset === "function") {
       crateExplodeRef.reset();
     }
   }
@@ -408,7 +408,7 @@
   // Handle opacity animations with proper timing coordination
   $effect(() => {
     const isNavigationLink = type === "category" || type === "action";
-    
+
     if (isExploding) {
       if (isNavigationLink) {
         // Navigation links: Keep content/model visible during explosion for visual feedback
@@ -464,38 +464,42 @@
 
   // Explode animation - no automatic reassembly, modal system handles timing
   async function explodeCrate(): Promise<void> {
-    console.log(`🧨 EXPLODE CALLED for '${title}' (${type}) with crateId='${crateId}' - Current state: exploding=${isExploding}, exploded=${isExploded}`);
-    console.log(`🧨 EXPLODE DEBUG: title='${title}', type='${type}', crateId='${crateId}', position=${JSON.stringify(positionArray)}`);
-    
+    console.log(
+      `🧨 EXPLODE CALLED for '${title}' (${type}) with crateId='${crateId}' - Current state: exploding=${isExploding}, exploded=${isExploded}`,
+    );
+    console.log(
+      `🧨 EXPLODE DEBUG: title='${title}', type='${type}', crateId='${crateId}', position=${JSON.stringify(positionArray)}`,
+    );
+
     if (isExploding || isResetting || isReassembling || isExploded || isFadingOut) {
       console.log(`🚫 EXPLODE BLOCKED for '${title}' due to current state`);
       return;
     }
-    
+
     if (resetTimeout) clearTimeout(resetTimeout);
     resetTimeout = null;
-    
+
     isExploding = true;
     isResetting = false;
     isReassembling = false;
     isFadingOut = false;
-    
+
     console.log(`🎬 Starting explosion animation for '${title}'`);
-    
+
     // Phase 1: Explosion animation
     playExplosion();
-    
+
     // Wait for explosion animation to complete
     console.log(`⏱️ Waiting ${actualAnimationDuration} seconds for explosion to complete`);
-    await new Promise(resolve => setTimeout(resolve, actualAnimationDuration * 1000));
-    
+    await new Promise((resolve) => setTimeout(resolve, actualAnimationDuration * 1000));
+
     isExploding = false;
     isExploded = true;
     console.log(`✅ Explosion complete for '${title}'`);
-    
+
     // Phase 2: Immediate reassembly for regular links
     const isNavigationLink = type === "category" || type === "action";
-    
+
     if (!isNavigationLink) {
       // Regular links: start reassembly immediately after explosion
       console.log(`🔄 Starting immediate reassembly for '${title}' after explosion`);
@@ -527,15 +531,15 @@
       if (crateExplodeRef && crateExplodeRef.setReassemblyCallback) {
         crateExplodeRef.setReassemblyCallback(() => {
           console.log(`🎬 Animation mixer reports reassembly complete for '${title}'`);
-          
+
           // Fade in the solid crate model and content after pieces have reassembled
           modelOpacityTween.set(1);
           contentOpacityTween.set(1);
           contentVisible = true;
-          
+
           isExploded = false;
           isReassembling = false;
-          
+
           console.log(`✅ Reassembly complete for '${title}' (mixer-based timing)`);
           resolve();
         });
@@ -551,7 +555,7 @@
           resolve();
         }, resetDuration * 1000);
       }
-      
+
       // Start the reassembly animation
       playReassembly();
     });
@@ -565,28 +569,31 @@
 
   // Click handlers
   function handleClick(event: any) {
-    console.log(`🖱️ CLICK on '${title}' (${type}) - Current state: exploding=${isExploding}, exploded=${isExploded}`);
+    console.log(
+      `🖱️ CLICK on '${title}' (${type}) - Current state: exploding=${isExploding}, exploded=${isExploded}`,
+    );
     console.log(`🖱️ Modal manager available for '${title}':`, {
       hasModalManager: !!modalManager,
       modalManagerType: typeof modalManager,
       linkType: type,
-      shouldShowModal: (type === "url" || type === "download" || type === "contact") && !!modalManager && !!url
+      shouldShowModal:
+        (type === "url" || type === "download" || type === "contact") && !!modalManager && !!url,
     });
-    
+
     if (isExploded || isExploding || isResetting || isReassembling || isFadingOut) {
       console.log(`🚫 CLICK BLOCKED on '${title}' due to current state`);
       return;
     }
-    
+
     event.stopPropagation();
-    
+
     // Reset the action executed flag for new click
     actionExecuted = false;
 
     const positionVector = new THREE.Vector3(
       positionArray[0],
       positionArray[1] + height / 2,
-      positionArray[2]
+      positionArray[2],
     );
 
     console.log(`📡 Calling parent onLinkClick for '${title}' (${type}), passing action callback`);
@@ -598,21 +605,23 @@
         console.log(`🚫 Coordinated action already executed for '${title}' - skipping duplicate`);
         return;
       }
-      
+
       actionExecuted = true;
-      console.log(`🎯 Coordinated action executing for '${title}' (${type}) - Modal system with fallback`);
+      console.log(
+        `🎯 Coordinated action executing for '${title}' (${type}) - Modal system with fallback`,
+      );
       console.log(`📋 Debug info:`, {
         type,
         hasModalManager: !!modalManager,
         hasUrl: !!url,
         url,
-        isModalType: type === "url" || type === "download" || type === "contact"
+        isModalType: type === "url" || type === "download" || type === "contact",
       });
-      
+
       // For regular navigation links, show modal if available
       if ((type === "url" || type === "download" || type === "contact") && modalManager && url) {
         console.log(`✅ Modal conditions met - proceeding with modal display`);
-        
+
         try {
           // Convert 3D crate position to screen coordinates for modal positioning
           if (camera.current && $size) {
@@ -622,50 +631,51 @@
               sizeAvailable: !!$size,
               size: $size,
               positionArray,
-              height
+              height,
             });
-            
+
             const screenPosition = new THREE.Vector3();
-            screenPosition.copy(new THREE.Vector3(
-              positionArray[0],
-              positionArray[1] + height / 2,
-              positionArray[2]
-            ));
+            screenPosition.copy(
+              new THREE.Vector3(positionArray[0], positionArray[1] + height / 2, positionArray[2]),
+            );
             screenPosition.project(camera.current);
-            
+
             // Convert from normalized device coordinates to screen coordinates
             const screenX = ((screenPosition.x + 1) * $size.width) / 2;
             const screenY = ((-screenPosition.y + 1) * $size.height) / 2;
-            
-            console.log(`🌟 Calculated screen position:`, { 
+
+            console.log(`🌟 Calculated screen position:`, {
               normalizedPosition: { x: screenPosition.x, y: screenPosition.y },
-              screenX, 
+              screenX,
               screenY,
-              isFinite: isFinite(screenX) && isFinite(screenY)
+              isFinite: isFinite(screenX) && isFinite(screenY),
             });
-            
+
             // Validate coordinates and show modal
             if (isFinite(screenX) && isFinite(screenY)) {
-              console.log(`🚀 Calling modalManager.showModal() with:`, { link: link.name, screenX, screenY });
+              console.log(`🚀 Calling modalManager.showModal() with:`, {
+                link: link.name,
+                screenX,
+                screenY,
+              });
               modalManager.showModal(link, screenX, screenY);
             } else {
               console.warn(`⚠️ Invalid coordinates, using center fallback`);
-              modalManager.showModal(link, screenWidth / 2, (screenWidth * 0.6));
+              modalManager.showModal(link, screenWidth / 2, screenWidth * 0.6);
             }
           } else {
-            console.warn(`⚠️ Camera or size not available:`, { 
-              camera: !!camera.current, 
+            console.warn(`⚠️ Camera or size not available:`, {
+              camera: !!camera.current,
               size: !!$size,
-              screenWidth 
+              screenWidth,
             });
             // Use center of screen as fallback
             console.log(`🚀 Calling modalManager.showModal() with fallback position`);
-            modalManager.showModal(link, screenWidth / 2, (screenWidth * 0.6));
+            modalManager.showModal(link, screenWidth / 2, screenWidth * 0.6);
           }
-          
+
           // DO NOT reset immediately after modal - let the explosion/fade cycle complete naturally
           console.log(`🎬 Modal displayed - letting explosion animation complete naturally`);
-          
         } catch (error) {
           console.error(`❌ Modal positioning failed:`, error);
         }
@@ -674,10 +684,9 @@
           correctType: type === "url" || type === "download" || type === "contact",
           hasModalManager: !!modalManager,
           hasUrl: !!url,
-          linkType: type
+          linkType: type,
         });
       }
-      
     };
 
     // Pass the coordinated action function to the parent
@@ -688,33 +697,35 @@
   // Visual-only explosion for navigation links (no fade-out, no auto-reassembly)
   async function explodeVisualOnly(): Promise<void> {
     console.log(`🎨 VISUAL-ONLY EXPLODE for navigation link '${title}'`);
-    
+
     if (isExploding || isResetting || isReassembling || isExploded || isFadingOut) {
       console.log(`🚫 VISUAL EXPLODE BLOCKED for '${title}' due to current state`);
       return;
     }
-    
+
     if (resetTimeout) clearTimeout(resetTimeout);
     resetTimeout = null;
-    
+
     isExploding = true;
     isResetting = false;
     isReassembling = false;
     isFadingOut = false;
-    
+
     console.log(`🎬 Starting visual explosion animation for '${title}'`);
-    
+
     // Phase 1: Explosion animation only
     playExplosion();
-    
+
     // Wait for explosion to complete
-    await new Promise(resolve => setTimeout(resolve, actualAnimationDuration * 1000));
-    
+    await new Promise((resolve) => setTimeout(resolve, actualAnimationDuration * 1000));
+
     isExploding = false;
     isExploded = true;
-    
-    console.log(`🎨 Visual explosion complete for '${title}' - staying exploded until view changes`);
-    
+
+    console.log(
+      `🎨 Visual explosion complete for '${title}' - staying exploded until view changes`,
+    );
+
     // Navigation links stay exploded and visible - they will be reset when view changes
     // No fade-out animation, no auto-reassembly - the view transition handles cleanup
   }
@@ -726,9 +737,7 @@
   // popping in at a stale position before the text resolves.
   function updateSvgMaterials() {
     if (!svgGroup) return;
-    const gate = link.inlineIcon
-      ? (inlineMeasured ? 1 : 0)
-      : (normalMeasured ? 1 : 0);
+    const gate = link.inlineIcon ? (inlineMeasured ? 1 : 0) : normalMeasured ? 1 : 0;
     const targetOpacity = contentOpacity * opacity * gate;
 
     // Recursively traverse all objects in the group
@@ -790,18 +799,15 @@
   }
 
   // Load favicon using fetch to avoid CORS issues
-  async function loadFaviconWithFetch(
-    url: string
-  ): Promise<THREE.Texture | null> {
+  async function loadFaviconWithFetch(url: string): Promise<THREE.Texture | null> {
     try {
       // Use a proxy service or create a server-side proxy for CORS issues
       // For local development/demo, we'll try a direct fetch but this often fails due to CORS
       const response = await fetch(
-        `${import.meta.env.SITE}/api/utils/${encodeURIComponent(url)}.json`
+        `${import.meta.env.SITE}/api/utils/${encodeURIComponent(url)}.json`,
       );
 
-      if (!response.ok)
-        throw new Error(`HTTP error! status: ${response.status}`);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
       // Get the blob
       const blob = await response.blob();
@@ -828,7 +834,7 @@
           (error) => {
             URL.revokeObjectURL(blobUrl); // Clean up on error too
             reject(error);
-          }
+          },
         );
       });
     } catch (error) {
@@ -852,8 +858,7 @@
 
         // Calculate aspect ratio for proper scaling
         if (texture.image) {
-          faviconAspectRatio =
-            texture.image.width / Math.max(texture.image.height, 1);
+          faviconAspectRatio = texture.image.width / Math.max(texture.image.height, 1);
         }
 
         return; // Success, no need to try other URLs
@@ -1008,20 +1013,26 @@
   // Update crate model materials opacity (now using cloned materials per instance)
   $effect(() => {
     if (!group || !$gltf || !materialsCloned) return;
-    
+
     // Log opacity changes for debugging
-    console.log(`🎨 Updating opacity for '${title}': modelOpacity=${modelOpacity.toFixed(2)}, isReassembling=${isReassembling}`);
-    
+    console.log(
+      `🎨 Updating opacity for '${title}': modelOpacity=${modelOpacity.toFixed(2)}, isReassembling=${isReassembling}`,
+    );
+
     // Traverse all meshes in the group and update their material opacity
     // Skip main body meshes (Cube001, Cube001_1) as CrateExplode handles their opacity
     // Since materials are now cloned per instance, this only affects this component
     group.traverse((object) => {
       if (object instanceof THREE.Mesh && object.material) {
         // Skip main body meshes - let CrateExplode handle their opacity
-        if (object.name === "Cube001" || object.name === "Cube001_1" || object.name === "Cube.002") {
+        if (
+          object.name === "Cube001" ||
+          object.name === "Cube001_1" ||
+          object.name === "Cube.002"
+        ) {
           return;
         }
-        
+
         if (Array.isArray(object.material)) {
           object.material.forEach((mat) => {
             if (mat instanceof THREE.MeshStandardMaterial) {
@@ -1044,9 +1055,9 @@
     if (resetTimeout) {
       clearTimeout(resetTimeout);
     }
-    
+
     // Clean up cloned materials to prevent memory leaks
-    clonedMaterials.forEach(material => {
+    clonedMaterials.forEach((material) => {
       material.dispose();
     });
     clonedMaterials = [];
@@ -1087,13 +1098,13 @@
   // External reset function for view changes (immediate, no animation)
   function resetToDefault(): void {
     console.log(`🔄 Resetting '${title}' to default state (view change)`);
-    
+
     // Clear any pending timeouts
     if (resetTimeout) {
       clearTimeout(resetTimeout);
       resetTimeout = null;
     }
-    
+
     // Reset all states to default
     isExploding = false;
     isExploded = false;
@@ -1102,17 +1113,17 @@
     isReassembling = false;
     contentVisible = true;
     actionExecuted = false; // Reset action flag
-    
+
     // Reset opacity tweens to full
     modelOpacityTween.set(1);
     contentOpacityTween.set(1);
-    
+
     // Reset the CrateExplode component if available
-    if (crateExplodeRef && typeof crateExplodeRef.reset === 'function') {
+    if (crateExplodeRef && typeof crateExplodeRef.reset === "function") {
       crateExplodeRef.reset();
     }
   }
-  
+
   // Function for modal system to call when modal is closed - triggers reassembly
   function onModalClosed(): Promise<void> {
     console.log(`🖼️ Modal closed for '${title}' - triggering reassembly`);
@@ -1121,8 +1132,11 @@
 
   // Explosion function that can be called from registry with action
   function explodeWithAction(actionFunction?: () => void): Promise<void> {
-    console.log(`🎯 explodeWithAction called for '${title}' (crateId='${crateId}') with action:`, !!actionFunction);
-    
+    console.log(
+      `🎯 explodeWithAction called for '${title}' (crateId='${crateId}') with action:`,
+      !!actionFunction,
+    );
+
     if (type === "category" || type === "action") {
       console.log(`🔄 Navigation link - triggering action immediately for '${title}'`);
       // For navigation links: trigger action IMMEDIATELY before explosion
@@ -1139,7 +1153,15 @@
   }
 
   // Expose functions to parent
-  export { explodeCrate, resetCrate, startReassembly, resetToDefault, explodeVisualOnly, explodeWithAction, onModalClosed };
+  export {
+    explodeCrate,
+    resetCrate,
+    startReassembly,
+    resetToDefault,
+    explodeVisualOnly,
+    explodeWithAction,
+    onModalClosed,
+  };
 </script>
 
 <!-- Main container -->
@@ -1158,7 +1180,7 @@
     {depth}
   >
     <!-- Use CrateExplode component for animation -->
-    <CrateExplode 
+    <CrateExplode
       bind:this={crateExplodeRef}
       onclick={handleClick}
       onpointerenter={onPointerEnter}
@@ -1250,11 +1272,7 @@
             </T.Group>
           {:else if faviconLoaded && faviconTexture}
             <T.Mesh
-              scale={[
-                getFaviconScale()[0],
-                getFaviconScale()[1],
-                getFaviconScale()[2],
-              ]}
+              scale={[getFaviconScale()[0], getFaviconScale()[1], getFaviconScale()[2]]}
               position.y={-height / 3}
             >
               <T.PlaneGeometry args={[1, 1, 1]} />

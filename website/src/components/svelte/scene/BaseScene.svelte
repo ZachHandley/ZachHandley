@@ -31,7 +31,10 @@
     onLoadingStateChange?: (loading: boolean, progress: number, message: string) => void;
     screenWidth: number;
     screenHeight: number;
-    modalManager?: { showModal: (link: Link, x: number, y: number) => void; hideModal: () => void } | null;
+    modalManager?: {
+      showModal: (link: Link, x: number, y: number) => void;
+      hideModal: () => void;
+    } | null;
   } = $props();
 
   const { size: rendererSize, renderer } = useThrelte();
@@ -50,7 +53,7 @@
   $effect(() => {
     console.log(`🎮 BaseScene: modalManager binding status:`, {
       hasModalManager: !!modalManager,
-      modalManagerType: typeof modalManager
+      modalManagerType: typeof modalManager,
     });
   });
 
@@ -86,7 +89,9 @@
 
   // Clamp DPR to reduce GPU cost
   $effect(() => {
-    try { renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1)); } catch {}
+    try {
+      renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1));
+    } catch {}
   });
 
   // Camera update debounce timer (trailing-edge debounce guarantees final value fires)
@@ -126,17 +131,20 @@
 
   // Get active fireballs from SceneController (reactive)
   const activeFireballs = $derived(sceneController.getActiveFireballs());
-  
+
   // Debug active fireballs
   $effect(() => {
     console.log(`🔮 Active fireballs count: ${activeFireballs.length}`, activeFireballs);
   });
 
   // For dragon rotation tweening (used by SceneController)
-  let rotationTween = new Tween({ y: 0 }, {
-    duration: 800,
-    easing: cubicInOut,
-  });
+  let rotationTween = new Tween(
+    { y: 0 },
+    {
+      duration: 800,
+      easing: cubicInOut,
+    },
+  );
 
   // Define the rotation task outside the function
   const dragonRotationTask = useTask(() => {
@@ -173,19 +181,19 @@
     position: THREE.Vector3,
     category?: string,
     action?: (() => void) | (() => Promise<void>),
-    crateId?: string
+    crateId?: string,
   ): Promise<void> {
     console.log(`🎮 BaseScene.handleLinkClick called:`, { url, type, category, position, crateId });
-    
+
     await sceneController.handleLinkClick(
-      url, 
-      type, 
-      position, 
-      category, 
+      url,
+      type,
+      position,
+      category,
       action,
       crateId,
       rotationTween,
-      dragonRotationTask
+      dragonRotationTask,
     );
   }
 
@@ -208,11 +216,11 @@
     // Initialize particle pool container immediately after assets are loaded
     initializeParticlePool();
   });
-  
+
   // Initialize the particle pool container
   function initializeParticlePool(): void {
     if (!particlePoolContainer) {
-      console.warn('Particle pool container not available yet');
+      console.warn("Particle pool container not available yet");
       return;
     }
 
@@ -223,10 +231,10 @@
     const prewarmedSystems = sceneController.getAssetManager().getAllPrewarmedSystems();
 
     if (prewarmedSystems.length === 0) {
-      console.warn('No pre-warmed systems found. Particle effects may not work.');
+      console.warn("No pre-warmed systems found. Particle effects may not work.");
       return;
     }
-    
+
     prewarmedSystems.forEach((system, index) => {
       if (particlePoolContainer) {
         // Spread systems out a bit to avoid overlap (though they're scaled to 0)
@@ -239,9 +247,9 @@
     if (renderer && cameraRef && particlePoolContainer) {
       try {
         renderer.compile(particlePoolContainer, cameraRef);
-        console.log('Particle shaders pre-compiled');
+        console.log("Particle shaders pre-compiled");
       } catch (e) {
-        console.warn('Could not pre-compile particle shaders:', e);
+        console.warn("Could not pre-compile particle shaders:", e);
       }
     }
 
@@ -291,7 +299,6 @@
   <Ground />
 </T.Group>
 
-
 <!-- Dragon -->
 <Dragon
   {dragonEyeGlow}
@@ -307,7 +314,7 @@
   onLinkClick={handleLinkClick}
   visible={mounted}
   useExplodingCrates={true}
-  sceneController={sceneController}
+  {sceneController}
   {screenWidth}
   {screenHeight}
   {modalManager}
@@ -327,12 +334,17 @@
     preloadedModel={sceneController.getAssetManager().getAssets()?.fireModel}
     preloadedTexture={sceneController.getAssetManager().getAssets()?.fireTexture}
     preloadedAudio={sceneController.getAssetManager().getAssets()?.fireballSound}
-    preloadedFireballParticles={sceneController.getAssetManager().getAssets()?.fireballParticleSystem}
-    preloadedExplosionParticles={sceneController.getAssetManager().getAssets()?.explosionParticleSystem}
-    getParticleSystemFromPool={(type) => sceneController.getAssetManager().getAvailableParticleSystem(type)}
-    returnParticleSystemToPool={(system, type) => sceneController.getAssetManager().returnParticleSystemToPool(system, type)}
-    createParticleSystemAsync={(type) => sceneController.getAssetManager().createParticleSystemAsync(type)}
-    particlePoolContainer={particlePoolContainer}
+    preloadedFireballParticles={sceneController.getAssetManager().getAssets()
+      ?.fireballParticleSystem}
+    preloadedExplosionParticles={sceneController.getAssetManager().getAssets()
+      ?.explosionParticleSystem}
+    getParticleSystemFromPool={(type) =>
+      sceneController.getAssetManager().getAvailableParticleSystem(type)}
+    returnParticleSystemToPool={(system, type) =>
+      sceneController.getAssetManager().returnParticleSystemToPool(system, type)}
+    createParticleSystemAsync={(type) =>
+      sceneController.getAssetManager().createParticleSystemAsync(type)}
+    {particlePoolContainer}
   />
 {/each}
 
