@@ -45,6 +45,7 @@ export const fetchIconData = async (link: Link): Promise<string | null> => {
         url: link.url || "#",
         name: fallback.name,
         icon: `${fallback.prefix}:${fallback.name}`,
+        active: link.active ?? true,
       });
     }
 
