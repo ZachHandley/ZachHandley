@@ -1,0 +1,6 @@
+packages:
+  - website
+  - packages/*
+
+onlyBuiltDependencies:
+  - workerd

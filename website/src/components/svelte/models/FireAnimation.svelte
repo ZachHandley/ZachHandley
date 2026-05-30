@@ -132,15 +132,12 @@
   // Helper function to ensure valid numeric values
   function safeValue(value: number, fallback: number, min?: number, max?: number): number {
     if (!isFinite(value) || isNaN(value)) {
-      console.warn(`⚠️ Invalid value ${value}, using fallback ${fallback}`);
       return fallback;
     }
     if (min !== undefined && value < min) {
-      console.warn(`⚠️ Value ${value} below minimum ${min}, clamping`);
       return min;
     }
     if (max !== undefined && value > max) {
-      console.warn(`⚠️ Value ${value} above maximum ${max}, clamping`);
       return max;
     }
     return value;
@@ -187,14 +184,14 @@
     transform: { rotation: new Vector3(0, 0, 0) },
     // No gravity in the travel effect
     gravity: safeValue(0, 0, -10, 10),
-    // Reduced particle count for better performance
-    maxParticles: Math.floor(safeValue(500, 500, 50, 2000)),
-    emission: { rateOverTime: safeValue(1500, 1500, 100, 5000) },
-    // SPHERE shape for emission around the core
+    // Particle count matched to AssetManager's optimized values
+    maxParticles: Math.floor(safeValue(150, 150, 50, 2000)),
+    emission: { rateOverTime: safeValue(800, 800, 100, 5000) },
+    // SPHERE shape for emission around the core (matched to AssetManager config)
     shape: {
       shape: "SPHERE" as Shape,
       sphere: {
-        radius: safeValue(0.5, 0.5, 0.1, 2), // Emission radius
+        radius: safeValue(0.2, 0.2, 0.1, 2), // Emission radius
       },
     },
     // Additive blending for the brightness effect
@@ -283,9 +280,9 @@
     transform: { rotation: new Vector3(0, 0, 0) },
     // Slight rise for explosion
     gravity: safeValue(0.1, 0.1, -10, 10),
-    // Fewer particles for performance
-    maxParticles: Math.floor(safeValue(400, 400, 50, 2000)),
-    emission: { rateOverTime: safeValue(1000, 1000, 100, 5000) },
+    // Particle count matched to AssetManager's optimized values
+    maxParticles: Math.floor(safeValue(120, 120, 50, 2000)),
+    emission: { rateOverTime: safeValue(600, 600, 100, 5000) },
     // Sphere shape but larger radius for explosion
     shape: {
       shape: "SPHERE" as Shape,
@@ -370,9 +367,8 @@
         fireballSystem.position.set(0, 0, 0); // Reset position relative to new parent
         fireballSystem.scale.set(1, 1, 1); // Scale to full size (activate)
         particleRef.add(fireballSystem);
-        console.log("⚡ Pre-warmed fireball system moved to active container - zero lag!");
       } else {
-        console.log("⚠️ Pool empty, creating fireball system asynchronously");
+        console.warn("Pool empty, creating fireball system asynchronously");
         createParticleSystemAsync('fireball');
         return; // Exit early, async creation will handle the rest
       }
@@ -387,9 +383,8 @@
         explosionSystem.position.set(0, 0, 0); // Reset position relative to new parent
         explosionSystem.scale.set(1, 1, 1); // Scale to full size (activate)
         particleRef.add(explosionSystem);
-        console.log("⚡ Pre-warmed explosion system moved to active container - zero lag!");
       } else {
-        console.log("⚠️ Pool empty, creating explosion system asynchronously");
+        console.warn("Pool empty, creating explosion system asynchronously");
         createParticleSystemAsync('explosion');
         return; // Exit early, async creation will handle the rest
       }
@@ -408,33 +403,25 @@
     
     systemsInitialized = true;
     updateSystemHealth();
-    console.log(`🎯 Pre-warmed particle system activated instantly for ${mode} mode!`);
   });
 
   // Helper function to get particle system from pool (will be provided via props)
   function getParticleSystemFromPool(type: 'fireball' | 'explosion'): THREE.Object3D | null {
     if (getParticleSystemFromPoolProp) {
-      console.log(`🎯 Requesting ${type} system from pool...`);
       return getParticleSystemFromPoolProp(type);
     }
-    console.warn('getParticleSystemFromPool prop not provided');
     return null;
   }
 
   // Helper function to return particle system to pool
   function returnParticleSystemToPool(system: THREE.Object3D, type: 'fireball' | 'explosion'): void {
     if (returnParticleSystemToPoolProp) {
-      console.log(`♻️ Returning ${type} system to pool...`);
       returnParticleSystemToPoolProp(system, type);
-    } else {
-      console.warn('returnParticleSystemToPool prop not provided');
     }
   }
 
   // Helper function to create system asynchronously if pool is empty
   async function createParticleSystemAsync(type: 'fireball' | 'explosion'): Promise<void> {
-    console.log(`⏳ Creating ${type} system asynchronously...`);
-    
     if (createParticleSystemAsyncProp) {
       const newSystem = await createParticleSystemAsyncProp(type);
       if (newSystem && particleRef) {
@@ -447,7 +434,6 @@
         particleRef.add(newSystem);
         systemsInitialized = true;
         updateSystemHealth();
-        console.log(`✅ ${type} system created asynchronously and added`);
       }
     } else {
       console.warn('createParticleSystemAsync prop not provided, falling back to old method');
@@ -610,12 +596,10 @@
   // Async particle system creation - only create what's needed without blocking
   async function initParticleSystemsAsync(group: THREE.Group): Promise<void> {
     if (!group || !isActive || systemsInitialized || !fireballEffect.map) {
-      console.log(`⚠️ Skipping particle system init: group=${!!group}, isActive=${isActive}, systemsInitialized=${systemsInitialized}, hasTexture=${!!fireballEffect.map}`);
       return;
     }
 
     try {
-      console.log(`🚀 Initializing particle systems asynchronously (mode: ${mode})`);
       
       // Initialize cycleData with safe values
       const now = Date.now();
@@ -863,7 +847,6 @@
     const hasTextures = (fireballEffect.map && explosionEffect.map) || 
                        (preloadedFireballParticles && preloadedExplosionParticles);
     if (!hasTextures) {
-      console.warn(`⚠️ Particle systems not ready - missing textures`);
       return;
     }
 
@@ -911,7 +894,6 @@
 
     // If we have no systems and haven't initialized, try to initialize
     if (!fireballSystem && !explosionSystem && particleRef && !systemsInitialized) {
-      console.log("♾️ No systems available, attempting to initialize asynchronously");
       initParticleSystemsAsync(particleRef);
     }
 
@@ -935,7 +917,6 @@
 
   // Enhanced cleanup with proper disposal and validation
   function cleanup(): void {
-    console.log("🧽 Starting FireAnimation cleanup");
     isActive = false;
     systemsInitialized = false;
 
@@ -943,24 +924,16 @@
       // Return fireball system to off-screen pool instead of disposing
       if (fireballSystem) {
         try {
-          console.log("📄 Returning fireball system to off-screen pool");
-          
-          // Remove from current parent
           particleRef.remove(fireballSystem);
-          
-          // Return to pool - will be moved back to pool container
           returnParticleSystemToPool(fireballSystem, 'fireball');
-          
-          // Move system back to pool container
+
           if (particlePoolContainer && fireballSystem) {
-            fireballSystem.position.set(Math.random() * 100, 0, 0); // Spread out in pool
-            fireballSystem.scale.set(0, 0, 0); // Scale to 0
+            fireballSystem.position.set(Math.random() * 100, 0, 0);
+            fireballSystem.scale.set(0, 0, 0);
             particlePoolContainer.add(fireballSystem);
           }
-          
-          console.log("✅ Fireball system returned to off-screen pool");
         } catch (error) {
-          console.error("❌ Error returning fireball system to pool:", error);
+          console.error("Error returning fireball system to pool:", error);
         } finally {
           fireballSystem = undefined;
         }
@@ -969,41 +942,30 @@
       // Return explosion system to off-screen pool instead of disposing
       if (explosionSystem) {
         try {
-          console.log("📄 Returning explosion system to off-screen pool");
-          
-          // Remove from current parent
           particleRef.remove(explosionSystem);
-          
-          // Return to pool - will be moved back to pool container
           returnParticleSystemToPool(explosionSystem, 'explosion');
-          
-          // Move system back to pool container
+
           if (particlePoolContainer && explosionSystem) {
-            explosionSystem.position.set(Math.random() * 100, 0, 0); // Spread out in pool
-            explosionSystem.scale.set(0, 0, 0); // Scale to 0
+            explosionSystem.position.set(Math.random() * 100, 0, 0);
+            explosionSystem.scale.set(0, 0, 0);
             particlePoolContainer.add(explosionSystem);
           }
-          
-          console.log("✅ Explosion system returned to off-screen pool");
         } catch (error) {
-          console.error("❌ Error returning explosion system to pool:", error);
+          console.error("Error returning explosion system to pool:", error);
         } finally {
           explosionSystem = undefined;
         }
       }
     }
-    
+
     // Don't dispose preloaded textures - they're managed by AssetManager
     // Just reset references
     fireballEffect.map = undefined;
     explosionEffect.map = undefined;
-    
-    console.log("✅ FireAnimation cleanup completed");
   }
   
   // Force cleanup and reinitialize if needed
   function forceReinitialize(): void {
-    console.log("🔄 Force reinitializing particle systems");
     
     // Clean up existing systems
     if (systemsInitialized) {
@@ -1132,29 +1094,22 @@
   }
 
   // Periodic system health check
+  let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
   if (typeof window !== 'undefined') {
-    setInterval(() => {
+    healthCheckInterval = setInterval(() => {
       if (isActive) {
         updateSystemHealth();
-        
-        // Log health status periodically (every 30 seconds) if there are issues
-        if (debugStats.systemHealth !== 'healthy') {
-          debugLog(`System health check`, {
-            health: debugStats.systemHealth,
-            stats: debugStats,
-            systemsInitialized,
-            hasFireball: !!fireballSystem,
-            hasExplosion: !!explosionSystem,
-            mode
-          }, debugStats.systemHealth === 'error' ? 'error' : 'warn');
-        }
       }
     }, 30000); // Every 30 seconds
   }
 
   // Clean up particle systems when component is destroyed
   onDestroy(() => {
-    console.log('🧹 FireAnimation onDestroy - cleaning up particle systems');
+    // Clear the health check interval to prevent leak
+    if (healthCheckInterval) {
+      clearInterval(healthCheckInterval);
+      healthCheckInterval = undefined;
+    }
     cleanup();
   });
 </script>

@@ -3,7 +3,7 @@
   import { HTML, interactivity, Text, useDraco } from "@threlte/extras";
   import * as THREE from "three";
   import type { Link as LinkType } from "~/types/baseSchemas";
-  import { onMount, tick } from "svelte";
+  import { onMount, onDestroy, tick } from "svelte";
   import { Spring, Tween } from "svelte/motion";
   import { cubicInOut } from "svelte/easing";
   import CrateLink from "./links/CrateLink.svelte";
@@ -73,8 +73,8 @@
   // Combined categories for filtering
   const allCategories = [...leftCategories, ...rightCategories];
 
-  // Reactive state for device type - using passed screenWidth for consistency
-  let isMobile = $derived(screenWidth < 768);
+  // Reactive state for device type - prefer Threlte renderer size, fallback to passed screenWidth
+  let isMobile = $derived(($size?.width ?? screenWidth) < 768);
 
   // UI State
   let selectedCategory = $state<string | null>(null);
@@ -660,8 +660,8 @@
     calculateCategoryPositions();
   });
 
-  // Throttled effect to update layout when window/camera changes
-  let lastLayoutUpdate = 0;
+  // Debounced effect to update layout when window/camera changes
+  let layoutUpdateTimer: ReturnType<typeof setTimeout> | null = null;
   $effect(() => {
     // Dependencies - any of these changing should trigger an update
     const deps = [
@@ -675,16 +675,15 @@
 
     // Prevent layout updates during transitions
     if (transitioning) return;
-    
-    // Throttle updates to prevent excessive recalculations
-    const now = performance.now();
-    if (now - lastLayoutUpdate < 200) return;
-    lastLayoutUpdate = now;
 
-    if (showingCategories) {
-      calculateCategoryPositions();
-    }
-    // Note: gridLayout is now handled by the derived value above
+    // Trailing-edge debounce guarantees the final resize value fires
+    if (layoutUpdateTimer) clearTimeout(layoutUpdateTimer);
+    layoutUpdateTimer = setTimeout(() => {
+      if (showingCategories) {
+        calculateCategoryPositions();
+      }
+      // Note: gridLayout is now handled by the derived value above
+    }, 100);
   });
 
   // Register crates with SceneController - split into separate effects to prevent loops
@@ -812,6 +811,11 @@
     initScales();
     await fetchCategoryIcons();
     calculateCategoryPositions();
+  });
+
+  // Clean up debounce timer on destroy
+  onDestroy(() => {
+    if (layoutUpdateTimer) clearTimeout(layoutUpdateTimer);
   });
 
   // Enable interactivity

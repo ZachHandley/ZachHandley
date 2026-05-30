@@ -74,7 +74,8 @@
     showInfoPanel = !showInfoPanel;
   }
 
-  const links = $state<Link[]>([
+  const __p = $props<{ links?: Link[] }>();
+  let links: Link[] = $state<Link[]>(__p.links ?? [
     {
       name: "GitHub",
       url: "https://github.com/zachhandley",
