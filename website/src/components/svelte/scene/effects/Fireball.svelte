@@ -53,7 +53,7 @@
 
   // Load fireball and explosion sounds
   const { load } = useLoader(AudioLoader);
-  const fireballSound = preloadedAudio || load("/sounds/Fireball.wav");
+  const fireballSound = $derived(preloadedAudio || load("/sounds/Fireball.wav"));
 
   // Animation parameters - smaller explosion scale
   const TRAVEL_DURATION = 750; // ms
@@ -69,12 +69,13 @@
   let animationStartTime = $state<number>(performance.now());
 
   // Calculate direction vector for orientation
-  const travelDirection =
+  const travelDirection = $derived.by(() =>
     direction ||
-    new THREE.Vector3().subVectors(endPosition, startPosition).normalize();
+    new THREE.Vector3().subVectors(endPosition, startPosition).normalize()
+  );
 
   // Precompute the bezier control point once
-  const bezierControlPoint = (() => {
+  const bezierControlPoint = $derived.by(() => {
     // Calculate a reasonable control point for the arc
     const midX = (startPosition.x + endPosition.x) / 2;
     // Use a more moderate arc height that doesn't overshoot
@@ -88,18 +89,22 @@
     const midZ = (startPosition.z + endPosition.z) / 2;
 
     return new THREE.Vector3(midX, midY, midZ);
-  })();
+  });
 
-  // Keep track of last position for orientation updates
-  let lastYPosition = startPosition.y;
+  // Keep track of last position for orientation updates.
+  // Initialized in an $effect so the read of `startPosition` (a prop) is reactive.
+  let lastYPosition = $state(0);
+  $effect(() => {
+    lastYPosition = startPosition.y;
+  });
 
   // Calculate initial tangent direction for orientation
   // This gives us the starting direction of movement
-  const initialTangent = new THREE.Vector3(
+  const initialTangent = $derived.by(() => new THREE.Vector3(
     2 * (bezierControlPoint.x - startPosition.x),
     2 * (bezierControlPoint.y - startPosition.y),
     2 * (bezierControlPoint.z - startPosition.z)
-  ).normalize();
+  ).normalize());
 
   // Calculate the rotation to face the direction of travel
   function calculateRotationFromDirection(dir: THREE.Vector3): THREE.Euler {
@@ -120,7 +125,7 @@
   }
 
   // Get initial rotation based on travel direction
-  const initialRotation = calculateRotationFromDirection(travelDirection);
+  const initialRotation = $derived.by(() => calculateRotationFromDirection(travelDirection));
 
   // Helper function to safely cleanup when animation completes
   function cleanupAndComplete() {

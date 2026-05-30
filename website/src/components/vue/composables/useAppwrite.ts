@@ -1,4 +1,4 @@
-import { Client, Account, Storage, Databases, type Models } from 'appwrite';
+import { Client, Account, Storage, TablesDB, type Models } from 'appwrite';
 import { ref, computed } from 'vue';
 import { createGlobalState } from '@vueuse/core';
 import { 
@@ -68,7 +68,7 @@ export const useAppwrite = createGlobalState(() => {
   // Client instances - managed internally
   let client: Client | null = null;
   let account: Account | null = null;
-  let databases: Databases | null = null;
+  let tablesDB: TablesDB | null = null;
   let storage: Storage | null = null;
   // We don't need Functions/Avatars here; keep client-only services used by the admin UI
 
@@ -83,7 +83,7 @@ export const useAppwrite = createGlobalState(() => {
         .setProject(APPWRITE_PROJECT_ID);
       
       account = new Account(client);
-      databases = new Databases(client);
+      tablesDB = new TablesDB(client);
       storage = new Storage(client);
       // no-op for functions/avatars – managed server-side if ever needed
     }
@@ -250,7 +250,7 @@ export const useAppwrite = createGlobalState(() => {
     // Client instances
     client: client!,
     account: account!,
-    databases: databases!,
+    tablesDB: tablesDB!,
     storage: storage!,
     // intentionally no functions/avatars here
 

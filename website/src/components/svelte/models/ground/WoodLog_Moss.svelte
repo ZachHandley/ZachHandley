@@ -38,9 +38,9 @@
     }
   }
 
-  const gltf = useGltf<GLTFResult>('/models/WoodLog_Moss-transformed.glb', {
+  const gltf = (() => useGltf<GLTFResult>('/models/WoodLog_Moss-transformed.glb', {
     dracoLoader,
-  })
+  }))()
 </script>
 
 <T.Group

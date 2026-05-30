@@ -32,9 +32,9 @@
     }
   }
 
-  const gltf = useGltf<GLTFResult>('/models/PineTree_4-transformed.glb', {
+  const gltf = (() => useGltf<GLTFResult>('/models/PineTree_4-transformed.glb', {
     dracoLoader,
-  })
+  }))()
 </script>
 
 <T.Group

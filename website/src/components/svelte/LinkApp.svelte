@@ -75,7 +75,7 @@
   }
 
   const __p = $props<{ links?: Link[] }>();
-  let links: Link[] = $state<Link[]>(__p.links ?? [
+  const DEFAULT_LINKS: Link[] = [
     {
       name: "GitHub",
       url: "https://github.com/zachhandley",
@@ -161,7 +161,8 @@
       type: "url" as Link["type"],
       category: "projects",
     },
-  ]);
+  ];
+  let links = $derived(__p.links ?? DEFAULT_LINKS);
 </script>
 
 <svelte:window bind:innerWidth bind:innerHeight />
@@ -311,6 +312,15 @@
         >
           <Icon icon="simple-icons:github" width="18" height="18" />
         </a>
+        {#if import.meta.env.DEV}
+          <a
+            href="/admin/login"
+            class="text-orange-200 hover:text-orange-100 transition-all duration-300 hover:scale-110 text-xs px-2 py-1 rounded bg-orange-900/40 border border-orange-500/30 hover:border-orange-400/50"
+            title="Admin (DEV ONLY)"
+          >
+            Admin
+          </a>
+        {/if}
         <button
           class="bg-gradient-to-r from-orange-800/30 to-orange-900/40 hover:from-orange-700/40 hover:to-orange-800/50 text-orange-100 py-1 px-3 rounded-full shadow-lg shadow-orange-500/20 hover:shadow-orange-500/40 transition-all duration-300 flex items-center gap-1 backdrop-blur-sm border border-orange-500/30 hover:border-orange-400/50 text-sm hover:scale-105"
           onclick={toggleInfoPanel}
@@ -354,6 +364,15 @@
           >
             <Icon icon="simple-icons:github" width="20" height="20" />
           </a>
+          {#if import.meta.env.DEV}
+            <a
+              href="/admin/login"
+              class="text-orange-200 hover:text-orange-100 transition-all duration-300 hover:scale-110 text-xs px-2 py-1 rounded bg-orange-900/40 border border-orange-500/30 hover:border-orange-400/50"
+              title="Admin (DEV ONLY)"
+            >
+              Admin
+            </a>
+          {/if}
           <button
             class="bg-gradient-to-r from-orange-800/30 to-orange-900/40 hover:from-orange-700/40 hover:to-orange-800/50 text-orange-100 py-1 px-3 rounded-full shadow-lg shadow-orange-500/20 hover:shadow-orange-500/40 transition-all duration-300 flex items-center gap-1 backdrop-blur-sm border border-orange-500/30 hover:border-orange-400/50 text-lg hover:scale-105"
             onclick={toggleInfoPanel}

@@ -1,6 +1,6 @@
 import { atom, computed } from 'nanostores';
 import { useAppwrite } from '~vue/composables/useAppwrite';
-import { ID, Query, Databases, type Models } from 'appwrite';
+import { ID, Query, TablesDB, type Models } from 'appwrite';
 
 export interface BaseStoreState<T> {
   items: T[];
@@ -96,7 +96,7 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
   }
 
   // Ensure array has unique items by $id while preserving order (first occurrence wins)
-  private ensureUnique(items: T[]): T[] {
+  protected ensureUnique(items: T[]): T[] {
     const seen = new Set<string>();
     const result: T[] = [];
     for (const item of items) {
@@ -124,7 +124,7 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
 
   // Get Appwrite client with session waiting and retry logic
   private async getClient(retryCount: number = 0): Promise<any> {
-    const { client, databases, isAuthenticated, setSession, waitForReady } = useAppwrite();
+    const { client, tablesDB, isAuthenticated, setSession, waitForReady } = useAppwrite();
     
     // First, wait for the client to be ready (with a timeout)
     try {
@@ -171,11 +171,11 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
       throw new Error('User not authenticated');
     }
     
-    if (!databases) {
-      throw new Error('Databases service not available');
+    if (!tablesDB) {
+      throw new Error('TablesDB service not available');
     }
-    
-    return databases!; // Non-null assertion since we checked above
+
+    return tablesDB!; // Non-null assertion since we checked above
   }
 
   // List documents with queries
@@ -184,28 +184,28 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
     this.error.set(null);
 
     try {
-      const databases: Databases = await this.getClient();
+      const tablesDB: TablesDB = await this.getClient();
       const { queries = [], limit, cursor } = options;
-      
+
       // Use provided limit or default from pagination
       const currentPagination = this.pagination.get();
       const finalLimit = limit ?? currentPagination.limit;
-      
+
       // Build final queries with cursor and limit
       const finalQueries = [...queries];
       finalQueries.push(Query.limit(finalLimit));
-      
+
       if (cursor) {
         finalQueries.push(Query.cursorAfter(cursor));
       }
 
-      const response = await databases.listDocuments({
+      const response = await tablesDB.listRows({
         databaseId: this.config.databaseId,
-        collectionId: this.config.tableId,
+        tableId: this.config.tableId,
         queries: finalQueries
       });
 
-      const items = response.documents as unknown as T[];
+      const items = response.rows as unknown as T[];
       this.items.set(this.ensureUnique(items));
       
       // Update pagination with cursor from last item
@@ -252,7 +252,7 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
     this.error.set(null);
 
     try {
-      const databases = await this.getClient();
+      const tablesDB = await this.getClient();
 
       while (hasMore) {
         // Build queries for this chunk
@@ -267,7 +267,7 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
         }
 
         try {
-          const response = await databases.listRows({
+          const response = await tablesDB.listRows({
             databaseId: this.config.databaseId,
             tableId: this.config.tableId,
             queries: chunkQueries
@@ -345,15 +345,15 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
     this.currentItemError.set(null);
 
     try {
-      const databases = await this.getClient();
-      
-      const document = await databases.getRow({
+      const tablesDB = await this.getClient();
+
+      const row = await tablesDB.getRow({
         databaseId: this.config.databaseId,
         tableId: this.config.tableId,
         rowId: documentId
       });
 
-      const item = document as unknown as T;
+      const item = row as unknown as T;
       this.currentItem.set(item);
 
       // CRITICAL FIX: Add the loaded item to the main items array
@@ -395,10 +395,10 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
     this.error.set(null);
 
     try {
-      const databases = await this.getClient();
+      const tablesDB = await this.getClient();
       const { documentId, permissions } = options;
 
-      const document = await databases.createRow({
+      const row = await tablesDB.createRow({
         databaseId: this.config.databaseId,
         tableId: this.config.tableId,
         rowId: documentId || ID.unique(),
@@ -406,7 +406,7 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
         permissions
       });
 
-      const newItem = document as unknown as T;
+      const newItem = row as unknown as T;
 
       // Add to items list
       const currentItems = this.items.get();
@@ -443,10 +443,10 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
     this.error.set(null);
 
     try {
-      const databases = await this.getClient();
+      const tablesDB = await this.getClient();
       const { permissions } = options;
 
-      const document = await databases.updateRow({
+      const row = await tablesDB.updateRow({
         databaseId: this.config.databaseId,
         tableId: this.config.tableId,
         rowId: documentId,
@@ -454,7 +454,7 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
         permissions
       });
 
-      const updatedItem = document as unknown as T;
+      const updatedItem = row as unknown as T;
 
       // Validation checkpoint: ensure the update was successful
       if (!updatedItem.$id || updatedItem.$id !== documentId) {
@@ -517,20 +517,20 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
     this.error.set(null);
 
     try {
-      const databases: Databases = await this.getClient();
+      const tablesDB: TablesDB = await this.getClient();
       const { permissions } = options;
 
       // Try to update first
       try {
-        const document = await databases.upsertDocument({
+        const row = await tablesDB.upsertRow({
           databaseId: this.config.databaseId,
-          collectionId: this.config.tableId,
-          documentId: documentId,
+          tableId: this.config.tableId,
+          rowId: documentId,
           data: this.cleanAppwriteAttributes(data, false),
           permissions
       });
 
-        const updatedItem = document as unknown as T;
+        const updatedItem = row as unknown as T;
 
         // Update in items list
         const currentItems = this.items.get();
@@ -552,15 +552,15 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
       } catch (updateError) {
         // If update fails because document doesn't exist, create it
         if (updateError instanceof Error && updateError.message.includes('not found')) {
-          const document = await databases.createDocument({
+          const row = await tablesDB.createRow({
             databaseId: this.config.databaseId,
-            collectionId: this.config.tableId,
-            documentId: documentId,
+            tableId: this.config.tableId,
+            rowId: documentId,
             data: this.cleanAppwriteAttributes(data),
             permissions
           });
 
-          const newItem = document as unknown as T;
+          const newItem = row as unknown as T;
 
           // Add to items list
           const currentItems = this.items.get();
@@ -602,12 +602,12 @@ export class BaseStore<T extends Omit<Models.Row, '$databaseId' | '$tableId' | '
     this.error.set(null);
 
     try {
-      const databases: Databases = await this.getClient();
+      const tablesDB: TablesDB = await this.getClient();
 
-      await databases.deleteDocument({
+      await tablesDB.deleteRow({
         databaseId: this.config.databaseId,
-        collectionId: this.config.tableId,
-        documentId: rowId
+        tableId: this.config.tableId,
+        rowId: rowId
       });
 
       // Remove from items list
