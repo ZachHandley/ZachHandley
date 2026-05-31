@@ -3,11 +3,12 @@
   import { HTML, interactivity, Text, useDraco } from "@threlte/extras";
   import * as THREE from "three";
   import type { Link as LinkType } from "~/types/baseSchemas";
-  import { onMount, tick } from "svelte";
+  import { onMount, onDestroy, tick } from "svelte";
   import { Spring, Tween } from "svelte/motion";
   import { cubicInOut } from "svelte/easing";
   import CrateLink from "./links/CrateLink.svelte";
   import CrateLinkExplode from "./links/CrateLinkExplode.svelte";
+  import { useViewportLayout } from "~/components/svelte/utils/viewportLayout.svelte";
 
   // Props with proper TypeScript typing
   let {
@@ -28,7 +29,7 @@
       position: THREE.Vector3,
       category?: string,
       action?: () => void | Promise<void>,
-      crateId?: string
+      crateId?: string,
     ) => void;
     visible?: boolean;
     useExplodingCrates?: boolean;
@@ -36,12 +37,22 @@
     sceneController?: any;
     screenWidth: number;
     screenHeight: number;
-    modalManager?: { showModal: (link: LinkType, x: number, y: number) => void; hideModal: () => void } | null;
+    modalManager?: {
+      showModal: (link: LinkType, x: number, y: number) => void;
+      hideModal: () => void;
+    } | null;
   } = $props();
 
   // Get Threlte context
   const { size, camera } = useThrelte();
   const dracoLoader = useDraco();
+
+  // Z depth where the crate planes live. Defined up here so the layout lib can use it.
+  const LINKS_Z_DEPTH = 6;
+
+  // Continuous viewport-driven sizing. Replaces the previous breakpoint-quantized
+  // `isMobile ? 3 : 4` style sizing. All consumers below read these reactive getters.
+  const layout = useViewportLayout({ zDepth: LINKS_Z_DEPTH });
 
   // Define categories with their Iconify icons - split for left/right sides
   const leftCategories = [
@@ -73,8 +84,8 @@
   // Combined categories for filtering
   const allCategories = [...leftCategories, ...rightCategories];
 
-  // Reactive state for device type - using passed screenWidth for consistency
-  let isMobile = $derived(screenWidth < 768);
+  // Reactive state for device type - prefer Threlte renderer size, fallback to passed screenWidth
+  let isMobile = $derived(($size?.width ?? screenWidth) < 768);
 
   // UI State
   let selectedCategory = $state<string | null>(null);
@@ -113,23 +124,30 @@
     backButtonScaleValue = backButtonScale.current;
   });
 
-  // Get all links once for filtering by category
-  const allLinks = links;
+  // Cached Vector3 instances reused per crate id to avoid per-resize allocation churn
+  const crateVecCache = new Map<string, THREE.Vector3>();
+  function vecFor(id: string, [x, y, z]: [number, number, number]): THREE.Vector3 {
+    let v = crateVecCache.get(id);
+    if (!v) {
+      v = new THREE.Vector3(x, y, z);
+      crateVecCache.set(id, v);
+    } else {
+      v.set(x, y, z);
+    }
+    return v;
+  }
 
   // Fetch icons for category buttons
   async function fetchCategoryIcons() {
     for (const category of allCategories) {
       try {
         const { prefix, name } = category.icon;
-        const response = await fetch(
-          `https://api.iconify.design/${prefix}.json?icons=${name}`,
-          {
-            mode: "cors",
-            headers: {
-              Accept: "application/json",
-            },
-          }
-        );
+        const response = await fetch(`https://api.iconify.design/${prefix}.json?icons=${name}`, {
+          mode: "cors",
+          headers: {
+            Accept: "application/json",
+          },
+        });
 
         if (!response.ok) {
           console.error(`Failed to fetch icon for ${category.name}`);
@@ -146,58 +164,15 @@
     }
   }
 
-  // Filtered links based on selected category - using $derived to prevent infinite loops
+  // Filtered links based on selected category
   let filteredLinks = $derived.by(() => {
-    // Only filter when we have a selected category and not transitioning
-    if (!selectedCategory || transitioning) {
-      return [];
-    }
-    
-    // Filter links directly by their category property
-    const filtered = allLinks.filter(
-      (link) => link.category === selectedCategory
-    );
-    
-    console.log(`📦 Filtered ${filtered.length} links for "${selectedCategory}":`, $state.snapshot(filtered).map(l => l.name));
-    return filtered;
+    if (!selectedCategory || transitioning) return [];
+    return links.filter((link) => link.category === selectedCategory);
   });
 
-  // Z depth for links and UI - in front of the dragon
-  const LINKS_Z_DEPTH = 6;
-  
-  // Consistent back button Y position for both component types (using $derived)
-  let backButtonYPosition = $derived(visibleHeightAtZDepth(LINKS_Z_DEPTH) * 0.05);
-
-  // Dimensions are derived from camera - FIXED CALCULATION
-  function visibleHeightAtZDepth(depth: number): number {
-    if (!camera.current) return 10; // Default fallback
-
-    // Convert from z-depth to distance from camera
-    const distance = Math.abs(depth - camera.current.position.z);
-
-    // Fixed calculation using proper formula
-    return (
-      2 *
-      Math.tan(
-        ((camera.current as THREE.PerspectiveCamera).fov * Math.PI) / 180 / 2
-      ) *
-      distance
-    );
-  }
-
-  function visibleWidthAtZDepth(depth: number): number {
-    if (!camera.current) {
-      console.warn("Camera is not available when calculating width");
-      return 10; // Default fallback
-    }
-
-    const height = visibleHeightAtZDepth(depth);
-    const aspect = (camera.current as THREE.PerspectiveCamera).aspect || 1;
-    console.log(
-      `Camera aspect: ${aspect}, Height: ${height}, Calculated width: ${height * aspect}`
-    );
-    return height * aspect;
-  }
+  // Consistent back button Y position for both component types (using $derived).
+  // Pulled from the layout lib's frustum dimensions so it reacts to viewport changes.
+  let backButtonYPosition = $derived(layout.frustumHeight * 0.05);
 
   // Calculate grid layout for links with equidistant spacing and floor constraints
   function calculateGridLayout(links: LinkType[]) {
@@ -205,9 +180,9 @@
       return { leftPositions: [], rightPositions: [], linkSize: 4 };
     }
 
-    // Get visible dimensions at the links' Z depth
-    const visibleHeight = visibleHeightAtZDepth(LINKS_Z_DEPTH);
-    const visibleWidth = visibleWidthAtZDepth(LINKS_Z_DEPTH);
+    // Get visible dimensions at the links' Z depth (via the layout lib)
+    const visibleHeight = layout.frustumHeight;
+    const visibleWidth = layout.frustumWidth;
 
     // Split links between left and right sides
     const leftLinks = links.slice(0, Math.ceil(links.length / 2));
@@ -230,9 +205,8 @@
     let leftX = -distanceFromCenter;
     let rightX = distanceFromCenter;
 
-    // Check if positions are within screen bounds and adjust if necessary
-    // Account for link size in the check (using half the maxLinkSize for now)
-    const maxLinkSize = isMobile ? 2.5 : 4;
+    // Continuous link size from the layout lib (replaces `isMobile ? 2.5 : 4`).
+    const maxLinkSize = layout.linkSize.width;
     const linkRadius = maxLinkSize / 2;
 
     // Function to check if an object is on screen
@@ -263,7 +237,7 @@
     // Make links smaller on mobile
     const linkSize = Math.min(
       (availableVerticalSpace * 0.8) / Math.max(maxPerSide, 1), // Use 80% of available height
-      maxLinkSize // Maximum size cap (smaller on mobile)
+      maxLinkSize, // Maximum size cap (smaller on mobile)
     );
 
     // Calculate positions with equidistant spacing
@@ -274,28 +248,19 @@
       // Calculate spacing for left column
       // For one link, it should be centered. For multiple links, they should be equidistant.
       const leftTotalSpace = leftLinks.length * linkSize;
-      const leftSpacing =
-        (availableVerticalSpace - leftTotalSpace) / (leftLinks.length + 1);
+      const leftSpacing = (availableVerticalSpace - leftTotalSpace) / (leftLinks.length + 1);
 
       // Position each link with equal spacing
       for (let i = 0; i < leftLinks.length; i++) {
         // Start from top boundary and work down with equal spacing
         // TOP_BOUNDARY - (spacing for top) - (i * (link size + spacing between links)) - (half linkSize)
-        const y =
-          TOP_BOUNDARY -
-          leftSpacing -
-          i * (linkSize + leftSpacing) -
-          linkSize / 2;
+        const y = TOP_BOUNDARY - leftSpacing - i * (linkSize + leftSpacing) - linkSize / 2;
 
         // Ensure we're not going below the floor
         if (y - linkSize / 2 < BOTTOM_BOUNDARY) {
           console.warn("Link would be below floor - adjusting position");
           // Position at floor level plus half link size to keep it above floor
-          leftPositions.push([
-            leftX,
-            BOTTOM_BOUNDARY + linkSize / 2,
-            LINKS_Z_DEPTH,
-          ]);
+          leftPositions.push([leftX, BOTTOM_BOUNDARY + linkSize / 2, LINKS_Z_DEPTH]);
         } else {
           leftPositions.push([leftX, y, LINKS_Z_DEPTH]);
         }
@@ -305,27 +270,18 @@
     if (rightLinks.length > 0) {
       // Calculate spacing for right column
       const rightTotalSpace = rightLinks.length * linkSize;
-      const rightSpacing =
-        (availableVerticalSpace - rightTotalSpace) / (rightLinks.length + 1);
+      const rightSpacing = (availableVerticalSpace - rightTotalSpace) / (rightLinks.length + 1);
 
       // Position each link with equal spacing
       for (let i = 0; i < rightLinks.length; i++) {
         // Start from top boundary and work down with equal spacing
-        const y =
-          TOP_BOUNDARY -
-          rightSpacing -
-          i * (linkSize + rightSpacing) -
-          linkSize / 2;
+        const y = TOP_BOUNDARY - rightSpacing - i * (linkSize + rightSpacing) - linkSize / 2;
 
         // Ensure we're not going below the floor
         if (y - linkSize / 2 < BOTTOM_BOUNDARY) {
           console.warn("Link would be below floor - adjusting position");
           // Position at floor level plus half link size to keep it above floor
-          rightPositions.push([
-            rightX,
-            BOTTOM_BOUNDARY + linkSize / 2,
-            LINKS_Z_DEPTH,
-          ]);
+          rightPositions.push([rightX, BOTTOM_BOUNDARY + linkSize / 2, LINKS_Z_DEPTH]);
         } else {
           rightPositions.push([rightX, y, LINKS_Z_DEPTH]);
         }
@@ -344,48 +300,24 @@
 
   // Handle category selection
   async function selectCategory(categoryId: string) {
-    console.log(`🎯 selectCategory called with categoryId: "${categoryId}"`);
-    console.log(`🎯 Current state: transitioning=${$state.snapshot(transitioning)}, selectedCategory="${$state.snapshot(selectedCategory)}", showingCategories=${$state.snapshot(showingCategories)}`);
-    
-    // Prevent infinite loops and re-entry
-    if (transitioning) {
-      console.log(`🚫 selectCategory blocked - already transitioning`);
-      return;
-    }
-    
-    if (selectedCategory === categoryId && !showingCategories) {
-      console.log(`🚫 selectCategory blocked - already showing this category`);
-      return;
-    }
-    
-    // Allow execution from any view state to support fireball navigation
-    console.log(`✅ selectCategory proceeding from any view state`);
-    
+    if (transitioning) return;
+    if (selectedCategory === categoryId && !showingCategories) return;
+
     transitioning = true;
-    console.log(`🔒 Transition started for category: "${categoryId}"`);
 
     // Fade out categories first
     await categoryOpacityTween.set(0);
-    console.log(`🌫️ Categories faded out`);
 
-    // Update category and view state simultaneously  
+    // Update category and view state
     selectedCategory = categoryId;
     showingCategories = false;
-    console.log(`📝 State updated: selectedCategory="${$state.snapshot(selectedCategory)}", showingCategories=${$state.snapshot(showingCategories)}`);
 
-    // Wait for reactive effects to process
-    await new Promise(resolve => setTimeout(resolve, 50));
-    
     // Wait for reactive systems to update grid layout
+    await new Promise((resolve) => setTimeout(resolve, 50));
     await tick();
-    console.log(`📊 Grid layout will be calculated by reactive system for category "${categoryId}"`);
 
     // Fade in links and back button
-    await Promise.all([
-      linksOpacityTween.set(1),
-      backButtonOpacityTween.set(1),
-    ]);
-    console.log(`✨ Links and back button faded in`);
+    await Promise.all([linksOpacityTween.set(1), backButtonOpacityTween.set(1)]);
 
     // Reset back button to default state when entering links view
     const backButtonComponent = crateComponents["back-button"];
@@ -394,7 +326,6 @@
     }
 
     transitioning = false;
-    console.log(`✅ Category selection complete for "${categoryId}"`);
   }
 
   // Handle back button
@@ -403,10 +334,7 @@
     transitioning = true;
 
     // Fade out links and back button
-    await Promise.all([
-      linksOpacityTween.set(0),
-      backButtonOpacityTween.set(0),
-    ]);
+    await Promise.all([linksOpacityTween.set(0), backButtonOpacityTween.set(0)]);
 
     // Switch view
     selectedCategory = null;
@@ -418,23 +346,16 @@
     gridLayout.rightPositions = [];
 
     // Reset all category crates to default state when returning to category view
-    console.log(`🔄 Resetting category crates to default state`);
     leftCategories.forEach((category) => {
       const leftCrateId = `category-left-${category.id}`;
       const leftComponent = crateComponents[leftCrateId];
-      if (leftComponent && leftComponent.resetToDefault) {
-        console.log(`🔄 Resetting left crate: ${leftCrateId}`);
-        leftComponent.resetToDefault();
-      }
+      leftComponent?.resetToDefault?.();
     });
-    
+
     rightCategories.forEach((category) => {
       const rightCrateId = `category-right-${category.id}`;
       const rightComponent = crateComponents[rightCrateId];
-      if (rightComponent && rightComponent.resetToDefault) {
-        console.log(`🔄 Resetting right crate: ${rightCrateId}`);
-        rightComponent.resetToDefault();
-      }
+      rightComponent?.resetToDefault?.();
     });
 
     // Fade in categories
@@ -471,8 +392,8 @@
   function calculateCategoryPositions() {
     if (!camera.current) return;
 
-    const visHeight = visibleHeightAtZDepth(LINKS_Z_DEPTH);
-    const visWidth = visibleWidthAtZDepth(LINKS_Z_DEPTH);
+    const visHeight = layout.frustumHeight;
+    const visWidth = layout.frustumWidth;
 
     // Calculate dragon bounding box width - adjust as needed based on your dragon model
     const DRAGON_WIDTH = 6 * 1.5; // Assuming ENVIRONMENT_SCALE from parent component
@@ -484,11 +405,10 @@
     const screenEdgeX = visWidth / 2;
     const availableSpace = screenEdgeX - dragonEdgeX;
 
-    const distanceFromCenter =
-      dragonEdgeX + availableSpace * (isMobile ? 0.75 : 0.5);
+    const distanceFromCenter = dragonEdgeX + availableSpace * (layout.isMobile ? 0.75 : 0.5);
 
-    // Fixed size for category buttons - smaller on mobile
-    const categorySize = isMobile ? 3 : 4;
+    // Continuous category crate size from the layout lib (replaces `isMobile ? 3 : 4`).
+    const categorySize = layout.categorySize.width;
     const categoryRadius = categorySize / 2;
 
     // Function to check if an object is on screen
@@ -505,17 +425,13 @@
     if (!isOnScreen(leftX)) {
       // Move it inward so it's visible (with a small margin)
       leftX = -screenEdgeX + categoryRadius + 0.5; // 0.5 is margin
-      console.warn(
-        "Left categories would be off-screen - adjusting X position"
-      );
+      console.warn("Left categories would be off-screen - adjusting X position");
     }
 
     if (!isOnScreen(rightX)) {
       // Move it inward so it's visible (with a small margin)
       rightX = screenEdgeX - categoryRadius - 0.5; // 0.5 is margin
-      console.warn(
-        "Right categories would be off-screen - adjusting X position"
-      );
+      console.warn("Right categories would be off-screen - adjusting X position");
     }
 
     // Define vertical boundaries
@@ -526,24 +442,15 @@
     // Calculate positions for left categories with equal spacing
     if (leftCategories.length > 0) {
       const leftTotalSpace = leftCategories.length * categorySize;
-      const leftSpacing =
-        (availableVerticalSpace - leftTotalSpace) / (leftCategories.length + 1);
+      const leftSpacing = (availableVerticalSpace - leftTotalSpace) / (leftCategories.length + 1);
 
       leftCategories.forEach((cat, i) => {
         // Start from top boundary and work down
-        const y =
-          TOP_BOUNDARY -
-          leftSpacing -
-          i * (categorySize + leftSpacing) -
-          categorySize / 2;
+        const y = TOP_BOUNDARY - leftSpacing - i * (categorySize + leftSpacing) - categorySize / 2;
 
         // Ensure we're not going below the floor
         if (y - categorySize / 2 < BOTTOM_BOUNDARY) {
-          categoryPositions[cat.id] = [
-            leftX,
-            BOTTOM_BOUNDARY + categorySize / 2,
-            LINKS_Z_DEPTH,
-          ];
+          categoryPositions[cat.id] = [leftX, BOTTOM_BOUNDARY + categorySize / 2, LINKS_Z_DEPTH];
         } else {
           categoryPositions[cat.id] = [leftX, y, LINKS_Z_DEPTH];
         }
@@ -554,24 +461,16 @@
     if (rightCategories.length > 0) {
       const rightTotalSpace = rightCategories.length * categorySize;
       const rightSpacing =
-        (availableVerticalSpace - rightTotalSpace) /
-        (rightCategories.length + 1);
+        (availableVerticalSpace - rightTotalSpace) / (rightCategories.length + 1);
 
       rightCategories.forEach((cat, i) => {
         // Start from top boundary and work down
         const y =
-          TOP_BOUNDARY -
-          rightSpacing -
-          i * (categorySize + rightSpacing) -
-          categorySize / 2;
+          TOP_BOUNDARY - rightSpacing - i * (categorySize + rightSpacing) - categorySize / 2;
 
         // Ensure we're not going below the floor
         if (y - categorySize / 2 < BOTTOM_BOUNDARY) {
-          categoryPositions[cat.id] = [
-            rightX,
-            BOTTOM_BOUNDARY + categorySize / 2,
-            LINKS_Z_DEPTH,
-          ];
+          categoryPositions[cat.id] = [rightX, BOTTOM_BOUNDARY + categorySize / 2, LINKS_Z_DEPTH];
         } else {
           categoryPositions[cat.id] = [rightX, y, LINKS_Z_DEPTH];
         }
@@ -581,7 +480,6 @@
 
   // Calculate grid layout reactively using $derived
   let calculatedGridLayout = $derived.by(() => {
-    // Only calculate when showing links, not transitioning, and have filtered links
     if (
       transitioning ||
       showingCategories ||
@@ -591,13 +489,9 @@
     ) {
       return { leftPositions: [], rightPositions: [], linkSize: 4 };
     }
-    
-    console.log(`🔧 Calculating grid layout for ${$state.snapshot(filteredLinks).length} links`);
-    const layout = calculateGridLayout(filteredLinks);
-    console.log(`🔧 New grid layout:`, layout);
-    return layout;
+    return calculateGridLayout(filteredLinks);
   });
-  
+
   // Update gridLayout when calculatedGridLayout changes
   $effect(() => {
     gridLayout = calculatedGridLayout;
@@ -605,7 +499,7 @@
 
   // Store category positions with validation
   let categoryPositions = $state<Record<string, [number, number, number]>>({});
-  
+
   // Default/fallback positions for when calculations aren't ready
   const defaultPositions = {
     personal: [-6, 2, LINKS_Z_DEPTH] as [number, number, number],
@@ -613,34 +507,47 @@
     projects: [6, 2, LINKS_Z_DEPTH] as [number, number, number],
     downloads: [6, 0, LINKS_Z_DEPTH] as [number, number, number],
   };
-  
+
   // Function to get safe position with fallback
   function getSafePosition(categoryId: string): [number, number, number] {
     const calculated = categoryPositions[categoryId];
     const fallback = defaultPositions[categoryId as keyof typeof defaultPositions];
-    
-    if (calculated && calculated.every(coord => isFinite(coord))) {
+
+    if (calculated && calculated.every((coord) => isFinite(coord))) {
       return calculated;
     }
-    
+
     console.warn(`⚠️ Using fallback position for category: ${categoryId}`);
     return fallback || [0, 0, LINKS_Z_DEPTH];
   }
-  
+
   // Function to get safe link position with fallback
-  function getSafeLinkPosition(positions: [number, number, number][], index: number): [number, number, number] | null {
+  function getSafeLinkPosition(
+    positions: [number, number, number][],
+    index: number,
+  ): [number, number, number] | null {
     const position = positions[index];
-    
-    if (position && position.every(coord => isFinite(coord))) {
+
+    if (position && position.every((coord) => isFinite(coord))) {
       return position;
     }
-    
+
     console.warn(`⚠️ Link position at index ${index} is invalid:`, position);
     return null;
   }
 
   // Registry for exploding crate components
-  let crateComponents = $state<Record<string, { explodeCrate: () => void; resetCrate: () => void; resetToDefault: () => void; explodeWithAction: (action?: () => void) => Promise<void> }>>({});
+  let crateComponents = $state<
+    Record<
+      string,
+      {
+        explodeCrate: () => void;
+        resetCrate: () => void;
+        resetToDefault: () => void;
+        explodeWithAction: (action?: () => void) => Promise<void>;
+      }
+    >
+  >({});
 
   // Function to trigger explosion on a specific crate
   export async function triggerCrateExplosion(crateId: string): Promise<void> {
@@ -648,162 +555,125 @@
     if (crate && crate.explodeCrate) {
       crate.explodeCrate();
       // Wait for explosion animation to complete
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   }
 
-  // Initialize category positions when camera and size are available
+  // One debounced effect coalesces resize / viewport changes. Single source of truth.
+  let layoutUpdateTimer: ReturnType<typeof setTimeout> | null = null;
   $effect(() => {
+    // Reactive deps: any change schedules a recalc.
+    void $size?.width;
+    void $size?.height;
+    void layout.categorySize.width;
+    void layout.frustumWidth;
+    void layout.frustumHeight;
+    void showingCategories;
+
     if (!$size || !camera.current || transitioning) return;
-    
-    console.log(`📍 Calculating category positions...`);
-    calculateCategoryPositions();
+
+    if (layoutUpdateTimer) clearTimeout(layoutUpdateTimer);
+    layoutUpdateTimer = setTimeout(() => {
+      if (transitioning) return;
+      if (showingCategories) calculateCategoryPositions();
+      // gridLayout for links is handled by calculatedGridLayout (derived).
+    }, 100);
   });
 
-  // Throttled effect to update layout when window/camera changes
-  let lastLayoutUpdate = 0;
-  $effect(() => {
-    // Dependencies - any of these changing should trigger an update
-    const deps = [
-      (camera.current as THREE.PerspectiveCamera)?.aspect,
-      (camera.current as THREE.PerspectiveCamera)?.position.z,
-      (camera.current as THREE.PerspectiveCamera)?.fov,
-      $size?.width,
-      $size?.height,
-      isMobile,
-    ];
-
-    // Prevent layout updates during transitions
-    if (transitioning) return;
-    
-    // Throttle updates to prevent excessive recalculations
-    const now = performance.now();
-    if (now - lastLayoutUpdate < 200) return;
-    lastLayoutUpdate = now;
-
-    if (showingCategories) {
-      calculateCategoryPositions();
+  // Register-or-update helper: registers a crate once, then only updates its
+  // stored position vector on subsequent calls. Reuses cached THREE.Vector3
+  // instances to avoid per-resize allocation churn.
+  function syncCrate(
+    id: string,
+    handlers: { explode: () => void; reset: () => void },
+    pos: [number, number, number],
+  ) {
+    if (!sceneController) return;
+    const vec = vecFor(id, pos);
+    if (sceneController.hasCrate?.(id)) {
+      sceneController.updateCratePosition(id, vec);
+    } else {
+      sceneController.registerCrate(id, handlers, vec);
     }
-    // Note: gridLayout is now handled by the derived value above
-  });
+  }
 
-  // Register crates with SceneController - split into separate effects to prevent loops
-  
-  // Register category crates when positions and components are ready
+  // Sync category crates with SceneController whenever their components or
+  // positions change. Runs only in category view.
   $effect(() => {
     if (!sceneController || transitioning || !showingCategories) return;
-    
-    console.log(`🎯 Registering category crates...`);
-    
-    // Register left category crates
+
     leftCategories.forEach((category) => {
-      const leftCrateId = `category-left-${category.id}`;
-      const leftComponent = crateComponents[leftCrateId];
-      
-      if (leftComponent) {
-        const safePosition = getSafePosition(category.id);
-        const positionVector = new THREE.Vector3(...safePosition);
-        
-        console.log(`🎯 Registering left category ${category.id} at position:`, safePosition);
-        
-        sceneController.registerCrate(leftCrateId, {
-          explode: () => {
-            console.log(`💥 Registry explosion for left category: ${category.id}`);
-            if (leftComponent?.explodeWithAction) {
-              leftComponent.explodeWithAction(() => selectCategory(category.id));
-            }
-          },
-          reset: () => leftComponent.resetCrate?.()
-        }, positionVector);
-      }
+      const id = `category-left-${category.id}`;
+      const component = crateComponents[id];
+      if (!component) return;
+      syncCrate(
+        id,
+        {
+          explode: () => component.explodeWithAction?.(() => selectCategory(category.id)),
+          reset: () => component.resetCrate?.(),
+        },
+        getSafePosition(category.id),
+      );
     });
-    
-    // Register right category crates  
+
     rightCategories.forEach((category) => {
-      const rightCrateId = `category-right-${category.id}`;
-      const rightComponent = crateComponents[rightCrateId];
-      
-      if (rightComponent) {
-        const safePosition = getSafePosition(category.id);
-        const positionVector = new THREE.Vector3(...safePosition);
-        
-        console.log(`🎯 Registering right category ${category.id} at position:`, safePosition);
-        
-        sceneController.registerCrate(rightCrateId, {
-          explode: () => {
-            console.log(`💥 Registry explosion for right category: ${category.id}`);
-            if (rightComponent?.explodeWithAction) {
-              rightComponent.explodeWithAction(() => selectCategory(category.id));
-            }
-          },
-          reset: () => rightComponent.resetCrate?.()
-        }, positionVector);
-      }
+      const id = `category-right-${category.id}`;
+      const component = crateComponents[id];
+      if (!component) return;
+      syncCrate(
+        id,
+        {
+          explode: () => component.explodeWithAction?.(() => selectCategory(category.id)),
+          reset: () => component.resetCrate?.(),
+        },
+        getSafePosition(category.id),
+      );
     });
   });
-  
-  // Register link crates when in links view
+
+  // Sync link crates with SceneController in links view.
   $effect(() => {
-    if (!sceneController || transitioning || showingCategories || filteredLinks.length === 0) return;
-    
-    console.log(`🎯 Registering ${$state.snapshot(filteredLinks).length} link crates...`);
-    
-    // Register link crates
+    if (!sceneController || transitioning || showingCategories || filteredLinks.length === 0)
+      return;
+
+    const half = Math.ceil(filteredLinks.length / 2);
     filteredLinks.forEach((link, i) => {
-      const isLeftSide = i < Math.ceil(filteredLinks.length / 2);
-      const leftIndex = i;
-      const rightIndex = i - Math.ceil(filteredLinks.length / 2);
-      
+      const isLeftSide = i < half;
       if (isLeftSide) {
-        // Left side link
-        const leftCrateId = `link-left-${link.name}-${i}`;
-        const leftComponent = crateComponents[leftCrateId];
-        const safePosition = getSafeLinkPosition(gridLayout.leftPositions, leftIndex);
-        
-        if (leftComponent && safePosition) {
-          const positionVector = new THREE.Vector3(...safePosition);
-          console.log(`🎯 Registering left link ${link.name} at position:`, safePosition);
-          
-          sceneController.registerCrate(leftCrateId, {
-            explode: () => leftComponent.explodeCrate?.(),
-            reset: () => leftComponent.resetCrate?.()
-          }, positionVector);
-        } else {
-          console.warn(`⚠️ Cannot register left link ${link.name}: component=${!!leftComponent}, position=${!!safePosition}`);
-        }
+        const id = `link-left-${link.name}-${i}`;
+        const component = crateComponents[id];
+        const safePosition = getSafeLinkPosition(gridLayout.leftPositions, i);
+        if (!component || !safePosition) return;
+        syncCrate(
+          id,
+          { explode: () => component.explodeCrate?.(), reset: () => component.resetCrate?.() },
+          safePosition,
+        );
       } else {
-        // Right side link
-        const rightCrateId = `link-right-${link.name}-${rightIndex}`;
-        const rightComponent = crateComponents[rightCrateId];
+        const rightIndex = i - half;
+        const id = `link-right-${link.name}-${rightIndex}`;
+        const component = crateComponents[id];
         const safePosition = getSafeLinkPosition(gridLayout.rightPositions, rightIndex);
-        
-        if (rightComponent && safePosition) {
-          const positionVector = new THREE.Vector3(...safePosition);
-          console.log(`🎯 Registering right link ${link.name} at position:`, safePosition);
-          
-          sceneController.registerCrate(rightCrateId, {
-            explode: () => rightComponent.explodeCrate?.(),
-            reset: () => rightComponent.resetCrate?.()
-          }, positionVector);
-        } else {
-          console.warn(`⚠️ Cannot register right link ${link.name}: component=${!!rightComponent}, position=${!!safePosition}`);
-        }
+        if (!component || !safePosition) return;
+        syncCrate(
+          id,
+          { explode: () => component.explodeCrate?.(), reset: () => component.resetCrate?.() },
+          safePosition,
+        );
       }
     });
-    
-    // Register back button
+
+    // Back button
     const backButtonComponent = crateComponents["back-button"];
     if (backButtonComponent) {
-      const backButtonPosition = new THREE.Vector3(0, backButtonYPosition, LINKS_Z_DEPTH + 3);
-      sceneController.registerCrate("back-button", {
-        explode: () => {
-          console.log(`💥 Registry explosion for back button`);
-          if (backButtonComponent?.explodeWithAction) {
-            backButtonComponent.explodeWithAction(() => goBack());
-          }
+      syncCrate(
+        "back-button",
+        {
+          explode: () => backButtonComponent.explodeWithAction?.(() => goBack()),
+          reset: () => backButtonComponent.resetCrate?.(),
         },
-        reset: () => backButtonComponent.resetCrate?.()
-      }, backButtonPosition);
+        [0, backButtonYPosition, LINKS_Z_DEPTH + 3],
+      );
     }
   });
 
@@ -812,6 +682,11 @@
     initScales();
     await fetchCategoryIcons();
     calculateCategoryPositions();
+  });
+
+  // Clean up debounce timer on destroy
+  onDestroy(() => {
+    if (layoutUpdateTimer) clearTimeout(layoutUpdateTimer);
   });
 
   // Enable interactivity
@@ -839,15 +714,20 @@
             position={getSafePosition(category.id)}
             index={i}
             columnKey="left"
-            width={isMobile ? 3 : 4}
-            height={isMobile ? 3 : 4}
+            width={layout.categorySize.width}
+            height={layout.categorySize.height}
             opacity={categoryOpacity}
             crateId={`category-left-${category.id}`}
             bind:this={crateComponents[`category-left-${category.id}`]}
             onLinkClick={(url, type, position, action) => {
               // Use fireball system with immediate action execution for categories
-              onLinkClick!(url, type, position, category.name, () =>
-                selectCategory(category.id), `category-left-${category.id}`
+              onLinkClick!(
+                url,
+                type,
+                position,
+                category.name,
+                () => selectCategory(category.id),
+                `category-left-${category.id}`,
               );
             }}
           />
@@ -863,13 +743,18 @@
             position={getSafePosition(category.id)}
             index={i}
             columnKey="left"
-            width={isMobile ? 3 : 4}
-            height={isMobile ? 3 : 4}
+            width={layout.categorySize.width}
+            height={layout.categorySize.height}
             opacity={categoryOpacity}
             onLinkClick={(url, type, position, action) => {
               // Use fireball system with immediate action execution for categories
-              onLinkClick!(url, type, position, category.name, () =>
-                selectCategory(category.id), `category-left-${category.id}`
+              onLinkClick!(
+                url,
+                type,
+                position,
+                category.name,
+                () => selectCategory(category.id),
+                `category-left-${category.id}`,
               );
             }}
           />
@@ -893,15 +778,20 @@
             position={getSafePosition(category.id)}
             index={i}
             columnKey="right"
-            width={isMobile ? 3 : 4}
-            height={isMobile ? 3 : 4}
+            width={layout.categorySize.width}
+            height={layout.categorySize.height}
             opacity={categoryOpacity}
             crateId={`category-right-${category.id}`}
             bind:this={crateComponents[`category-right-${category.id}`]}
             onLinkClick={(url, type, position, action) => {
               // Use fireball system with immediate action execution for categories
-              onLinkClick!(url, type, position, category.name, () =>
-                selectCategory(category.id), `category-right-${category.id}`
+              onLinkClick!(
+                url,
+                type,
+                position,
+                category.name,
+                () => selectCategory(category.id),
+                `category-right-${category.id}`,
               );
             }}
           />
@@ -917,13 +807,18 @@
             position={getSafePosition(category.id)}
             index={i}
             columnKey="right"
-            width={isMobile ? 3 : 4}
-            height={isMobile ? 3 : 4}
+            width={layout.categorySize.width}
+            height={layout.categorySize.height}
             opacity={categoryOpacity}
             onLinkClick={(url, type, position, action) => {
               // Use fireball system with immediate action execution for categories
-              onLinkClick!(url, type, position, category.name, () =>
-                selectCategory(category.id), `category-right-${category.id}`
+              onLinkClick!(
+                url,
+                type,
+                position,
+                category.name,
+                () => selectCategory(category.id),
+                `category-right-${category.id}`,
               );
             }}
           />
@@ -946,7 +841,7 @@
               columnKey="left"
               width={gridLayout.linkSize}
               height={gridLayout.linkSize}
-              onLinkClick={onLinkClick}
+              {onLinkClick}
               opacity={1}
               autoReset={true}
               crateId={`link-left-${link.name}-${i}`}
@@ -961,7 +856,7 @@
               columnKey="left"
               width={gridLayout.linkSize}
               height={gridLayout.linkSize}
-              onLinkClick={onLinkClick}
+              {onLinkClick}
               opacity={1}
             />
           {/if}
@@ -982,7 +877,7 @@
               columnKey="right"
               width={gridLayout.linkSize}
               height={gridLayout.linkSize}
-              onLinkClick={onLinkClick}
+              {onLinkClick}
               opacity={1}
               autoReset={true}
               crateId={`link-right-${link.name}-${i}`}
@@ -1015,17 +910,14 @@
             icon: "mdi:arrow-left",
             inlineIcon: true,
           }}
-          position={[
-            0,
-            backButtonYPosition,
-            LINKS_Z_DEPTH + 2,
-          ]}
+          position={[0, backButtonYPosition, LINKS_Z_DEPTH + 2]}
           index={0}
           columnKey="bottom"
-          height={isMobile ? 1.5 : 2}
-          width={isMobile ? 2.5 : 3}
+          height={layout.backButtonSize.height}
+          width={layout.backButtonSize.width}
           opacity={backButtonOpacity}
           crateId="back-button"
+          reassembleOnMount={true}
           bind:this={crateComponents["back-button"]}
           onLinkClick={(url, type, position, action) => {
             // Use fireball system with immediate action execution for back button
@@ -1041,15 +933,11 @@
             icon: "mdi:arrow-left",
             inlineIcon: true,
           }}
-          position={[
-            0,
-            backButtonYPosition,
-            LINKS_Z_DEPTH + 4,
-          ]}
+          position={[0, backButtonYPosition, LINKS_Z_DEPTH + 4]}
           index={0}
           columnKey="bottom"
-          height={isMobile ? 1.5 : 2}
-          width={isMobile ? 2.5 : 3}
+          height={layout.backButtonSize.height}
+          width={layout.backButtonSize.width}
           opacity={backButtonOpacity}
           onLinkClick={(url, type, position, action) => {
             // Use fireball system with immediate action execution for back button
@@ -1060,4 +948,3 @@
     </T.Group>
   {/if}
 {/if}
-

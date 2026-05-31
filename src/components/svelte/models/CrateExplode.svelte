@@ -8,12 +8,7 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
   import { Group } from "three";
   import type { Snippet } from "svelte";
   import { T, type Props } from "@threlte/core";
-  import {
-    useGltf,
-    useGltfAnimations,
-    interactivity,
-    useDraco,
-  } from "@threlte/extras";
+  import { useGltf, useGltfAnimations, interactivity, useDraco } from "@threlte/extras";
 
   let {
     fallback,
@@ -185,11 +180,11 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
 
     console.log(`🔄 Reset: Starting reverse animation for reassembly`);
     activeReassemblyActions = 0; // Reset counter
-    
+
     // Set state to hide main body during reassembly
     mainBodyOpacity = 0;
     console.log(`🔄 Set mainBodyOpacity = 0 during reassembly`);
-    
+
     // Play all actions in reverse (reassemble) with original timing
     for (const actionName in $actions) {
       // Skip main body animation - we control its visibility via mainBodyOpacity
@@ -197,31 +192,33 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         console.log(`🚫 Skipping main body animation '${actionName}' during reassembly`);
         continue;
       }
-      
+
       const action = $actions[actionName as ActionName];
       if (action) {
         // Ensure action is at the end position (exploded state)
         action.time = action.getClip().duration;
-        
+
         // Set up reverse playback
         action.setLoop(THREE.LoopOnce, 1);
         action.clampWhenFinished = true;
         action.timeScale = -2.21; // Back to original speed
         action.paused = false;
         action.play();
-        
+
         activeReassemblyActions++; // Count each action we start
-        console.log(`🔄 Reset action '${actionName}': duration=${action.getClip().duration}, timeScale=${action.timeScale}`);
+        console.log(
+          `🔄 Reset action '${actionName}': duration=${action.getClip().duration}, timeScale=${action.timeScale}`,
+        );
       }
     }
-    
+
     console.log(`🔄 Started ${activeReassemblyActions} reassembly actions`);
   };
 
   // Add timing debug function
   export const getAnimationStatus = () => {
     if (!$actions) return "No actions available";
-    
+
     const status = [];
     for (const actionName in $actions) {
       const action = $actions[actionName as ActionName];
@@ -232,13 +229,12 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
           duration: action.getClip().duration,
           timeScale: action.timeScale,
           paused: action.paused,
-          enabled: action.enabled
+          enabled: action.enabled,
         });
       }
     }
     return status;
   };
-
 
   // Listen for animation completion
   $effect(() => {
@@ -249,18 +245,18 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         timeScale: event.action.timeScale,
         time: event.action.time,
         duration: event.action.getClip()?.duration,
-        actionName: event.action.getClip()?.name
+        actionName: event.action.getClip()?.name,
       });
-      
+
       // Check if this is a reassembly action (reverse playback)
       if (event.action.timeScale < 0) {
         activeReassemblyActions--;
         console.log(`🎭 Reassembly action finished: ${activeReassemblyActions} remaining`);
-        
+
         // Only call completion when ALL reassembly actions are done
         if (activeReassemblyActions === 0 && onReassemblyComplete) {
           console.log(`✅ ALL reassembly animations completed`);
-          
+
           // Reset main body animation to initial state before making it visible
           const mainBodyAction = $actions["Cube.002Action"];
           if (mainBodyAction) {
@@ -268,11 +264,11 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
             mainBodyAction.stop(); // Stop the action
             console.log(`🔄 Reset main body animation to initial state`);
           }
-          
+
           // Set state to show main body when reassembly is complete
           mainBodyOpacity = 1;
           console.log(`✅ Set mainBodyOpacity = 1 when reassembly complete`);
-          
+
           onReassemblyComplete();
           onReassemblyComplete = null; // Clear callback
         }

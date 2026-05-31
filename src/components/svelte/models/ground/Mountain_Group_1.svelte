@@ -39,9 +39,10 @@ Command: npx @threlte/gltf@3.0.1 ./public/models/Mountain_Group_1.gltf --types -
     };
   };
 
-  const gltf = useGltf<GLTFResult>("/models/Mountain_Group_1-transformed.glb", {
-    dracoLoader,
-  });
+  const gltf = (() =>
+    useGltf<GLTFResult>("/models/Mountain_Group_1-transformed.glb", {
+      dracoLoader,
+    }))();
 </script>
 
 <T.Group bind:ref dispose={false} {...props}>

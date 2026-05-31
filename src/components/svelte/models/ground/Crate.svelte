@@ -4,12 +4,12 @@ Command: npx @threlte/gltf@3.0.1 ./public/models/Crate.gltf --types --shadows --
 -->
 
 <script lang="ts">
-  import type * as THREE from 'three'
+  import type * as THREE from "three";
 
-  import type { Snippet } from 'svelte'
-  import { T, type Props } from '@threlte/core'
-  import { useGltf } from '@threlte/extras'
-  import type { DRACOLoader } from 'three/examples/jsm/Addons.js'
+  import type { Snippet } from "svelte";
+  import { T, type Props } from "@threlte/core";
+  import { useGltf } from "@threlte/extras";
+  import type { DRACOLoader } from "three/examples/jsm/Addons.js";
 
   let {
     fallback,
@@ -19,34 +19,31 @@ Command: npx @threlte/gltf@3.0.1 ./public/models/Crate.gltf --types --shadows --
     dracoLoader,
     ...props
   }: Props<THREE.Group> & {
-    ref?: THREE.Group
-    children?: Snippet<[{ ref: THREE.Group }]>
-    fallback?: Snippet
-    error?: Snippet<[{ error: Error }]>
-    dracoLoader: DRACOLoader
-  } = $props()
+    ref?: THREE.Group;
+    children?: Snippet<[{ ref: THREE.Group }]>;
+    fallback?: Snippet;
+    error?: Snippet<[{ error: Error }]>;
+    dracoLoader: DRACOLoader;
+  } = $props();
 
   type GLTFResult = {
     nodes: {
-      Cube200: THREE.Mesh
-      Cube200_1: THREE.Mesh
-    }
+      Cube200: THREE.Mesh;
+      Cube200_1: THREE.Mesh;
+    };
     materials: {
-      Wood_Light: THREE.MeshStandardMaterial
-      Wood: THREE.MeshStandardMaterial
-    }
-  }
+      Wood_Light: THREE.MeshStandardMaterial;
+      Wood: THREE.MeshStandardMaterial;
+    };
+  };
 
-  const gltf = useGltf<GLTFResult>('/models/Crate-transformed.glb', {
-    dracoLoader,
-  })
+  const gltf = (() =>
+    useGltf<GLTFResult>("/models/Crate-transformed.glb", {
+      dracoLoader,
+    }))();
 </script>
 
-<T.Group
-  bind:ref
-  dispose={false}
-  {...props}
->
+<T.Group bind:ref dispose={false} {...props}>
   {#await gltf}
     {@render fallback?.()}
   {:then gltf}

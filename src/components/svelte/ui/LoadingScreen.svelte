@@ -25,16 +25,18 @@
   });
 
   // Particle system state
-  let particles = $state<Array<{
-    id: number;
-    x: number;
-    y: number;
-    vx: number;
-    vy: number;
-    size: number;
-    opacity: number;
-    color: string;
-  }>>([]);
+  let particles = $state<
+    Array<{
+      id: number;
+      x: number;
+      y: number;
+      vx: number;
+      vy: number;
+      size: number;
+      opacity: number;
+      color: string;
+    }>
+  >([]);
 
   let animationFrame: number;
 
@@ -53,7 +55,7 @@
 
     // Animate particles
     function animateParticles() {
-      particles = particles.map(particle => ({
+      particles = particles.map((particle) => ({
         ...particle,
         x: particle.x + particle.vx,
         y: particle.y + particle.vy,
@@ -61,7 +63,7 @@
         x: particle.x > window.innerWidth ? 0 : particle.x < 0 ? window.innerWidth : particle.x,
         y: particle.y > window.innerHeight ? 0 : particle.y < 0 ? window.innerHeight : particle.y,
       }));
-      
+
       if (visible) {
         animationFrame = requestAnimationFrame(animateParticles);
       }
@@ -78,15 +80,10 @@
 </script>
 
 {#if visible}
-  <div 
-    class="loading-screen"
-    role="dialog"
-    aria-label="Loading content"
-    aria-live="polite"
-  >
+  <div class="loading-screen" role="dialog" aria-label="Loading content" aria-live="polite">
     <!-- Animated background with gradient -->
     <div class="background-gradient"></div>
-    
+
     <!-- Floating particles -->
     <div class="particles-container">
       {#each particles as particle (particle.id)}
@@ -115,10 +112,8 @@
       </div>
 
       <!-- Loading text -->
-      <h1 class="loading-title">
-        ZachHandley's Portfolio
-      </h1>
-      
+      <h1 class="loading-title">ZachHandley's Portfolio</h1>
+
       <p class="loading-message">
         {message}
       </p>
@@ -126,10 +121,7 @@
       <!-- Progress bar -->
       <div class="progress-container">
         <div class="progress-bar">
-          <div 
-            class="progress-fill"
-            style="width: {$animatedProgress}%"
-          ></div>
+          <div class="progress-fill" style="width: {$animatedProgress}%"></div>
         </div>
         <span class="progress-text">
           {Math.round($animatedProgress)}%
@@ -167,7 +159,7 @@
     left: 0;
     width: 100%;
     height: 100%;
-    background: 
+    background:
       radial-gradient(circle at 20% 50%, rgba(255, 107, 53, 0.3) 0%, transparent 50%),
       radial-gradient(circle at 80% 50%, rgba(255, 71, 87, 0.3) 0%, transparent 50%),
       radial-gradient(circle at 40% 80%, rgba(255, 215, 0, 0.2) 0%, transparent 50%),
@@ -176,8 +168,13 @@
   }
 
   @keyframes gradientShift {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.8; }
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.8;
+    }
   }
 
   .particles-container {
@@ -197,8 +194,15 @@
   }
 
   @keyframes sparkle {
-    0%, 100% { transform: scale(1); opacity: 0.8; }
-    50% { transform: scale(1.5); opacity: 0.3; }
+    0%,
+    100% {
+      transform: scale(1);
+      opacity: 0.8;
+    }
+    50% {
+      transform: scale(1.5);
+      opacity: 0.3;
+    }
   }
 
   .loading-content {
@@ -255,36 +259,45 @@
     border-radius: 50%;
     top: 30px;
     left: 35px;
-    box-shadow: 0 0 10px #ff4757, 0 0 20px #ff4757;
+    box-shadow:
+      0 0 10px #ff4757,
+      0 0 20px #ff4757;
     animation: eyeGlow 2s ease-in-out infinite;
   }
 
   @keyframes flicker {
-    0%, 100% { 
+    0%,
+    100% {
       transform: scale(1) rotate(0deg);
       opacity: 1;
     }
-    25% { 
+    25% {
       transform: scale(1.1) rotate(2deg);
       opacity: 0.8;
     }
-    50% { 
+    50% {
       transform: scale(0.9) rotate(-1deg);
       opacity: 0.9;
     }
-    75% { 
+    75% {
       transform: scale(1.05) rotate(1deg);
       opacity: 0.85;
     }
   }
 
   @keyframes eyeGlow {
-    0%, 100% { 
-      box-shadow: 0 0 10px #ff4757, 0 0 20px #ff4757;
+    0%,
+    100% {
+      box-shadow:
+        0 0 10px #ff4757,
+        0 0 20px #ff4757;
       opacity: 1;
     }
-    50% { 
-      box-shadow: 0 0 20px #ff4757, 0 0 40px #ff4757, 0 0 60px #ff4757;
+    50% {
+      box-shadow:
+        0 0 20px #ff4757,
+        0 0 40px #ff4757,
+        0 0 60px #ff4757;
       opacity: 0.8;
     }
   }
@@ -301,8 +314,13 @@
   }
 
   @keyframes titleGlow {
-    0%, 100% { filter: brightness(1); }
-    50% { filter: brightness(1.2); }
+    0%,
+    100% {
+      filter: brightness(1);
+    }
+    50% {
+      filter: brightness(1.2);
+    }
   }
 
   .loading-message {
@@ -313,8 +331,13 @@
   }
 
   @keyframes fadeInOut {
-    0%, 100% { opacity: 0.9; }
-    50% { opacity: 0.6; }
+    0%,
+    100% {
+      opacity: 0.9;
+    }
+    50% {
+      opacity: 0.6;
+    }
   }
 
   .progress-container {
@@ -341,8 +364,15 @@
   }
 
   @keyframes progressGlow {
-    0%, 100% { box-shadow: 0 0 10px rgba(255, 215, 0, 0.5); }
-    50% { box-shadow: 0 0 20px rgba(255, 215, 0, 0.8), 0 0 30px rgba(255, 107, 53, 0.3); }
+    0%,
+    100% {
+      box-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+    }
+    50% {
+      box-shadow:
+        0 0 20px rgba(255, 215, 0, 0.8),
+        0 0 30px rgba(255, 107, 53, 0.3);
+    }
   }
 
   .progress-text {
@@ -365,12 +395,20 @@
     animation: dotBounce 1.4s ease-in-out infinite both;
   }
 
-  .dot:nth-child(1) { animation-delay: -0.32s; }
-  .dot:nth-child(2) { animation-delay: -0.16s; }
-  .dot:nth-child(3) { animation-delay: 0s; }
+  .dot:nth-child(1) {
+    animation-delay: -0.32s;
+  }
+  .dot:nth-child(2) {
+    animation-delay: -0.16s;
+  }
+  .dot:nth-child(3) {
+    animation-delay: 0s;
+  }
 
   @keyframes dotBounce {
-    0%, 80%, 100% {
+    0%,
+    80%,
+    100% {
       transform: scale(0.8);
       opacity: 0.5;
     }
@@ -386,37 +424,37 @@
       padding: 1rem;
       max-width: 300px;
     }
-    
+
     .loading-title {
       font-size: 1.5rem;
     }
-    
+
     .loading-icon {
       width: 60px;
       height: 60px;
     }
-    
+
     .flame-1 {
       width: 22px;
       height: 38px;
       top: 11px;
       left: 19px;
     }
-    
+
     .flame-2 {
       width: 18px;
       height: 30px;
       top: 15px;
       left: 34px;
     }
-    
+
     .flame-3 {
       width: 15px;
       height: 26px;
       top: 19px;
       left: 11px;
     }
-    
+
     .dragon-eye {
       width: 6px;
       height: 6px;

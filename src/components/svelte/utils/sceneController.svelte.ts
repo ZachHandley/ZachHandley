@@ -1,8 +1,12 @@
-import * as THREE from 'three';
-import type { Link } from '~/types/baseSchemas';
-import { CrateController, type CrateControllerOptions } from './crateController.svelte.ts';
-import { FireballSystem, type FireballSystemOptions, type FireballData } from './fireballSystem.svelte.ts';
-import { AssetManager, type LoadingState } from './assetManager.svelte.ts';
+import * as THREE from "three";
+import type { Link } from "~/types/baseSchemas";
+import { CrateController, type CrateControllerOptions } from "./crateController.svelte.ts";
+import {
+  FireballSystem,
+  type FireballSystemOptions,
+  type FireballData,
+} from "./fireballSystem.svelte.ts";
+import { AssetManager, type LoadingState } from "./assetManager.svelte.ts";
 
 /**
  * SceneController - Main coordinator for the 3D scene
@@ -22,7 +26,7 @@ export class SceneController {
   private crateController: CrateController;
   private fireballSystem: FireballSystem;
   private assetManager: AssetManager;
-  
+
   private camera: THREE.PerspectiveCamera | null = null;
   private dragonRef: THREE.Group | null = null;
   private isMobile = false;
@@ -40,17 +44,20 @@ export class SceneController {
       zDepth: options.zDepth,
       environmentScale: options.environmentScale,
       dragonWidth: options.dragonWidth,
-      isMobile: this.isMobile
+      isMobile: this.isMobile,
     });
 
-    this.fireballSystem = new FireballSystem({
-      maxFireballs: options.maxFireballs,
-      dragonMouthOffset: new THREE.Vector3(0, 3, 0.5),
-      rotationDuration: 800
-    }, () => {
-      // Trigger reactivity update when fireballs change
-      this.updateTrigger++;
-    });
+    this.fireballSystem = new FireballSystem(
+      {
+        maxFireballs: options.maxFireballs,
+        dragonMouthOffset: new THREE.Vector3(0, 3, 0.5),
+        rotationDuration: 800,
+      },
+      () => {
+        // Trigger reactivity update when fireballs change
+        this.updateTrigger++;
+      },
+    );
   }
 
   /**
@@ -58,27 +65,30 @@ export class SceneController {
    */
   async initialize(): Promise<void> {
     this.assetManager.startLoading();
-    
+
     // Load ground assets immediately
-    this.assetManager.completeStep('ground', 'Setting up the scene...');
-    
+    this.assetManager.completeStep("ground", "Setting up the scene...");
+
     // Load dragon assets immediately
-    this.assetManager.completeStep('dragon', 'Awakening the dragon...');
-    
+    this.assetManager.completeStep("dragon", "Awakening the dragon...");
+
     // Load fire assets (loads texture, model, audio AND pre-warms particle pool)
     await this.assetManager.preloadFireAssets();
-    
+
     // Complete scene setup immediately
-    this.assetManager.completeStep('scene', 'Finalizing portfolio...');
+    this.assetManager.completeStep("scene", "Finalizing portfolio...");
   }
 
   /**
    * Update camera reference and mobile state
    */
-  updateCamera(camera: THREE.PerspectiveCamera, rendererSize: { width: number; height: number }): void {
+  updateCamera(
+    camera: THREE.PerspectiveCamera,
+    rendererSize: { width: number; height: number },
+  ): void {
     this.camera = camera;
     this.isMobile = rendererSize.width < rendererSize.height * 1.2;
-    
+
     // Update subsystems
     this.crateController.updateCamera(camera);
     this.crateController.updateOptions({ isMobile: this.isMobile });
@@ -126,25 +136,25 @@ export class SceneController {
    */
   async handleLinkClick(
     url: string,
-    type: Link['type'],
+    type: Link["type"],
     position: THREE.Vector3,
     category?: string,
     action?: () => void | Promise<void>,
     crateId?: string,
     rotationTween?: any,
-    dragonRotationTask?: any
+    dragonRotationTask?: any,
   ): Promise<void> {
     console.log(`🎯 SceneController.handleLinkClick called:`, { url, type, category, position });
-    
+
     if (!this.dragonRef) {
-      console.warn('🚫 SceneController: Dragon reference not set');
+      console.warn("🚫 SceneController: Dragon reference not set");
       return;
     }
 
     // Note: Particle systems are already pre-warmed during initialization
 
     console.log(`🐉 Dragon ref available, creating fireball with stored action...`);
-    
+
     const fireballId = await this.fireballSystem.createFireball(
       this.dragonRef,
       position,
@@ -154,13 +164,15 @@ export class SceneController {
       crateId,
       rotationTween,
       dragonRotationTask,
-      action // Pass the action to be executed after visual sequence
+      action, // Pass the action to be executed after visual sequence
     );
 
     if (fireballId === null) {
-      console.warn('🚫 SceneController: Failed to create fireball');
+      console.warn("🚫 SceneController: Failed to create fireball");
     } else {
-      console.log(`✅ SceneController: Fireball created with ID ${fireballId}, action will execute after visual sequence`);
+      console.log(
+        `✅ SceneController: Fireball created with ID ${fireballId}, action will execute after visual sequence`,
+      );
     }
   }
 
@@ -172,7 +184,7 @@ export class SceneController {
       id,
       this.handleExplodeCrate.bind(this),
       this.navigateToExternalLink.bind(this),
-      this.options.onCategoryInteraction
+      this.options.onCategoryInteraction,
     );
   }
 
@@ -188,23 +200,23 @@ export class SceneController {
    * Navigate to external links with popup blocker avoidance
    */
   private navigateToExternalLink(url: string, type: string): void {
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.rel = 'noopener noreferrer';
-    
-    if (type === 'download') {
-      a.download = url.split('/').pop() || 'download';
-      a.target = '_self';
-    } else if (type === 'contact') {
-      a.download = 'contact.vcf';
-      a.target = '_self';
+    a.rel = "noopener noreferrer";
+
+    if (type === "download") {
+      a.download = url.split("/").pop() || "download";
+      a.target = "_self";
+    } else if (type === "contact") {
+      a.download = "contact.vcf";
+      a.target = "_self";
     } else {
-      a.target = '_blank';
-      a.setAttribute('data-user-initiated', 'true');
+      a.target = "_blank";
+      a.setAttribute("data-user-initiated", "true");
     }
-    
+
     document.body.appendChild(a);
-    
+
     setTimeout(() => {
       a.click();
       document.body.removeChild(a);
@@ -221,7 +233,11 @@ export class SceneController {
   /**
    * Register a crate component
    */
-  registerCrate(id: string, component: { explode: () => void; reset: () => void }, position: THREE.Vector3): void {
+  registerCrate(
+    id: string,
+    component: { explode: () => void; reset: () => void },
+    position: THREE.Vector3,
+  ): void {
     this.crateController.registerCrate(id, component, position);
   }
 
@@ -230,6 +246,20 @@ export class SceneController {
    */
   unregisterCrate(id: string): void {
     this.crateController.unregisterCrate(id);
+  }
+
+  /**
+   * Update a registered crate's position in place.
+   */
+  updateCratePosition(id: string, position: THREE.Vector3): void {
+    this.crateController.updateCratePosition(id, position);
+  }
+
+  /**
+   * Check whether a crate is already registered.
+   */
+  hasCrate(id: string): boolean {
+    return this.crateController.hasCrate(id);
   }
 
   /**
@@ -243,7 +273,7 @@ export class SceneController {
     return {
       fireballs: this.fireballSystem.getStats(),
       assets: this.assetManager.getStats(),
-      loading: this.assetManager.getLoadingState()
+      loading: this.assetManager.getLoadingState(),
     };
   }
 

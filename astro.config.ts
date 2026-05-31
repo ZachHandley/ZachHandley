@@ -10,34 +10,27 @@ import svelte from "@astrojs/svelte";
 import tsConfigPaths from "vite-tsconfig-paths";
 import topLevelAwait from "vite-plugin-top-level-await";
 import removeConsole from "vite-plugin-remove-console";
-import { nodePolyfills} from "vite-plugin-node-polyfills";
 
 import cloudflare from "@astrojs/cloudflare";
+
+import { env } from "./src/env";
 
 // https://astro.build/config
 export default defineConfig({
   trailingSlash: "ignore",
   output: "server",
-  site: import.meta.env.DEV
-    ? "http://localhost:3000"
-    : "https://zachhandley.com",
+  site: import.meta.env.DEV ? "http://localhost:3953" : "https://zachhandley.com",
 
   server: {
-    port: import.meta.env.DEV ? 3000 : undefined,
+    port: import.meta.env.DEV ? 3953 : undefined,
   },
+
+  env: env,
 
   vite: {
     plugins: [
       tailwindcss(),
       tsConfigPaths(),
-      nodePolyfills({
-        globals: {
-          Buffer: true,
-          global: true,
-          process: true,
-        },
-        protocolImports: true,
-      }),
       topLevelAwait({
         // The export name of top-level await promise for each chunk module
         promiseExportName: "__tla",
@@ -60,12 +53,11 @@ export default defineConfig({
     }),
     partytown(),
     sitemap(),
-    svelte({
-      include: ["**/**.svelte", "src/components/svelte/**/**.ts", "src/components/svelte/**/**.svelte"],
-    }),
+    svelte(),
   ],
 
   adapter: cloudflare({
     imageService: "passthrough",
+    sessionKVBindingName: "ZSESSION",
   }),
 });

@@ -8,6 +8,21 @@
   import { fetchIconData } from "~/utils/iconify";
   import { createSvgMesh, calculateVisualScale } from "~/utils/svgUtils";
   import type { DRACOLoader } from "three/examples/jsm/Addons.js";
+  import { perspectiveCenterShift } from "~/components/svelte/utils/viewportLayout.svelte";
+  import {
+    measureObject3D,
+    measureTroikaText,
+    layoutInlineRow,
+    findPrimaryMesh,
+  } from "centerthree";
+
+  // Typography scale factors (fractions of crate height). Design knobs, not measurements.
+  const TITLE_FONT_RATIO = 0.15;
+  const ICON_SCALE_RATIO = 0.3;
+  const DOMAIN_FONT_RATIO = 0.1;
+  const INLINE_ICON_RATIO = 0.2;
+  const INLINE_TEXT_RATIO = 0.16;
+  const INLINE_GAP_RATIO = 0.06;
 
   // Props for the component
   let {
@@ -49,7 +64,7 @@
       type: LinkType["type"],
       position: THREE.Vector3,
       category?: string,
-      action?: () => void
+      action?: () => void,
     ) => void;
     dracoLoader: DRACOLoader;
     opacity?: number;
@@ -58,14 +73,12 @@
   // Get Threlte context
   const { camera } = useThrelte();
 
-  // Extract link properties
-  const {
-    url = "",
-    name: title = "",
-    type = "url",
-    category,
-    icon,
-  } = link || {};
+  // Extract link properties (reactive to prop changes)
+  const url = $derived(link?.url ?? "");
+  const title = $derived(link?.name ?? "");
+  const type = $derived(link?.type ?? "url");
+  const category = $derived(link?.category);
+  const icon = $derived(link?.icon);
 
   // Extract domain for icons
   function getDomain(url: string): string {
@@ -77,7 +90,7 @@
     }
   }
 
-  const domain = getDomain(url);
+  const domain = $derived(getDomain(url));
 
   // Color cache
   const colorCache = {
@@ -89,10 +102,7 @@
     action: "#9C27B0",
   };
 
-  function getLinkColor(
-    linkType: LinkType["type"] = "url",
-    hovered = false
-  ): string {
+  function getLinkColor(linkType: LinkType["type"] = "url", hovered = false): string {
     if (hovered) return colorCache.urlHover;
 
     switch (linkType) {
@@ -109,9 +119,17 @@
     }
   }
 
-  // Position and rotation
-  const positionArray = Array.isArray(position) ? position : [position, 0, 0];
-  const rotationArray = Array.isArray(rotation) ? rotation : [0, rotation, 0];
+  // Position and rotation (reactive to respond to parent resize recalculations)
+  let positionArray = $derived(
+    Array.isArray(position)
+      ? (position as [number, number, number])
+      : ([position, 0, 0] as [number, number, number]),
+  );
+  let rotationArray = $derived(
+    Array.isArray(rotation)
+      ? (rotation as [number, number, number])
+      : ([0, rotation, 0] as [number, number, number]),
+  );
 
   // States
   let group = $state<THREE.Group>();
@@ -136,10 +154,92 @@
   // Content Z position - store as state instead of derived
   let contentZOffset = $state(0.3);
 
-  // Content positions
-  let titleY = $state(0);
-  let iconY = $state(0);
-  let domainY = $state(0);
+  // ---- measurement state ----
+  // Content positioning is driven by measured bboxes; opacity gates off them.
+  let iconLocalSize = $state<{ width: number; height: number } | null>(null);
+  let textLocalSize = $state<{ width: number; height: number } | null>(null);
+  let titleSize = $state<{ width: number; height: number } | null>(null);
+  let domainSize = $state<{ width: number; height: number } | null>(null);
+  let inlineTextMesh = $state<THREE.Mesh | null>(null);
+  let titleTextMesh = $state<THREE.Mesh | null>(null);
+  let domainTextMesh = $state<THREE.Mesh | null>(null);
+  // Y center of the primary crate mesh after scaling. CrateLink's model sits
+  // at parent origin already; measurement just confirms that.
+  let modelCenterY = $state<number | null>(null);
+
+  const inlineMeasured = $derived(
+    iconLocalSize !== null && textLocalSize !== null && modelCenterY !== null,
+  );
+  const normalMeasured = $derived(
+    titleSize !== null && iconLocalSize !== null && domainSize !== null && modelCenterY !== null,
+  );
+  const contentMeasured = $derived(link.inlineIcon ? inlineMeasured : normalMeasured);
+
+  // ---- inline (icon + text) layout ----
+  const inlineIconScale = $derived(height * INLINE_ICON_RATIO);
+  const inlineGap = $derived(height * INLINE_GAP_RATIO);
+  const inlineLayout = $derived.by(() => {
+    if (!iconLocalSize || !textLocalSize) {
+      return { iconX: 0, textX: 0, totalWidth: 0 };
+    }
+    const iconWorld = {
+      width: iconLocalSize.width * inlineIconScale,
+      height: iconLocalSize.height * inlineIconScale,
+    };
+    const row = layoutInlineRow(
+      [
+        { size: iconWorld, anchorX: "center" },
+        { size: textLocalSize, anchorX: "left" },
+      ],
+      inlineGap,
+    );
+    return { iconX: row.positions[0], textX: row.positions[1], totalWidth: row.totalWidth };
+  });
+
+  // ---- 3-section (title / icon / domain) layout ----
+  const normalIconScale = $derived(height * ICON_SCALE_RATIO);
+  const normalLayout = $derived.by(() => {
+    if (!titleSize || !iconLocalSize || !domainSize) {
+      return { titleY: 0, iconY: 0, domainY: 0 };
+    }
+    const tH = titleSize.height;
+    const iH = iconLocalSize.height * normalIconScale;
+    const dH = domainSize.height;
+    const free = Math.max(0, height - tH - iH - dH);
+    const gap = free / 4;
+    const titleY = height / 2 - gap - tH / 2;
+    const iconY = titleY - tH / 2 - gap - iH / 2;
+    const domainY = iconY - iH / 2 - gap - dH / 2;
+    return { titleY, iconY, domainY };
+  });
+
+  // ---- perspective center shift (off-axis content) ----
+  const ENV_SCALE = 1.5;
+  const contentShift = $derived.by(() => {
+    const cam = camera.current as THREE.PerspectiveCamera | null;
+    if (!cam) return { x: 0, y: 0 };
+    const targetWorld = {
+      x: positionArray[0] * ENV_SCALE,
+      y: positionArray[1] * ENV_SCALE,
+      z: positionArray[2] * ENV_SCALE,
+    };
+    const contentZWorld = targetWorld.z + contentZOffset * ENV_SCALE;
+    const s = perspectiveCenterShift(cam, targetWorld, contentZWorld);
+    return { x: s.x / ENV_SCALE, y: s.y / ENV_SCALE };
+  });
+
+  function onInlineTextSync() {
+    if (!inlineTextMesh) return;
+    textLocalSize = measureTroikaText(inlineTextMesh as any);
+  }
+  function onTitleTextSync() {
+    if (!titleTextMesh) return;
+    titleSize = measureTroikaText(titleTextMesh as any);
+  }
+  function onDomainTextSync() {
+    if (!domainTextMesh) return;
+    domainSize = measureTroikaText(domainTextMesh as any);
+  }
 
   // Scale spring for hover effect
   const scaleSpring = new Spring(1, {
@@ -156,19 +256,17 @@
   // Create texture loader
   const textureLoader = new THREE.TextureLoader();
 
-  // GLTF loader
-  const gltf = useGltf<{
-    nodes: {
-      Cube200: THREE.Mesh;
-      Cube200_1: THREE.Mesh;
-    };
-    materials: {
-      Wood_Light: THREE.MeshStandardMaterial;
-      Wood: THREE.MeshStandardMaterial;
-    };
-  }>("/models/Crate-transformed.glb", {
-    dracoLoader,
-  });
+  // GLTF loader. Wrapped in an IIFE so the `dracoLoader` prop read lives inside a
+  // function scope (silences `state_referenced_locally`) while keeping `gltf` as a
+  // direct store binding — required for the `$gltf` auto-subscription used below.
+  // `dracoLoader` is set once by the parent and never swaps, so a one-shot read is correct.
+  const gltf = (() =>
+    useGltf<{
+      nodes: { Cube200: THREE.Mesh; Cube200_1: THREE.Mesh };
+      materials: { Wood_Light: THREE.MeshStandardMaterial; Wood: THREE.MeshStandardMaterial };
+    }>("/models/Crate-transformed.glb", {
+      dracoLoader,
+    }))();
 
   // Calculate bounding box and content positions
   const boundingBoxTask = useTask(() => {
@@ -179,20 +277,20 @@
     const originalScale = group.scale.clone();
     group.scale.set(1, 1, 1);
 
-    // Calculate dimensions
-    const boundingBox = new THREE.Box3().setFromObject(group);
-    const size = boundingBox.getSize(new THREE.Vector3());
+    // Measure the primary mesh of the crate (filters out decorative geometry).
+    const primary = findPrimaryMesh(group, { name: "Cube200" }) ?? group;
+    const { size, center: rawCenter } = measureObject3D(primary);
 
     modelWidth = size.x;
     modelHeight = size.y;
     modelDepth = size.z;
 
-    // Ensure content appears in front of crate
-    // Reduced base offset from 0.3 to 0.15 to bring text closer to crate
-    contentZOffset = modelDepth / 2 + 0.15;
+    const scaleY = height / Math.max(modelHeight, 1e-6);
+    modelCenterY = rawCenter.y * scaleY;
 
-    // Calculate content positions sequentially
-    calculateContentPositions();
+    // Ensure content appears in front of crate. 0.03 is enough margin to avoid
+    // z-fighting with the textured front face for SDF text/icons.
+    contentZOffset = modelDepth / 2 + 0.03;
 
     // Restore scale
     group.scale.copy(originalScale);
@@ -200,30 +298,6 @@
 
     return false;
   });
-
-  // Calculate content positions based on crate dimensions
-  function calculateContentPositions() {
-    // Perspective compensation for crates below camera level
-    // Get dynamic camera position from Threlte context
-    const cameraY = camera.current?.position.y || 7.5; // fallback to 7.5
-    const crateWorldY = positionArray[1];
-    const perspectiveOffset = crateWorldY < cameraY ? (cameraY - crateWorldY) * 0.03 : 0;
-    
-    // Improve positioning for small crates to prevent text from going off-screen
-    const isSmallCrate = height < 2.5;
-    const titlePercent = isSmallCrate ? 0.75 : 0.9;
-    const iconPercent = isSmallCrate ? 0.5 : 0.8;
-    const domainPercent = isSmallCrate ? 0.25 : 0.1;
-    
-    // Title position - top with perspective compensation
-    titleY = height * titlePercent + perspectiveOffset;
-
-    // Icon position - centered vertically with perspective compensation
-    iconY = height * iconPercent + perspectiveOffset;
-
-    // Domain position - bottom with perspective compensation
-    domainY = height * domainPercent + perspectiveOffset;
-  }
 
   // Animation task
   const animationTask = useTask((delta) => {
@@ -331,7 +405,7 @@
     const positionVector = new THREE.Vector3(
       positionArray[0],
       positionArray[1] + height / 2,
-      positionArray[2]
+      positionArray[2],
     );
 
     onLinkClick?.(url, type, positionVector, category, explode);
@@ -342,9 +416,12 @@
     explode();
   }
 
-  // Update opacity on all materials in the SVG group
+  // Update opacity on all materials in the SVG group. Gated by measurement
+  // completion so the icon stays invisible until layout positions are stable.
   function updateSvgMaterials() {
     if (!svgGroup) return;
+    const gate = link.inlineIcon ? (inlineMeasured ? 1 : 0) : normalMeasured ? 1 : 0;
+    const targetOpacity = contentOpacity * opacity * gate;
 
     // Recursively traverse all objects in the group
     svgGroup.traverse((object) => {
@@ -354,7 +431,7 @@
           object.material.forEach((mat) => {
             if (mat instanceof THREE.MeshStandardMaterial) {
               mat.transparent = true;
-              mat.opacity = contentOpacity * opacity;
+              mat.opacity = targetOpacity;
 
               // Make it emissive to ensure visibility
               if ("emissive" in mat) {
@@ -367,7 +444,7 @@
                   emissive: 0xffffff,
                   emissiveIntensity: 0.7,
                   transparent: true,
-                  opacity: contentOpacity * opacity,
+                  opacity: targetOpacity,
                   side: THREE.DoubleSide,
                 });
                 object.material = newMat;
@@ -379,7 +456,7 @@
         } else if (object.material instanceof THREE.MeshStandardMaterial) {
           // Handle single materials
           object.material.transparent = true;
-          object.material.opacity = contentOpacity * opacity;
+          object.material.opacity = targetOpacity;
 
           // Make it emissive to ensure visibility
           if ("emissive" in object.material) {
@@ -392,7 +469,7 @@
               emissive: 0xffffff,
               emissiveIntensity: 0.7,
               transparent: true,
-              opacity: contentOpacity * opacity,
+              opacity: targetOpacity,
               side: THREE.DoubleSide,
             });
             object.material = newMat;
@@ -405,18 +482,15 @@
   }
 
   // Load favicon using fetch to avoid CORS issues
-  async function loadFaviconWithFetch(
-    url: string
-  ): Promise<THREE.Texture | null> {
+  async function loadFaviconWithFetch(url: string): Promise<THREE.Texture | null> {
     try {
       // Use a proxy service or create a server-side proxy for CORS issues
       // For local development/demo, we'll try a direct fetch but this often fails due to CORS
       const response = await fetch(
-        `${import.meta.env.SITE}/api/utils/${encodeURIComponent(url)}.json`
+        `${import.meta.env.SITE}/api/utils/${encodeURIComponent(url)}.json`,
       );
 
-      if (!response.ok)
-        throw new Error(`HTTP error! status: ${response.status}`);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
       // Get the blob
       const blob = await response.blob();
@@ -443,7 +517,7 @@
           (error) => {
             URL.revokeObjectURL(blobUrl); // Clean up on error too
             reject(error);
-          }
+          },
         );
       });
     } catch (error) {
@@ -467,8 +541,7 @@
 
         // Calculate aspect ratio for proper scaling
         if (texture.image) {
-          faviconAspectRatio =
-            texture.image.width / Math.max(texture.image.height, 1);
+          faviconAspectRatio = texture.image.width / Math.max(texture.image.height, 1);
         }
 
         return; // Success, no need to try other URLs
@@ -551,6 +624,11 @@
 
           // Set materials to be emissive and properly visible
           updateSvgMaterials();
+
+          if (svgGroup) {
+            const { size } = measureObject3D(svgGroup);
+            iconLocalSize = { width: size.x || 1, height: size.y || 1 };
+          }
         } else if (type === "url" && domain) {
           // If icon from link fails but it's a URL type, try favicon
           await loadFavicon();
@@ -574,6 +652,11 @@
             });
 
             updateSvgMaterials();
+
+            if (svgGroup) {
+              const { size } = measureObject3D(svgGroup);
+              iconLocalSize = { width: size.x || 1, height: size.y || 1 };
+            }
           }
         }
       }
@@ -622,13 +705,6 @@
 
     return [scaleX, scaleY, scaleZ];
   }
-
-  // Recalculate positions when dimensions change
-  $effect(() => {
-    if (boundingBoxCalculated) {
-      calculateContentPositions();
-    }
-  });
 
   // Get favicon scale to maintain aspect ratio
   function getFaviconScale() {
@@ -709,80 +785,85 @@
   <!-- Content Container -->
   {#if contentVisible}
     <T.Group
-      position={[0, 0, contentZOffset]}
+      position={[
+        link.inlineIcon ? 0 : contentShift.x,
+        link.inlineIcon ? 0 : contentShift.y,
+        contentZOffset,
+      ]}
       rotation={[0, 0, 0]}
       name={`crate-content-${columnKey}-${index}`}
       onclick={handleClick}
       scale={[hoverScale, hoverScale, hoverScale]}
     >
       {#if link.inlineIcon && svgGroup}
-        <!-- Inline icon + text layout for buttons like "← Back" -->
-        <T.Group position={[0, iconY, 0]}>
-          <!-- Icon positioned close to left of center -->
-          <T.Group position={[-0.25, 0.05, 0]} scale={[height * 0.2, height * 0.2, 1]}>
+        <!-- Inline icon + text layout. Model sits at parent origin already, so
+             the group is at Y=0; X positions come from layoutInlineRow over
+             measured bboxes. -->
+        <T.Group position={[0, 0, 0]}>
+          <T.Group
+            position={[inlineLayout.iconX, 0, 0]}
+            scale={[inlineIconScale, inlineIconScale, 1]}
+          >
             <T is={svgGroup} />
           </T.Group>
-          <!-- Text positioned close to icon -->
-          <T.Group position={[0.1, 0, 0]}>
+          <T.Group position={[inlineLayout.textX, 0, 0]}>
             <Text
+              bind:ref={inlineTextMesh as any}
               text={title}
               color="white"
-              fontSize={height * 0.16}
+              fontSize={height * INLINE_TEXT_RATIO}
               fontWeight="bold"
               whiteSpace="nowrap"
               anchorX="left"
               anchorY="middle"
               maxWidth={width * 0.8}
               textAlign="left"
-              fillOpacity={contentOpacity * opacity}
+              fillOpacity={contentMeasured ? contentOpacity * opacity : 0}
               transparent={true}
+              onsync={onInlineTextSync}
             />
           </T.Group>
         </T.Group>
       {:else}
-        <!-- Normal 3-section layout -->
-        <!-- Title text at top -->
-        <T.Group position={[0, titleY, 0]}>
+        <!-- Normal 3-section layout — measurement-driven Y positions -->
+        <T.Group position={[0, normalLayout.titleY, 0]}>
           <Text
+            bind:ref={titleTextMesh as any}
             text={title}
             color="white"
-            fontSize={height * 0.15}
+            fontSize={height * TITLE_FONT_RATIO}
             fontWeight="bold"
             whiteSpace="nowrap"
             anchorX="center"
             anchorY="middle"
             maxWidth={width * 0.9}
             textAlign="center"
-            fillOpacity={contentOpacity * opacity}
+            fillOpacity={contentMeasured ? contentOpacity * opacity : 0}
             transparent={true}
+            onsync={onTitleTextSync}
           />
         </T.Group>
 
         <!-- Icon area in center -->
-        <T.Group position={[0, iconY, 0]}>
+        <T.Group position={[0, normalLayout.iconY, 0]}>
           {#if isLoadingIcon}
             <Text
               text="..."
               color="white"
-              fontSize={height * 0.15}
+              fontSize={height * TITLE_FONT_RATIO}
               anchorX="center"
               anchorY="middle"
               fillOpacity={contentOpacity * opacity}
               transparent={true}
             />
           {:else if svgGroup}
-            <!-- Use SVG icon if available -->
-            <T.Group scale={[height * 0.3, height * 0.3, 1]}>
+            <T.Group scale={[normalIconScale, normalIconScale, 1]}>
               <T is={svgGroup} />
             </T.Group>
           {:else if faviconLoaded && faviconTexture}
             <!-- Use favicon texture with proper scaling -->
             <T.Mesh
-              scale={[
-                getFaviconScale()[0],
-                getFaviconScale()[1],
-                getFaviconScale()[2],
-              ]}
+              scale={[getFaviconScale()[0], getFaviconScale()[1], getFaviconScale()[2]]}
               position.y={-height / 3}
             >
               <T.PlaneGeometry args={[1, 1, 1]} />
@@ -810,34 +891,21 @@
       {/if}
 
       <!-- Domain/category text at bottom (only for normal layout) -->
-      {#if !link.inlineIcon}
-        {#if domain}
-          <T.Group position={[0, domainY, 0]}>
-            <Text
-              text={domain}
-              color="white"
-              fontSize={height * 0.1}
-              anchorX="center"
-              anchorY="middle"
-              maxWidth={width * 0.9}
-              fillOpacity={contentOpacity * opacity}
-              transparent={true}
-            />
-          </T.Group>
-        {:else if category}
-          <T.Group position={[0, domainY, 0]}>
-            <Text
-              text={category}
-              color="white"
-              fontSize={height * 0.1}
-              anchorX="center"
-              anchorY="middle"
-              maxWidth={width * 0.9}
-              fillOpacity={contentOpacity * opacity}
-              transparent={true}
-            />
-          </T.Group>
-        {/if}
+      {#if !link.inlineIcon && (domain || category)}
+        <T.Group position={[0, normalLayout.domainY, 0]}>
+          <Text
+            bind:ref={domainTextMesh as any}
+            text={domain ?? category ?? ""}
+            color="white"
+            fontSize={height * DOMAIN_FONT_RATIO}
+            anchorX="center"
+            anchorY="middle"
+            maxWidth={width * 0.9}
+            fillOpacity={contentMeasured ? contentOpacity * opacity : 0}
+            transparent={true}
+            onsync={onDomainTextSync}
+          />
+        </T.Group>
       {/if}
     </T.Group>
   {/if}

@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const LinkSchema = z.object({
   name: z.string(),
-  url: z.string().optional(),
+  url: z.string().nullish(),
   action: z.custom<(() => void) | (() => Promise<void>) | undefined>().optional(),
   position: z.tuple([z.number(), z.number(), z.number()]).optional(),
   type: z.enum(["url", "download", "contact", "action", "category"]),
@@ -12,11 +12,17 @@ export const LinkSchema = z.object({
       z.object({
         prefix: z.string(),
         name: z.string(),
-      })
+      }),
     )
-    .optional(),
-  category: z.string().optional(),
+    .nullish(),
+  category: z.string().nullish(),
   inlineIcon: z.boolean().optional(),
+  active: z.boolean().default(true),
+  order: z.number().int().optional(),
+  featured: z.boolean().nullish(),
+  stack: z.array(z.string()).nullish(),
+  repoUrl: z.string().nullish(),
+  description: z.string().nullish(),
 });
 
 export type Link = z.infer<typeof LinkSchema>;
@@ -24,8 +30,8 @@ export type Link = z.infer<typeof LinkSchema>;
 // Helper types for component prop typing
 export type LinkAction = (() => void) | (() => Promise<void>);
 export type LinkClickHandler = (
-  url: string, 
-  type: Link["type"], 
+  url: string,
+  type: Link["type"],
   position: { x: number; y: number; z: number } | [number, number, number],
-  action?: LinkAction
+  action?: LinkAction,
 ) => void;

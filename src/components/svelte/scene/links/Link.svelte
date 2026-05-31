@@ -34,25 +34,16 @@
       url: string,
       type: LinkType["type"],
       position: THREE.Vector3,
-      action?: () => void
+      action?: () => void,
     ) => void;
     titleContent?: Snippet<[{ width: number; height: number; z: number }]>;
     loadingContent?: Snippet<[{ width: number; height: number; z: number }]>;
-    domainContent?: Snippet<
-      [{ width: number; height: number; z: number; domain: string }]
-    >;
+    domainContent?: Snippet<[{ width: number; height: number; z: number; domain: string }]>;
     opacity?: number;
   } = $props();
 
   // Extract link properties for easier access
-  const {
-    url = "",
-    name: title = "",
-    type = "url",
-    category,
-    icon,
-    action,
-  } = link || {};
+  const { url = "", name: title = "", type = "url", category, icon, action } = link || {};
 
   // Scale animation using spring
   const scaleSpring = new Spring(1, {
@@ -107,10 +98,7 @@
   };
 
   // Get link color based on type and hover state
-  function getLinkColor(
-    linkType: LinkType["type"] = "url",
-    hovered: boolean = false
-  ): string {
+  function getLinkColor(linkType: LinkType["type"] = "url", hovered: boolean = false): string {
     if (hovered) return colorCache.urlHover;
 
     switch (linkType) {
@@ -126,11 +114,7 @@
   // Handle link click
   function handleClick(event: any) {
     event.stopPropagation();
-    const positionVector = new THREE.Vector3(
-      position[0],
-      position[1],
-      position[2]
-    );
+    const positionVector = new THREE.Vector3(position[0], position[1], position[2]);
     onLinkClick?.(url, type, positionVector, action);
   }
 
@@ -182,29 +166,17 @@
     />
 
     <!-- Content Container - Always visible -->
-    <T.Group
-      position.z={depth / 2 + 0.01}
-      name={`link-content-${columnKey}-${index}`}
-    >
+    <T.Group position.z={depth / 2 + 0.01} name={`link-content-${columnKey}-${index}`}>
       <!-- Title text - Always visible -->
-      <T.Group
-        position.y={height * 0.25}
-        name={`link-title-${columnKey}-${index}`}
-      >
-        <HTML
-          center
-          position.z={0.1}
-          occlude={false}
-          pointerEvents="none"
-          visible={true}
-        >
+      <T.Group position.y={height * 0.25} name={`link-title-${columnKey}-${index}`}>
+        <HTML center position.z={0.1} occlude={false} pointerEvents="none" visible={true}>
           <div
             style="color: white; font-size: {Math.max(
               12,
-              height * 4
+              height * 4,
             )}px; text-align: center; font-weight: bold; opacity: {opacity}; width: {Math.max(
               80,
-              height * 20
+              height * 20,
             )}px;"
           >
             {title}
@@ -213,49 +185,26 @@
       </T.Group>
 
       <!-- Icon area - moved down to add spacing from title -->
-      <T.Group
-        position.y={-height * 0.05}
-        name={`link-icon-${columnKey}-${index}`}
-      >
+      <T.Group position.y={-height * 0.05} name={`link-icon-${columnKey}-${index}`}>
         {#if isLoading}
           <!-- Loading indicator -->
-          <HTML
-            center
-            position.z={0.1}
-            occlude={false}
-            pointerEvents="none"
-            visible={true}
-          >
-            <div
-              style="color: white; font-size: 12px; text-align: center; opacity: {opacity};"
-            >
+          <HTML center position.z={0.1} occlude={false} pointerEvents="none" visible={true}>
+            <div style="color: white; font-size: 12px; text-align: center; opacity: {opacity};">
               Loading...
             </div>
           </HTML>
         {:else}
           <!-- Always show some icon but with reduced size -->
-          <HTML
-            position.z={0.1}
-            center
-            occlude={false}
-            pointerEvents="none"
-            visible={true}
-          >
+          <HTML position.z={0.1} center occlude={false} pointerEvents="none" visible={true}>
             <div
               style="display: flex; justify-content: center; align-items: center; width: {Math.max(
                 24,
-                height * 8
-              )}px; height: {Math.max(
-                24,
-                height * 8
-              )}px; position: relative; opacity: {opacity};"
+                height * 8,
+              )}px; height: {Math.max(24, height * 8)}px; position: relative; opacity: {opacity};"
             >
               {#if iconSvgData}
                 <!-- Use SVG from Iconify API -->
-                <div
-                  style="width: 100%; height: 100%; color: white;"
-                  class="icon-container"
-                >
+                <div style="width: 100%; height: 100%; color: white;" class="icon-container">
                   <!-- Directly embed SVG -->
                   {@html `<svg viewBox="0 0 24 24">${iconSvgData}</svg>`}
                 </div>
@@ -274,10 +223,7 @@
               {:else}
                 <!-- Try to fetch fallback icon one more time -->
                 {#await fetchIconData(link) then fallbackIcon}
-                  <div
-                    style="width: 100%; height: 100%; color: white;"
-                    class="icon-container"
-                  >
+                  <div style="width: 100%; height: 100%; color: white;" class="icon-container">
                     <!-- Directly embed SVG -->
                     {@html `<svg viewBox="0 0 24 24">${fallbackIcon || '<path d="M13.5 17.5L8.5 12.5L13.5 7.5"/>'}</svg>`}
                   </div>
@@ -290,20 +236,14 @@
 
       <!-- Domain text at bottom - Moved further down to add space -->
       <T.Group position.y={-height * 0.35}>
-        <HTML
-          center
-          position.z={0.1}
-          occlude={false}
-          pointerEvents="none"
-          visible={true}
-        >
+        <HTML center position.z={0.1} occlude={false} pointerEvents="none" visible={true}>
           <div
             style="color: white; font-size: {Math.max(
               10,
-              height * 3
+              height * 3,
             )}px; text-align: center; opacity: {opacity}; width: {Math.max(
               80,
-              height * 20
+              height * 20,
             )}px; overflow: hidden; text-overflow: ellipsis; background: transparent; backdrop-filter: none; -webkit-backdrop-filter: none;"
           >
             {domain}
