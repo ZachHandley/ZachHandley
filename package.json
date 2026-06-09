@@ -6,8 +6,7 @@
     "dev": "pnpm --filter website dev",
     "build": "pnpm --filter website build",
     "preview": "pnpm --filter website preview",
-    "typecheck": "pnpm -r typecheck",
-    "seed:links": "pnpm --filter website seed:links"
+    "typecheck": "pnpm -r typecheck"
   },
   "pnpm": {
     "overrides": {
