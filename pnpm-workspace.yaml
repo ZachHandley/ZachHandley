@@ -1,6 +1,10 @@
 packages:
   - website
   - packages/*
+  - scripts
+
+allowBuilds:
+  workerd: true
 
 onlyBuiltDependencies:
   - workerd
