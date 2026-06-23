@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { T, useTask, useThrelte } from "@threlte/core";
+  import { T, useTask } from "@threlte/core";
   import { Text, useGltf } from "@threlte/extras";
   import * as THREE from "three";
   import { Spring } from "svelte/motion";
@@ -8,7 +8,6 @@
   import { fetchIconData } from "~/utils/iconify";
   import { createSvgMesh, calculateVisualScale } from "~/utils/svgUtils";
   import type { DRACOLoader } from "three/examples/jsm/Addons.js";
-  import { perspectiveCenterShift } from "~/components/svelte/utils/viewportLayout.svelte";
   import {
     measureObject3D,
     measureTroikaText,
@@ -71,7 +70,6 @@
   } & { ref?: THREE.Group } = $props();
 
   // Get Threlte context
-  const { camera } = useThrelte();
 
   // Extract link properties (reactive to prop changes)
   const url = $derived(link?.url ?? "");
@@ -219,20 +217,9 @@
     return { titleY, iconY, domainY };
   });
 
-  // ---- perspective center shift (off-axis content) ----
-  const ENV_SCALE = 1.5;
-  const contentShift = $derived.by(() => {
-    const cam = camera.current as THREE.PerspectiveCamera | null;
-    if (!cam) return { x: 0, y: 0 };
-    const targetWorld = {
-      x: positionArray[0] * ENV_SCALE,
-      y: positionArray[1] * ENV_SCALE,
-      z: positionArray[2] * ENV_SCALE,
-    };
-    const contentZWorld = targetWorld.z + contentZOffset * ENV_SCALE;
-    const s = perspectiveCenterShift(cam, targetWorld, contentZWorld);
-    return { x: s.x / ENV_SCALE, y: s.y / ENV_SCALE };
-  });
+  // No parallax correction needed: content and model share the same outer
+  // crate group, so their world transforms — and therefore screen
+  // projections — coincide automatically.
 
   function onInlineTextSync() {
     if (!inlineTextMesh) return;
@@ -304,9 +291,14 @@
     const scaleY = height / Math.max(modelHeight, 1e-6);
     modelCenterY = localCenterY * scaleY;
 
-    // Ensure content appears in front of crate. 0.03 is enough margin to avoid
-    // z-fighting with the textured front face for SDF text/icons.
-    contentZOffset = modelDepth / 2 + 0.03;
+    // Front-face Z in the outer crate group's local frame. Chain:
+    // outer → model group at (0, containerYOffset, 0) with scaleZ → mesh
+    // with local max.z = localMaxZ. CrateLink's model group has NO Z
+    // position offset (unlike CrateLinkExplode's containerZOffset), so
+    // outer-local front face Z = scaleZ * localMaxZ. +0.03 z-fight margin.
+    const localMaxZ = worldBox.max.z - groupWorldPos.z;
+    const scaleZ = depth / Math.max(modelDepth, 1e-6);
+    contentZOffset = localMaxZ * scaleZ + 0.03;
 
     // Restore scale
     group.scale.copy(originalScale);
@@ -801,17 +793,11 @@
     {/await}
   </T.Group>
 
-  <!-- Content Container — sits at outer-frame Y=0 (no containerYOffset).
-       The MODEL group's offset accounts for its internal mesh transform; the
-       content group is already centered around its own origin and lands at
-       outer-frame Y=0 alongside the model's visible center. -->
+  <!-- Content Container — outer-frame (0, 0, contentZOffset). No parallax
+       offset: content and model share this outer group's world transform. -->
   {#if contentVisible}
     <T.Group
-      position={[
-        link.inlineIcon ? 0 : contentShift.x,
-        link.inlineIcon ? 0 : contentShift.y,
-        contentZOffset,
-      ]}
+      position={[0, 0, contentZOffset]}
       rotation={[0, 0, 0]}
       name={`crate-content-${columnKey}-${index}`}
       onclick={handleClick}
@@ -886,7 +872,6 @@
             <!-- Use favicon texture with proper scaling -->
             <T.Mesh
               scale={[getFaviconScale()[0], getFaviconScale()[1], getFaviconScale()[2]]}
-              position.y={-height / 3}
             >
               <T.PlaneGeometry args={[1, 1, 1]} />
               <T.MeshStandardMaterial
