@@ -80,7 +80,7 @@
   <div class="flex items-center gap-1">
     <button
       type="button"
-      class="inline-flex h-8 w-8 items-center justify-center rounded-md text-fg-muted hover:bg-bg-elev hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      class="inline-flex min-h-9 min-w-9 items-center justify-center rounded-md text-fg-muted hover:bg-bg-elev hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       style="transition: color var(--dur-fast), background-color var(--dur-fast);"
       aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
       title="Toggle theme"
@@ -103,7 +103,7 @@
             rel="me noopener noreferrer"
             aria-label={link.name}
             title={link.name}
-            class="inline-flex h-8 w-8 items-center justify-center rounded-md text-fg-muted hover:bg-bg-elev hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            class="inline-flex min-h-9 min-w-9 items-center justify-center rounded-md text-fg-muted hover:bg-bg-elev hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             style="transition: color var(--dur-fast), background-color var(--dur-fast);"
           >
             <Icon icon={link.icon as string} width={16} height={16} />

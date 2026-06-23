@@ -237,6 +237,7 @@
 
 <dialog
   bind:this={dialog}
+  aria-label="Command palette"
   class="w-[min(560px,92vw)] rounded-xl border border-border bg-bg p-0 text-fg shadow-2xl backdrop:bg-black/60 backdrop:backdrop-blur-sm"
 >
   <div class="flex items-center gap-2 border-b border-border px-3 py-2">
@@ -245,10 +246,15 @@
       bind:this={input}
       bind:value={query}
       type="text"
+      role="combobox"
       autocomplete="off"
       spellcheck="false"
+      aria-controls="cmd-listbox"
+      aria-expanded="true"
+      aria-autocomplete="list"
+      aria-activedescendant={filtered[cursor] ? `cmd-${filtered[cursor].id}` : undefined}
       placeholder="type a command..."
-      class="flex-1 bg-transparent font-mono text-sm text-fg placeholder:text-fg-subtle focus:outline-none"
+      class="flex-1 bg-transparent font-mono text-sm text-fg placeholder:text-fg-subtle focus:outline-none focus-visible:outline-none"
       aria-label="Command search"
     />
     <kbd
@@ -258,21 +264,34 @@
   </div>
 
   <ul
+    id="cmd-listbox"
     role="listbox"
     aria-label="Commands"
     class="max-h-[60vh] overflow-y-auto py-1 font-mono text-sm"
   >
     {#if filtered.length === 0}
-      <li class="px-3 py-6 text-center text-fg-subtle">no matches</li>
-    {:else}
-      {#each filtered.slice(0, 80) as cmd, i (cmd.id)}
-        <li>
+      <li class="flex flex-col items-center gap-2 px-3 py-6 text-center text-fg-subtle">
+        <span>no commands match.</span>
+        {#if query}
           <button
             type="button"
-            role="option"
-            aria-selected={cursor === i}
+            class="rounded border border-border px-2 py-1 text-[10px] text-fg-muted hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            onclick={() => (query = "")}>clear search</button
+          >
+        {/if}
+      </li>
+    {:else}
+      {#each filtered.slice(0, 80) as cmd, i (cmd.id)}
+        <li
+          id={`cmd-${cmd.id}`}
+          role="option"
+          aria-selected={cursor === i}
+          class:selected={cursor === i}
+        >
+          <button
+            type="button"
+            tabindex="-1"
             class="flex w-full items-center gap-3 px-3 py-2 text-left text-fg-muted hover:bg-bg-elev hover:text-fg focus:outline-none"
-            class:selected={cursor === i}
             onmouseenter={() => (cursor = i)}
             onclick={() => cmd.perform()}
           >
@@ -295,7 +314,7 @@
 </dialog>
 
 <style>
-  button.selected {
+  li.selected > button {
     background-color: var(--color-bg-elev);
     color: var(--color-fg);
   }

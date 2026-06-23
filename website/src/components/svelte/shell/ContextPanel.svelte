@@ -51,9 +51,10 @@
     {/if}
     <button
       type="button"
-      class="inline-flex h-7 w-7 items-center justify-center rounded text-fg-muted hover:bg-bg-elev hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      class="inline-flex min-h-11 min-w-11 items-center justify-center rounded text-fg-muted hover:bg-bg-elev hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       style="transition: color var(--dur-fast), background-color var(--dur-fast);"
       aria-label={open ? "Collapse context panel" : "Expand context panel"}
+      title={open ? "Collapse context panel" : "Expand context panel"}
       aria-expanded={open}
       onclick={toggle}
     >

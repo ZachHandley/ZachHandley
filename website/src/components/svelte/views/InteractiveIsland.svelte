@@ -52,13 +52,6 @@
 
 <svelte:window bind:innerWidth bind:innerHeight />
 
-<a
-  href="#main"
-  class="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-accent focus:px-3 focus:py-2 focus:font-mono focus:text-xs focus:text-accent-fg"
->
-  skip to scene
-</a>
-
 <div id="main" class="fixed inset-0 bg-bg text-fg">
   {#if isMobile}
     <div class="flex h-full w-full flex-col items-center justify-center gap-3 px-6 text-center">
@@ -81,11 +74,12 @@
           href="/links"
           class="inline-flex min-h-11 items-center gap-2 rounded-md border border-border px-4 py-2 font-mono text-sm text-fg hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
-          all links
+          see all links
         </a>
       </div>
     </div>
   {:else}
+    <h1 class="sr-only">interactive 3d scene</h1>
     <Canvas toneMapping={undefined}>
       <BaseScene
         {handleDragonClick}
@@ -108,7 +102,7 @@
     >
       <kbd class="rounded border border-border bg-bg px-1.5 py-0.5">⌘K</kbd> for commands · <a
         href="/"
-        class="pointer-events-auto text-accent hover:text-accent-strong">leave</a
+        class="pointer-events-auto text-accent hover:text-accent-strong">exit scene</a
       >
     </div>
   {/if}

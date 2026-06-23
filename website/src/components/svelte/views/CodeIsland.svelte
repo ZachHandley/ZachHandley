@@ -56,7 +56,7 @@
   <div class="mx-auto max-w-5xl px-6 pt-12 pb-24 md:pt-20">
     <header class="mb-10">
       <p class="font-mono text-xs uppercase tracking-[0.2em] text-accent">
-        ~/zachhandley/code
+        ~/zachhandley/code $ git log --all
       </p>
       <h1 class="mt-2 font-mono text-4xl font-medium leading-tight text-fg md:text-5xl">
         every public project
@@ -68,7 +68,17 @@
     </header>
 
     {#if filtered.length === 0}
-      <p class="font-mono text-sm text-fg-muted">no projects match this filter.</p>
+      <div class="rounded-lg border border-border bg-bg-elev p-6">
+        <h2 class="font-mono text-lg text-fg">nothing matches "{active}"</h2>
+        <p class="mt-2 font-sans text-sm leading-relaxed text-fg-muted">
+          Try a different language, or clear the filter to see everything.
+        </p>
+        <button
+          type="button"
+          class="mt-4 inline-flex min-h-11 items-center gap-2 rounded-md border border-border px-3 py-1.5 font-mono text-xs text-fg-muted hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          onclick={() => (active = "all")}>clear filter</button
+        >
+      </div>
     {:else}
       <ul class="divide-y divide-border rounded-lg border border-border bg-bg-elev">
         {#each filtered as p (p.name)}

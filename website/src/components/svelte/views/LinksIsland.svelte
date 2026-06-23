@@ -47,7 +47,7 @@
   <div class="mx-auto max-w-4xl px-6 pt-12 pb-24 md:pt-20">
     <header class="mb-10">
       <p class="font-mono text-xs uppercase tracking-[0.2em] text-accent">
-        ~/zachhandley/links
+        ~/zachhandley/links $ cat .all
       </p>
       <h1 class="mt-2 font-mono text-4xl font-medium leading-tight text-fg md:text-5xl">
         everything in one place
@@ -58,7 +58,18 @@
     </header>
 
     {#if grouped.length === 0}
-      <p class="font-mono text-sm text-fg-muted">no links yet.</p>
+      <div class="rounded-lg border border-border bg-bg-elev p-6">
+        <h2 class="font-mono text-lg text-fg">nothing here yet</h2>
+        <p class="mt-2 font-sans text-sm leading-relaxed text-fg-muted">
+          Links are curated in Appwrite. Check back soon, or get in touch.
+        </p>
+        <a
+          href="/contact"
+          class="mt-4 inline-flex min-h-11 items-center gap-2 rounded-md border border-border px-3 py-1.5 font-mono text-xs text-fg-muted hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          open contact →
+        </a>
+      </div>
     {:else}
       <div class="space-y-12">
         {#each grouped as g (g.key)}

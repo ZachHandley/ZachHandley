@@ -55,19 +55,32 @@
     </div>
   </section>
 
-  {#if featured.length > 0}
-    <section class="mx-auto max-w-5xl px-6 pb-24">
-      <header class="mb-5 flex items-baseline justify-between">
-        <h2 class="font-mono text-xs uppercase tracking-[0.2em] text-fg-subtle">
-          featured / open source
-        </h2>
+  <section class="mx-auto max-w-5xl px-6 pb-24">
+    <header class="mb-5 flex items-baseline justify-between">
+      <h2 class="font-mono text-xs uppercase tracking-[0.2em] text-fg-subtle">
+        featured / open source
+      </h2>
+      <a
+        href="/work"
+        class="font-mono text-xs text-fg-muted hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      >
+        see all work →
+      </a>
+    </header>
+    {#if featured.length === 0}
+      <div class="rounded-lg border border-border bg-bg-elev p-6">
+        <h3 class="font-mono text-lg text-fg">nothing featured yet</h3>
+        <p class="mt-2 font-sans text-sm leading-relaxed text-fg-muted">
+          Between launches. Every public project I maintain lives on the code page.
+        </p>
         <a
-          href="/work"
-          class="font-mono text-xs text-fg-muted hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          href="/code"
+          class="mt-4 inline-flex min-h-11 items-center gap-2 rounded-md border border-border px-3 py-1.5 font-mono text-xs text-fg-muted hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         >
-          all work →
+          open code →
         </a>
-      </header>
+      </div>
+    {:else}
       <ul class="grid gap-4 md:grid-cols-3">
         {#each featured as p (p.name)}
           <li>
@@ -104,6 +117,6 @@
           </li>
         {/each}
       </ul>
-    </section>
-  {/if}
+    {/if}
+  </section>
 </AppShell>
