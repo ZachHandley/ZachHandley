@@ -149,9 +149,6 @@
   let faviconAspectRatio = $state(1); // Default 1:1 aspect ratio
   let resetTimeout: ReturnType<typeof setTimeout> | null = null;
 
-  // Content Z position - store as state instead of derived
-  let contentZOffset = $state(0.3);
-
   // ---- measurement state ----
   // Content positioning is driven by measured bboxes; opacity gates off them.
   let iconLocalSize = $state<{ width: number; height: number } | null>(null);
@@ -161,14 +158,29 @@
   let inlineTextMesh = $state<THREE.Mesh | null>(null);
   let titleTextMesh = $state<THREE.Mesh | null>(null);
   let domainTextMesh = $state<THREE.Mesh | null>(null);
-  // Y center of the primary crate mesh after scaling — used to center the
-  // visible bbox at parent Y=0 and to anchor the content/label group at the
-  // same vertical offset as the model.
-  let modelCenterY = $state<number | null>(null);
+
+  // Raw mesh-local measurements at scale=1. Properties of the GLB —
+  // invariant across prop changes. Written once by boundingBoxTask.
+  // Every prop-dependent position is `$derived` from these + current
+  // width/height/depth so resizing the crate updates the layout.
+  let localCenterY = $state<number | null>(null);
+  let localMaxZ = $state<number | null>(null);
+
+  const scaleY = $derived(height / Math.max(modelHeight, 1e-6));
+  const scaleZ = $derived(depth / Math.max(modelDepth, 1e-6));
+
+  // Scaled center Y in model-group local frame.
+  const modelCenterY = $derived(localCenterY === null ? null : localCenterY * scaleY);
+
+  // Content sits +0.03 in front of the model's actual front face. CrateLink's
+  // model group has no Z position offset (unlike CrateLinkExplode), so the
+  // outer-local front face is just scaleZ * localMaxZ.
+  const contentZOffset = $derived(
+    localMaxZ === null ? 0.3 : scaleZ * localMaxZ + 0.03,
+  );
 
   // Offset applied to BOTH model group and content group so the visible crate
-  // and its title/icon/domain ride the same anchor. Falls back to the legacy
-  // estimate during the first frame so the model doesn't snap.
+  // and its title/icon/domain ride the same anchor.
   const containerYOffset = $derived(modelCenterY !== null ? -modelCenterY : 0);
 
   const inlineMeasured = $derived(
@@ -266,42 +278,23 @@
     if (!group || !$gltf) return true;
     if (boundingBoxCalculated) return false;
 
-    // Temporarily reset scale to measure
-    const originalScale = group.scale.clone();
-    group.scale.set(1, 1, 1);
+    // Measure in PURE LOCAL FRAME. The mesh `Cube200` is a direct child of
+    // the bind:ref group with no intermediate animated transforms (CrateLink
+    // does not use CrateExplode's animation mixer). Reading the static
+    // geometry bbox bypasses any matrix-tree weirdness and produces the
+    // same value every call.
+    const primary = findPrimaryMesh(group, { name: "Cube200" });
+    if (!primary || !primary.geometry) return true;
+    if (!primary.geometry.boundingBox) primary.geometry.computeBoundingBox();
+    const bb = primary.geometry.boundingBox;
+    if (!bb || bb.isEmpty()) return true;
 
-    // Take the bbox in the GROUP'S local frame: setFromObject gives world
-    // coords, then subtract the group's own world position. With group.scale
-    // temporarily set to (1,1,1) this delta IS the local-frame bbox extent —
-    // invariant to the outer crate group's world Y and inclusive of any
-    // per-mesh transforms inside the model.
-    const primary = findPrimaryMesh(group, { name: "Cube200" }) ?? group;
+    modelWidth = bb.max.x - bb.min.x;
+    modelHeight = bb.max.y - bb.min.y;
+    modelDepth = bb.max.z - bb.min.z;
+    localCenterY = (bb.min.y + bb.max.y) / 2;
+    localMaxZ = bb.max.z;
 
-    group.updateMatrixWorld(true);
-    const worldBox = new THREE.Box3().setFromObject(primary);
-    const worldCenter = worldBox.getCenter(new THREE.Vector3());
-    const worldSize = worldBox.getSize(new THREE.Vector3());
-    const groupWorldPos = group.getWorldPosition(new THREE.Vector3());
-
-    modelWidth = worldSize.x;
-    modelHeight = worldSize.y;
-    modelDepth = worldSize.z;
-
-    const localCenterY = worldCenter.y - groupWorldPos.y;
-    const scaleY = height / Math.max(modelHeight, 1e-6);
-    modelCenterY = localCenterY * scaleY;
-
-    // Front-face Z in the outer crate group's local frame. Chain:
-    // outer → model group at (0, containerYOffset, 0) with scaleZ → mesh
-    // with local max.z = localMaxZ. CrateLink's model group has NO Z
-    // position offset (unlike CrateLinkExplode's containerZOffset), so
-    // outer-local front face Z = scaleZ * localMaxZ. +0.03 z-fight margin.
-    const localMaxZ = worldBox.max.z - groupWorldPos.z;
-    const scaleZ = depth / Math.max(modelDepth, 1e-6);
-    contentZOffset = localMaxZ * scaleZ + 0.03;
-
-    // Restore scale
-    group.scale.copy(originalScale);
     boundingBoxCalculated = true;
 
     return false;
