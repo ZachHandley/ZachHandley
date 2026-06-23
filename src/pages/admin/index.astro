@@ -1,0 +1,16 @@
+---
+import Layout from "~/layouts/Layout.astro";
+import { requireAdmin } from "~/server/auth";
+import AdminDashboard from "~/components/vue/admin/AdminDashboard.vue";
+
+const auth = await requireAdmin(Astro.cookies);
+if (!auth.ok) {
+  return Astro.redirect("/admin/login");
+}
+---
+
+<Layout title="Admin" description="Admin interface for managing links">
+  <main class="min-h-screen bg-gray-900 text-white p-0">
+    <AdminDashboard client:load />
+  </main>
+</Layout>

@@ -6,14 +6,9 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
 <script lang="ts">
   import * as THREE from "three";
   import { Group } from "three";
-  import type { Snippet } from "svelte";
+  import { onDestroy, type Snippet } from "svelte";
   import { T, type Props } from "@threlte/core";
-  import {
-    useGltf,
-    useGltfAnimations,
-    interactivity,
-    useDraco,
-  } from "@threlte/extras";
+  import { useGltf, useGltfAnimations, interactivity, useDraco } from "@threlte/extras";
 
   let {
     fallback,
@@ -31,6 +26,7 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
   ref = new Group();
 
   let currentlyExploded = $state(false);
+  let mainBodyOpacity = $state(1); // State-driven opacity for main body (Cube002)
 
   const dracoLoader = useDraco();
 
@@ -140,7 +136,42 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
     dracoLoader,
   });
 
+  // useGltf returns SHARED materials across every instance of this component.
+  // Binding opacity on those materials globally affected every crate (last
+  // write wins → some crates rendered their frame, some lost it). Clone the
+  // two crate materials per-instance once the gltf resolves, then reference
+  // the clones in the JSX so each crate animates independently.
+  let clonedM3 = $state<THREE.MeshStandardMaterial | null>(null);
+  let clonedM4 = $state<THREE.MeshStandardMaterial | null>(null);
+
+  $effect(() => {
+    if (clonedM3) return;
+    Promise.resolve(gltf).then((resolved) => {
+      if (clonedM3 || !resolved?.materials) return;
+      clonedM3 = (
+        resolved.materials["Material.003"] as THREE.MeshStandardMaterial
+      ).clone();
+      clonedM4 = (
+        resolved.materials["Material.004"] as THREE.MeshStandardMaterial
+      ).clone();
+    });
+  });
+
+  onDestroy(() => {
+    clonedM3?.dispose();
+    clonedM4?.dispose();
+  });
+
   export const { actions, mixer } = useGltfAnimations<ActionName>(gltf, ref);
+
+  // Add completion callback system
+  let onReassemblyComplete: (() => void) | null = null;
+  let activeReassemblyActions = 0;
+
+  // Export function to set completion callback
+  export const setReassemblyCallback = (callback: () => void) => {
+    onReassemblyComplete = callback;
+  };
 
   export const explode = () => {
     if (currentlyExploded) {
@@ -173,19 +204,109 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
     if (!currentlyExploded) return;
     currentlyExploded = false;
 
-    // Play all actions in reverse (reassemble)
+    console.log(`🔄 Reset: Starting reverse animation for reassembly`);
+    activeReassemblyActions = 0; // Reset counter
+
+    // Set state to hide main body during reassembly
+    mainBodyOpacity = 0;
+    console.log(`🔄 Set mainBodyOpacity = 0 during reassembly`);
+
+    // Play all actions in reverse (reassemble) with original timing
+    for (const actionName in $actions) {
+      // Skip main body animation - we control its visibility via mainBodyOpacity
+      if (actionName === "Cube.002Action") {
+        console.log(`🚫 Skipping main body animation '${actionName}' during reassembly`);
+        continue;
+      }
+
+      const action = $actions[actionName as ActionName];
+      if (action) {
+        // Ensure action is at the end position (exploded state)
+        action.time = action.getClip().duration;
+
+        // Set up reverse playback
+        action.setLoop(THREE.LoopOnce, 1);
+        action.clampWhenFinished = true;
+        action.timeScale = -2.21; // Back to original speed
+        action.paused = false;
+        action.play();
+
+        activeReassemblyActions++; // Count each action we start
+        console.log(
+          `🔄 Reset action '${actionName}': duration=${action.getClip().duration}, timeScale=${action.timeScale}`,
+        );
+      }
+    }
+
+    console.log(`🔄 Started ${activeReassemblyActions} reassembly actions`);
+  };
+
+  // Add timing debug function
+  export const getAnimationStatus = () => {
+    if (!$actions) return "No actions available";
+
+    const status = [];
     for (const actionName in $actions) {
       const action = $actions[actionName as ActionName];
       if (action) {
-        action.setLoop(THREE.LoopOnce, 1);
-        action.clampWhenFinished = true;
-        action.timeScale = -1;
-        action.time = action.getClip().duration;
-        action.paused = false;
-        action.play();
+        status.push({
+          name: actionName,
+          time: action.time,
+          duration: action.getClip().duration,
+          timeScale: action.timeScale,
+          paused: action.paused,
+          enabled: action.enabled,
+        });
       }
     }
+    return status;
   };
+
+  // Listen for animation completion
+  $effect(() => {
+    if (!mixer) return;
+
+    const handleFinished = (event: any) => {
+      console.log(`🎭 Animation finished event:`, {
+        timeScale: event.action.timeScale,
+        time: event.action.time,
+        duration: event.action.getClip()?.duration,
+        actionName: event.action.getClip()?.name,
+      });
+
+      // Check if this is a reassembly action (reverse playback)
+      if (event.action.timeScale < 0) {
+        activeReassemblyActions--;
+        console.log(`🎭 Reassembly action finished: ${activeReassemblyActions} remaining`);
+
+        // Only call completion when ALL reassembly actions are done
+        if (activeReassemblyActions === 0 && onReassemblyComplete) {
+          console.log(`✅ ALL reassembly animations completed`);
+
+          // Reset main body animation to initial state before making it visible
+          const mainBodyAction = $actions["Cube.002Action"];
+          if (mainBodyAction) {
+            mainBodyAction.time = 0; // Reset to initial position
+            mainBodyAction.stop(); // Stop the action
+            console.log(`🔄 Reset main body animation to initial state`);
+          }
+
+          // Set state to show main body when reassembly is complete
+          mainBodyOpacity = 1;
+          console.log(`✅ Set mainBodyOpacity = 1 when reassembly complete`);
+
+          onReassemblyComplete();
+          onReassemblyComplete = null; // Clear callback
+        }
+      }
+    };
+
+    mixer.addEventListener("finished", handleFinished);
+
+    return () => {
+      mixer.removeEventListener("finished", handleFinished);
+    };
+  });
 
   interactivity();
 </script>
@@ -201,14 +322,18 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube001.geometry}
-          material={gltf.materials["Material.003"]}
+          material={clonedM3 ?? gltf.materials["Material.003"]}
+          transparent={mainBodyOpacity < 1}
+          opacity={mainBodyOpacity}
         />
         <T.Mesh
           name="Cube001_1"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube001_1.geometry}
-          material={gltf.materials["Material.004"]}
+          material={clonedM4 ?? gltf.materials["Material.004"]}
+          transparent={mainBodyOpacity < 1}
+          opacity={mainBodyOpacity}
         />
       </T.Group>
       <T.Mesh
@@ -216,183 +341,184 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         castShadow
         receiveShadow
         geometry={gltf.nodes.Cube002_cell001.geometry}
-        material={gltf.materials["Material.003"]}
+        material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[-0.52, 2.72, -0.12]}
+        opacity={1 - mainBodyOpacity}
       />
-      <T.Group name="Cube002_cell004" position={[1.02, 1.96, -1.13]}>
+      <T.Group name="Cube002_cell004" position={[1.02, 1.96, -1.13]} opacity={1 - mainBodyOpacity}>
         <T.Mesh
           name="Cube002_cell001_1"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell001_1.geometry}
-          material={gltf.materials["Material.003"]}
+          material={clonedM3 ?? gltf.materials["Material.003"]}
         />
         <T.Mesh
           name="Cube002_cell001_2"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell001_2.geometry}
-          material={gltf.materials["Material.004"]}
+          material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
-      <T.Group name="Cube002_cell005" position={[-0.8, 3.87, 0.63]}>
+      <T.Group name="Cube002_cell005" position={[-0.8, 3.87, 0.63]} opacity={1 - mainBodyOpacity}>
         <T.Mesh
           name="Cube002_cell002_1"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell002_1.geometry}
-          material={gltf.materials["Material.003"]}
+          material={clonedM3 ?? gltf.materials["Material.003"]}
         />
         <T.Mesh
           name="Cube002_cell002_2"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell002_2.geometry}
-          material={gltf.materials["Material.004"]}
+          material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
-      <T.Group name="Cube002_cell010" position={[-0.71, 1.93, 0.16]}>
+      <T.Group name="Cube002_cell010" position={[-0.71, 1.93, 0.16]} opacity={1 - mainBodyOpacity}>
         <T.Mesh
           name="Cube002_cell003"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell003.geometry}
-          material={gltf.materials["Material.003"]}
+          material={clonedM3 ?? gltf.materials["Material.003"]}
         />
         <T.Mesh
           name="Cube002_cell003_1"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell003_1.geometry}
-          material={gltf.materials["Material.004"]}
+          material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
-      <T.Group name="Cube002_cell013" position={[-0.36, 1.93, 0.61]}>
+      <T.Group name="Cube002_cell013" position={[-0.36, 1.93, 0.61]} opacity={1 - mainBodyOpacity}>
         <T.Mesh
           name="Cube002_cell004_1"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell004_1.geometry}
-          material={gltf.materials["Material.003"]}
+          material={clonedM3 ?? gltf.materials["Material.003"]}
         />
         <T.Mesh
           name="Cube002_cell004_2"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell004_2.geometry}
-          material={gltf.materials["Material.004"]}
+          material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
-      <T.Group name="Cube002_cell014" position={[-0.87, 3.28, 0.64]}>
+      <T.Group name="Cube002_cell014" position={[-0.87, 3.28, 0.64]} opacity={1 - mainBodyOpacity}>
         <T.Mesh
           name="Cube002_cell005_1"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell005_1.geometry}
-          material={gltf.materials["Material.003"]}
+          material={clonedM3 ?? gltf.materials["Material.003"]}
         />
         <T.Mesh
           name="Cube002_cell005_2"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell005_2.geometry}
-          material={gltf.materials["Material.004"]}
+          material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
-      <T.Group name="Cube002_cell019" position={[0.64, 2.05, 0.77]}>
+      <T.Group name="Cube002_cell019" position={[0.64, 2.05, 0.77]} opacity={1 - mainBodyOpacity}>
         <T.Mesh
           name="Cube002_cell006"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell006.geometry}
-          material={gltf.materials["Material.003"]}
+          material={clonedM3 ?? gltf.materials["Material.003"]}
         />
         <T.Mesh
           name="Cube002_cell006_1"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell006_1.geometry}
-          material={gltf.materials["Material.004"]}
+          material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
-      <T.Group name="Cube002_cell021" position={[-0.88, 3.7, -1]}>
+      <T.Group name="Cube002_cell021" position={[-0.88, 3.7, -1]} opacity={1 - mainBodyOpacity}>
         <T.Mesh
           name="Cube002_cell007"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell007.geometry}
-          material={gltf.materials["Material.003"]}
+          material={clonedM3 ?? gltf.materials["Material.003"]}
         />
         <T.Mesh
           name="Cube002_cell007_1"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell007_1.geometry}
-          material={gltf.materials["Material.004"]}
+          material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
-      <T.Group name="Cube002_cell023" position={[0.98, 3.31, -0.88]}>
+      <T.Group name="Cube002_cell023" position={[0.98, 3.31, -0.88]} opacity={1 - mainBodyOpacity}>
         <T.Mesh
           name="Cube002_cell008"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell008.geometry}
-          material={gltf.materials["Material.003"]}
+          material={clonedM3 ?? gltf.materials["Material.003"]}
         />
         <T.Mesh
           name="Cube002_cell008_1"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell008_1.geometry}
-          material={gltf.materials["Material.004"]}
+          material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
-      <T.Group name="Cube002_cell024" position={[0.78, 3.7, 0.58]}>
+      <T.Group name="Cube002_cell024" position={[0.78, 3.7, 0.58]} opacity={1 - mainBodyOpacity}>
         <T.Mesh
           name="Cube002_cell009"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell009.geometry}
-          material={gltf.materials["Material.003"]}
+          material={clonedM3 ?? gltf.materials["Material.003"]}
         />
         <T.Mesh
           name="Cube002_cell009_1"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell009_1.geometry}
-          material={gltf.materials["Material.004"]}
+          material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
-      <T.Group name="Cube002_cell025" position={[-0.84, 3.83, -1.14]}>
+      <T.Group name="Cube002_cell025" position={[-0.84, 3.83, -1.14]} opacity={1 - mainBodyOpacity}>
         <T.Mesh
           name="Cube002_cell010_1"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell010_1.geometry}
-          material={gltf.materials["Material.003"]}
+          material={clonedM3 ?? gltf.materials["Material.003"]}
         />
         <T.Mesh
           name="Cube002_cell010_2"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell010_2.geometry}
-          material={gltf.materials["Material.004"]}
+          material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
-      <T.Group name="Cube002_cell030" position={[-0.83, 1.98, -1.14]}>
+      <T.Group name="Cube002_cell030" position={[-0.83, 1.98, -1.14]} opacity={1 - mainBodyOpacity}>
         <T.Mesh
           name="Cube002_cell011"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell011.geometry}
-          material={gltf.materials["Material.003"]}
+          material={clonedM3 ?? gltf.materials["Material.003"]}
         />
         <T.Mesh
           name="Cube002_cell011_1"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell011_1.geometry}
-          material={gltf.materials["Material.004"]}
+          material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
       <T.Mesh
@@ -400,23 +526,24 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         castShadow
         receiveShadow
         geometry={gltf.nodes.Cube002_cell032.geometry}
-        material={gltf.materials["Material.003"]}
+        material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[-0.43, 3.59, -0.65]}
+        opacity={1 - mainBodyOpacity}
       />
-      <T.Group name="Cube002_cell033" position={[-0.28, 3.85, -0.99]}>
+      <T.Group name="Cube002_cell033" position={[-0.28, 3.85, -0.99]} opacity={1 - mainBodyOpacity}>
         <T.Mesh
           name="Cube002_cell013_1"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell013_1.geometry}
-          material={gltf.materials["Material.003"]}
+          material={clonedM3 ?? gltf.materials["Material.003"]}
         />
         <T.Mesh
           name="Cube002_cell013_2"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell013_2.geometry}
-          material={gltf.materials["Material.004"]}
+          material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
       <T.Mesh
@@ -424,79 +551,87 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         castShadow
         receiveShadow
         geometry={gltf.nodes.Cube002_cell037.geometry}
-        material={gltf.materials["Material.003"]}
+        material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[-0.76, 3.42, -1.13]}
+        opacity={1 - mainBodyOpacity}
       />
       <T.Mesh
         name="Cube002_cell039"
         castShadow
         receiveShadow
         geometry={gltf.nodes.Cube002_cell039.geometry}
-        material={gltf.materials["Material.003"]}
+        material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[0.77, 3.61, 0.12]}
+        opacity={1 - mainBodyOpacity}
       />
       <T.Mesh
         name="Cube002_cell040"
         castShadow
         receiveShadow
         geometry={gltf.nodes.Cube002_cell040.geometry}
-        material={gltf.materials["Material.003"]}
+        material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[0.56, 3.2, -1.01]}
+        opacity={1 - mainBodyOpacity}
       />
       <T.Mesh
         name="Cube002_cell042"
         castShadow
         receiveShadow
         geometry={gltf.nodes.Cube002_cell042.geometry}
-        material={gltf.materials["Material.003"]}
+        material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[-0.78, 3.55, -0.94]}
+        opacity={1 - mainBodyOpacity}
       />
       <T.Mesh
         name="Cube002_cell043"
         castShadow
         receiveShadow
         geometry={gltf.nodes.Cube002_cell043.geometry}
-        material={gltf.materials["Material.003"]}
+        material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[0.64, 2.9, -0.98]}
+        opacity={1 - mainBodyOpacity}
       />
       <T.Mesh
         name="Cube002_cell052"
         castShadow
         receiveShadow
         geometry={gltf.nodes.Cube002_cell052.geometry}
-        material={gltf.materials["Material.003"]}
+        material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[-0.44, 2.84, 0.76]}
+        opacity={1 - mainBodyOpacity}
       />
       <T.Mesh
         name="Cube002_cell055"
         castShadow
         receiveShadow
         geometry={gltf.nodes.Cube002_cell055.geometry}
-        material={gltf.materials["Material.003"]}
+        material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[-0.25, 3.38, -0.17]}
+        opacity={1 - mainBodyOpacity}
       />
       <T.Mesh
         name="Cube002_cell056"
         castShadow
         receiveShadow
         geometry={gltf.nodes.Cube002_cell056.geometry}
-        material={gltf.materials["Material.003"]}
+        material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[0.76, 3.86, 0.72]}
+        opacity={1 - mainBodyOpacity}
       />
-      <T.Group name="Cube002_cell062" position={[-0.3, 2.21, -1.08]}>
+      <T.Group name="Cube002_cell062" position={[-0.3, 2.21, -1.08]} opacity={1 - mainBodyOpacity}>
         <T.Mesh
           name="Cube002_cell022"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell022.geometry}
-          material={gltf.materials["Material.003"]}
+          material={clonedM3 ?? gltf.materials["Material.003"]}
         />
         <T.Mesh
           name="Cube002_cell022_1"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell022_1.geometry}
-          material={gltf.materials["Material.004"]}
+          material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
       <T.Mesh
@@ -504,23 +639,24 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         castShadow
         receiveShadow
         geometry={gltf.nodes.Cube002_cell065.geometry}
-        material={gltf.materials["Material.003"]}
+        material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[0.72, 3.23, -0.6]}
+        opacity={1 - mainBodyOpacity}
       />
-      <T.Group name="Cube002_cell066" position={[-0.79, 2.01, 0.77]}>
+      <T.Group name="Cube002_cell066" position={[-0.79, 2.01, 0.77]} opacity={1 - mainBodyOpacity}>
         <T.Mesh
           name="Cube002_cell024_1"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell024_1.geometry}
-          material={gltf.materials["Material.003"]}
+          material={clonedM3 ?? gltf.materials["Material.003"]}
         />
         <T.Mesh
           name="Cube002_cell024_2"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell024_2.geometry}
-          material={gltf.materials["Material.004"]}
+          material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
       <T.Mesh
@@ -528,31 +664,33 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         castShadow
         receiveShadow
         geometry={gltf.nodes.Cube002_cell071.geometry}
-        material={gltf.materials["Material.003"]}
+        material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[0.62, 3.08, -0.04]}
+        opacity={1 - mainBodyOpacity}
       />
       <T.Mesh
         name="Cube002_cell072"
         castShadow
         receiveShadow
         geometry={gltf.nodes.Cube002_cell072.geometry}
-        material={gltf.materials["Material.003"]}
+        material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[0.68, 2.53, -0.41]}
+        opacity={1 - mainBodyOpacity}
       />
-      <T.Group name="Cube002_cell074" position={[-0.88, 3.63, 0.2]}>
+      <T.Group name="Cube002_cell074" position={[-0.88, 3.63, 0.2]} opacity={1 - mainBodyOpacity}>
         <T.Mesh
           name="Cube002_cell027"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell027.geometry}
-          material={gltf.materials["Material.003"]}
+          material={clonedM3 ?? gltf.materials["Material.003"]}
         />
         <T.Mesh
           name="Cube002_cell027_1"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell027_1.geometry}
-          material={gltf.materials["Material.004"]}
+          material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
       <T.Mesh
@@ -560,39 +698,40 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         castShadow
         receiveShadow
         geometry={gltf.nodes.Cube002_cell077.geometry}
-        material={gltf.materials["Material.003"]}
+        material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[-0.3, 3.63, -1.05]}
+        opacity={1 - mainBodyOpacity}
       />
-      <T.Group name="Cube002_cell078" position={[-0.89, 2.53, 0.7]}>
+      <T.Group name="Cube002_cell078" position={[-0.89, 2.53, 0.7]} opacity={1 - mainBodyOpacity}>
         <T.Mesh
           name="Cube002_cell029"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell029.geometry}
-          material={gltf.materials["Material.003"]}
+          material={clonedM3 ?? gltf.materials["Material.003"]}
         />
         <T.Mesh
           name="Cube002_cell029_1"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell029_1.geometry}
-          material={gltf.materials["Material.004"]}
+          material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
-      <T.Group name="Cube002_cell080" position={[-0.31, 2.09, 0.77]}>
+      <T.Group name="Cube002_cell080" position={[-0.31, 2.09, 0.77]} opacity={1 - mainBodyOpacity}>
         <T.Mesh
           name="Cube002_cell030_1"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell030_1.geometry}
-          material={gltf.materials["Material.003"]}
+          material={clonedM3 ?? gltf.materials["Material.003"]}
         />
         <T.Mesh
           name="Cube002_cell030_2"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell030_2.geometry}
-          material={gltf.materials["Material.004"]}
+          material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
       <T.Mesh
@@ -600,23 +739,24 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         castShadow
         receiveShadow
         geometry={gltf.nodes.Cube002_cell082.geometry}
-        material={gltf.materials["Material.003"]}
+        material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[0.96, 2.72, -0.48]}
+        opacity={1 - mainBodyOpacity}
       />
-      <T.Group name="Cube002_cell094" position={[-0.28, 3.84, 0.59]}>
+      <T.Group name="Cube002_cell094" position={[-0.28, 3.84, 0.59]} opacity={1 - mainBodyOpacity}>
         <T.Mesh
           name="Cube002_cell033_1"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell033_1.geometry}
-          material={gltf.materials["Material.003"]}
+          material={clonedM3 ?? gltf.materials["Material.003"]}
         />
         <T.Mesh
           name="Cube002_cell033_2"
           castShadow
           receiveShadow
           geometry={gltf.nodes.Cube002_cell033_2.geometry}
-          material={gltf.materials["Material.004"]}
+          material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
       <T.Mesh
@@ -624,16 +764,18 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         castShadow
         receiveShadow
         geometry={gltf.nodes.Cube002_cell096.geometry}
-        material={gltf.materials["Material.003"]}
+        material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[-0.61, 2.58, -0.6]}
+        opacity={1 - mainBodyOpacity}
       />
       <T.Mesh
         name="Cube002_cell002"
         castShadow
         receiveShadow
         geometry={gltf.nodes.Cube002_cell002.geometry}
-        material={gltf.materials["Material.003"]}
+        material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[-0.87, 2.47, 0.53]}
+        opacity={1 - mainBodyOpacity}
       />
     </T.Group>
   {:catch err}

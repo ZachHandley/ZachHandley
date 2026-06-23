@@ -18,16 +18,10 @@ export function createSvgMesh(
     scale?: number;
     extrude?: number;
     center?: boolean;
-  } = {}
+  } = {},
 ): THREE.Group {
   // Default options
-  const {
-    color,
-    fillColor,
-    scale = 0.05,
-    extrude = 0,
-    center = true,
-  } = options;
+  const { color, fillColor, scale = 0.05, extrude = 0, center = true } = options;
 
   // Create proper SVG string with viewBox
   let svgString: string;
@@ -135,7 +129,7 @@ export function calculateVisualScale(
   targetWidth: number,
   targetHeight: number,
   zDepth: number,
-  originalSize: { width: number; height: number } = { width: 1, height: 1 }
+  originalSize: { width: number; height: number } = { width: 1, height: 1 },
 ): [number, number, number] {
   // Calculate distance from camera to target z-depth
   const distance = Math.abs(zDepth - camera.position.z);

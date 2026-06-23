@@ -1,15 +1,7 @@
 {
   "extends": "astro/tsconfigs/strict",
-  "include": [
-    ".astro/types.d.ts",
-    "**/*"
-  ],
-  "exclude": [
-    "dist",
-    "node_modules",
-    ".devbox",
-    ".vscode"
-  ],
+  "include": [".astro/types.d.ts", "**/*"],
+  "exclude": ["dist", "node_modules", ".devbox", ".vscode"],
   "compilerOptions": {
     "jsx": "preserve",
     "esModuleInterop": true,
@@ -22,8 +14,8 @@
       "~/*": ["src/*"],
       "~assets/*": ["src/assets/*"],
       "~components/*": ["src/components/*"],
-      "~svelte/*": ["src/svelte/*"],
-      "~vue/*": ["src/vue/*"],
+      "~svelte/*": ["src/components/svelte/*"],
+      "~vue/*": ["src/components/vue/*"],
       "~layouts/*": ["src/layouts/*"],
       "~pages/*": ["src/pages/*"],
       "~styles/*": ["src/styles/*"],

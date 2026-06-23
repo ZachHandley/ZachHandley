@@ -4,12 +4,12 @@ Command: npx @threlte/gltf@3.0.1 ./public/models/Temple_SecondAge_Level3.gltf --
 -->
 
 <script lang="ts">
-  import type * as THREE from 'three'
+  import type * as THREE from "three";
 
-  import type { Snippet } from 'svelte'
-  import { T, type Props } from '@threlte/core'
-  import { useGltf } from '@threlte/extras'
-  import type { DRACOLoader } from 'three/examples/jsm/Addons.js'
+  import type { Snippet } from "svelte";
+  import { T, type Props } from "@threlte/core";
+  import { useGltf } from "@threlte/extras";
+  import type { DRACOLoader } from "three/examples/jsm/Addons.js";
 
   let {
     fallback,
@@ -19,36 +19,33 @@ Command: npx @threlte/gltf@3.0.1 ./public/models/Temple_SecondAge_Level3.gltf --
     dracoLoader,
     ...props
   }: Props<THREE.Group> & {
-    ref?: THREE.Group
-    children?: Snippet<[{ ref: THREE.Group }]>
-    fallback?: Snippet
-    error?: Snippet<[{ error: Error }]>
-    dracoLoader: DRACOLoader
-  } = $props()
+    ref?: THREE.Group;
+    children?: Snippet<[{ ref: THREE.Group }]>;
+    fallback?: Snippet;
+    error?: Snippet<[{ error: Error }]>;
+    dracoLoader: DRACOLoader;
+  } = $props();
 
   type GLTFResult = {
     nodes: {
-      Cube223: THREE.Mesh
-      Cube223_1: THREE.Mesh
-      Cube223_2: THREE.Mesh
-    }
+      Cube223: THREE.Mesh;
+      Cube223_1: THREE.Mesh;
+      Cube223_2: THREE.Mesh;
+    };
     materials: {
-      Walls: THREE.MeshStandardMaterial
-      Main: THREE.MeshStandardMaterial
-      Stone: THREE.MeshStandardMaterial
-    }
-  }
+      Walls: THREE.MeshStandardMaterial;
+      Main: THREE.MeshStandardMaterial;
+      Stone: THREE.MeshStandardMaterial;
+    };
+  };
 
-  const gltf = useGltf<GLTFResult>('/models/Temple_SecondAge_Level3-transformed.glb', {
-    dracoLoader,
-  })
+  const gltf = (() =>
+    useGltf<GLTFResult>("/models/Temple_SecondAge_Level3-transformed.glb", {
+      dracoLoader,
+    }))();
 </script>
 
-<T.Group
-  bind:ref
-  dispose={false}
-  {...props}
->
+<T.Group bind:ref dispose={false} {...props}>
   {#await gltf}
     {@render fallback?.()}
   {:then gltf}

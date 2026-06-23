@@ -1,6 +1,6 @@
 <script lang="ts">
   import { T, useThrelte, useTask } from "@threlte/core";
-  import { Sky, AudioListener } from "@threlte/extras";
+  import { Sky, AudioListener, HTML } from "@threlte/extras";
   import * as THREE from "three";
   import { onDestroy, onMount } from "svelte";
   import { Tween } from "svelte/motion";
@@ -9,6 +9,7 @@
   import Ground from "./Ground.svelte";
   import Fireball from "./effects/Fireball.svelte";
   import StackedLinks from "./StackedLinks.svelte";
+  import ModalManager from "../ui/ModalManager.svelte";
   import type { Link } from "~/types/baseSchemas";
   import CrateExplode from "../models/CrateExplode.svelte";
   import { SceneController } from "~/components/svelte/utils/sceneController.svelte.ts";
@@ -21,6 +22,7 @@
     onLoadingStateChange,
     screenWidth,
     screenHeight,
+    modalManager,
   }: {
     handleDragonClick: () => void;
     handleInteract?: (category?: string) => void;
@@ -29,9 +31,13 @@
     onLoadingStateChange?: (loading: boolean, progress: number, message: string) => void;
     screenWidth: number;
     screenHeight: number;
+    modalManager?: {
+      showModal: (link: Link, x: number, y: number) => void;
+      hideModal: () => void;
+    } | null;
   } = $props();
 
-  const { size: rendererSize } = useThrelte();
+  const { size: rendererSize, renderer } = useThrelte();
 
   // Core scene references
   let cameraRef = $state<THREE.PerspectiveCamera | undefined>(undefined);
@@ -42,6 +48,14 @@
   let testCrateRef = $state<{ explode: () => void; reset: () => void } | null>(null);
   let prevRendererSize = $state<{ width: number; height: number } | undefined>(undefined);
   let particlePoolContainer = $state<THREE.Group | undefined>(undefined);
+
+  // Debug modal manager binding
+  $effect(() => {
+    console.log(`🎮 BaseScene: modalManager binding status:`, {
+      hasModalManager: !!modalManager,
+      modalManagerType: typeof modalManager,
+    });
+  });
 
   // Statically define these to avoid recreating them
   const ENVIRONMENT_SCALE = 1.5;
@@ -54,8 +68,9 @@
     zDepth: 6, // LINKS_Z_DEPTH
     dragonWidth: 6 * ENVIRONMENT_SCALE,
     maxFireballs: 10,
-    onLoadingStateChange,
-    onCategoryInteraction: handleInteract
+    onLoadingStateChange: (loading, progress, message) =>
+      onLoadingStateChange?.(loading, progress, message),
+    onCategoryInteraction: (category) => handleInteract?.(category),
   });
 
   // Update scene controller when camera changes
@@ -72,16 +87,19 @@
     }
   });
 
-  // Firefox optimization: Camera update throttling
-  let lastCameraUpdate = 0;
+  // Clamp DPR to reduce GPU cost
+  $effect(() => {
+    try {
+      renderer.setPixelRatio(Math.min(1.5, window.devicePixelRatio || 1));
+    } catch {}
+  });
+
+  // Camera update debounce timer (trailing-edge debounce guarantees final value fires)
+  let cameraUpdateTimer: ReturnType<typeof setTimeout> | null = null;
 
   // Setup for perspective camera
   $effect(() => {
     if (!cameraRef || !$rendererSize) return;
-
-    // Firefox optimization: Throttle camera updates to reduce GC pressure
-    const now = performance.now();
-    if (lastCameraUpdate && now - lastCameraUpdate < 200) return;
 
     // Only update if dimensions actually changed by a meaningful amount
     if (
@@ -89,31 +107,44 @@
       Math.abs($rendererSize.width - prevRendererSize.width) > 5 ||
       Math.abs($rendererSize.height - prevRendererSize.height) > 5
     ) {
-      console.log("Camera aspect updated");
-      cameraRef.aspect = $rendererSize.width / $rendererSize.height;
-      cameraRef.updateProjectionMatrix();
-      prevRendererSize = {
-        width: $rendererSize.width,
-        height: $rendererSize.height,
+      const doUpdate = () => {
+        if (!cameraRef || !$rendererSize) return;
+        console.log("Camera aspect updated");
+        cameraRef.aspect = $rendererSize.width / $rendererSize.height;
+        cameraRef.updateProjectionMatrix();
+        prevRendererSize = {
+          width: $rendererSize.width,
+          height: $rendererSize.height,
+        };
+        if (!mounted) mounted = true;
       };
-      if (!mounted) mounted = true;
-      lastCameraUpdate = now;
+
+      // First call (no prevRendererSize) executes immediately; subsequent calls debounce
+      if (!prevRendererSize) {
+        doUpdate();
+      } else {
+        if (cameraUpdateTimer) clearTimeout(cameraUpdateTimer);
+        cameraUpdateTimer = setTimeout(doUpdate, 100);
+      }
     }
   });
 
   // Get active fireballs from SceneController (reactive)
   const activeFireballs = $derived(sceneController.getActiveFireballs());
-  
+
   // Debug active fireballs
   $effect(() => {
     console.log(`🔮 Active fireballs count: ${activeFireballs.length}`, activeFireballs);
   });
 
   // For dragon rotation tweening (used by SceneController)
-  let rotationTween = new Tween({ y: 0 }, {
-    duration: 800,
-    easing: cubicInOut,
-  });
+  let rotationTween = new Tween(
+    { y: 0 },
+    {
+      duration: 800,
+      easing: cubicInOut,
+    },
+  );
 
   // Define the rotation task outside the function
   const dragonRotationTask = useTask(() => {
@@ -150,19 +181,19 @@
     position: THREE.Vector3,
     category?: string,
     action?: (() => void) | (() => Promise<void>),
-    crateId?: string
+    crateId?: string,
   ): Promise<void> {
     console.log(`🎮 BaseScene.handleLinkClick called:`, { url, type, category, position, crateId });
-    
+
     await sceneController.handleLinkClick(
-      url, 
-      type, 
-      position, 
-      category, 
+      url,
+      type,
+      position,
+      category,
       action,
       crateId,
       rotationTween,
-      dragonRotationTask
+      dragonRotationTask,
     );
   }
 
@@ -181,52 +212,53 @@
   onMount(async () => {
     // Initialize scene using SceneController
     await sceneController.initialize();
-    
-    // Initialize particle pool container after assets are loaded
-    // Wait for particle pre-warming to complete, then initialize pool
-    setTimeout(() => {
-      initializeParticlePool();
-    }, 1000);
+
+    // Initialize particle pool container immediately after assets are loaded
+    initializeParticlePool();
   });
-  
+
   // Initialize the particle pool container
   function initializeParticlePool(): void {
-    console.log('🎯 Starting particle pool initialization...');
-    
     if (!particlePoolContainer) {
-      console.warn('Particle pool container not available yet');
+      console.warn("Particle pool container not available yet");
       return;
     }
-    
+
     // Position the pool container far off-screen
     particlePoolContainer.position.set(1000, 1000, 1000);
-    console.log('📍 Pool container positioned at (1000, 1000, 1000)');
-    
+
     // Get all pre-warmed systems from AssetManager and add them to pool container
     const prewarmedSystems = sceneController.getAssetManager().getAllPrewarmedSystems();
-    console.log(`🔥 Found ${prewarmedSystems.length} pre-warmed systems`);
-    
+
     if (prewarmedSystems.length === 0) {
-      console.warn('⚠️ No pre-warmed systems found! Particle effects may not work.');
-      // Log pool stats to understand why
-      const poolStats = sceneController.getAssetManager().getPoolStats();
-      console.log('📊 Pool stats:', poolStats);
+      console.warn("No pre-warmed systems found. Particle effects may not work.");
       return;
     }
-    
+
     prewarmedSystems.forEach((system, index) => {
       if (particlePoolContainer) {
         // Spread systems out a bit to avoid overlap (though they're scaled to 0)
         system.position.set(index * 10, 0, 0);
         particlePoolContainer.add(system);
-        console.log(`✅ Added system ${index + 1}/${prewarmedSystems.length} to pool container`);
       }
     });
-    
-    console.log(`✅ Pool initialization complete: ${prewarmedSystems.length} systems ready`);
+
+    // Force shader pre-compilation to eliminate first-fire lag
+    if (renderer && cameraRef && particlePoolContainer) {
+      try {
+        renderer.compile(particlePoolContainer, cameraRef);
+        console.log("Particle shaders pre-compiled");
+      } catch (e) {
+        console.warn("Could not pre-compile particle shaders:", e);
+      }
+    }
+
+    console.log(`Pool initialization complete: ${prewarmedSystems.length} systems ready`);
   }
 
   onDestroy(() => {
+    // Clean up debounce timer
+    if (cameraUpdateTimer) clearTimeout(cameraUpdateTimer);
     // Clean up scene using SceneController
     sceneController.dispose();
   });
@@ -267,7 +299,6 @@
   <Ground />
 </T.Group>
 
-
 <!-- Dragon -->
 <Dragon
   {dragonEyeGlow}
@@ -283,9 +314,10 @@
   onLinkClick={handleLinkClick}
   visible={mounted}
   useExplodingCrates={true}
-  sceneController={sceneController}
+  {sceneController}
   {screenWidth}
   {screenHeight}
+  {modalManager}
 />
 
 <!-- Particle Pool Container - holds all pre-warmed systems off-screen -->
@@ -302,11 +334,18 @@
     preloadedModel={sceneController.getAssetManager().getAssets()?.fireModel}
     preloadedTexture={sceneController.getAssetManager().getAssets()?.fireTexture}
     preloadedAudio={sceneController.getAssetManager().getAssets()?.fireballSound}
-    preloadedFireballParticles={sceneController.getAssetManager().getAssets()?.fireballParticleSystem}
-    preloadedExplosionParticles={sceneController.getAssetManager().getAssets()?.explosionParticleSystem}
-    getParticleSystemFromPool={(type) => sceneController.getAssetManager().getAvailableParticleSystem(type)}
-    returnParticleSystemToPool={(system, type) => sceneController.getAssetManager().returnParticleSystemToPool(system, type)}
-    createParticleSystemAsync={(type) => sceneController.getAssetManager().createParticleSystemAsync(type)}
-    particlePoolContainer={particlePoolContainer}
+    preloadedFireballParticles={sceneController.getAssetManager().getAssets()
+      ?.fireballParticleSystem}
+    preloadedExplosionParticles={sceneController.getAssetManager().getAssets()
+      ?.explosionParticleSystem}
+    getParticleSystemFromPool={(type) =>
+      sceneController.getAssetManager().getAvailableParticleSystem(type)}
+    returnParticleSystemToPool={(system, type) =>
+      sceneController.getAssetManager().returnParticleSystemToPool(system, type)}
+    createParticleSystemAsync={(type) =>
+      sceneController.getAssetManager().createParticleSystemAsync(type)}
+    {particlePoolContainer}
   />
 {/each}
+
+<!-- Modal system moved to 2D overlay in parent component -->

@@ -4,16 +4,13 @@ import type { APIRoute } from "astro";
 async function createSHA256Hash(input: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(input);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 // In-memory cache with expiration
-const CACHE: Record<
-  string,
-  { data: ArrayBuffer; contentType: string; timestamp: number }
-> = {};
+const CACHE: Record<string, { data: ArrayBuffer; contentType: string; timestamp: number }> = {};
 const CACHE_DURATION = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
 
 export const GET: APIRoute = async ({ params, request }) => {
@@ -71,18 +68,10 @@ export const GET: APIRoute = async ({ params, request }) => {
 
       // Look for favicon in HTML
       const faviconMatch =
-        html.match(
-          /<link[^>]*rel=["'](?:shortcut )?icon["'][^>]*href=["']([^"']+)["']/i
-        ) ||
-        html.match(
-          /<link[^>]*href=["']([^"']+)["'][^>]*rel=["'](?:shortcut )?icon["']/i
-        ) ||
-        html.match(
-          /<link[^>]*rel=["']apple-touch-icon["'][^>]*href=["']([^"']+)["']/i
-        ) ||
-        html.match(
-          /<link[^>]*href=["']([^"']+)["'][^>]*rel=["']apple-touch-icon["']/i
-        );
+        html.match(/<link[^>]*rel=["'](?:shortcut )?icon["'][^>]*href=["']([^"']+)["']/i) ||
+        html.match(/<link[^>]*href=["']([^"']+)["'][^>]*rel=["'](?:shortcut )?icon["']/i) ||
+        html.match(/<link[^>]*rel=["']apple-touch-icon["'][^>]*href=["']([^"']+)["']/i) ||
+        html.match(/<link[^>]*href=["']([^"']+)["'][^>]*rel=["']apple-touch-icon["']/i);
 
       if (faviconMatch && faviconMatch[1]) {
         let faviconUrl = faviconMatch[1];
@@ -104,8 +93,7 @@ export const GET: APIRoute = async ({ params, request }) => {
 
         if (faviconResponse && faviconResponse.ok) {
           // Get content type and the binary data
-          const contentType =
-            faviconResponse.headers.get("Content-Type") || "image/x-icon";
+          const contentType = faviconResponse.headers.get("Content-Type") || "image/x-icon";
           const imageBuffer = await faviconResponse.arrayBuffer();
 
           // Store in cache
@@ -132,13 +120,10 @@ export const GET: APIRoute = async ({ params, request }) => {
       // If no favicon found or fetch failed, try default favicon
       console.log(`Trying default favicon.ico for ${siteDomain}`);
       const defaultFaviconUrl = `https://${siteDomain}/favicon.ico`;
-      const defaultFaviconResponse = await fetch(defaultFaviconUrl).catch(
-        () => null
-      );
+      const defaultFaviconResponse = await fetch(defaultFaviconUrl).catch(() => null);
 
       if (defaultFaviconResponse && defaultFaviconResponse.ok) {
-        const contentType =
-          defaultFaviconResponse.headers.get("Content-Type") || "image/x-icon";
+        const contentType = defaultFaviconResponse.headers.get("Content-Type") || "image/x-icon";
         const imageBuffer = await defaultFaviconResponse.arrayBuffer();
 
         // Cache the result
@@ -165,7 +150,7 @@ export const GET: APIRoute = async ({ params, request }) => {
     // Fallback to Google's favicon service if direct fetching fails
     console.log(`Falling back to Google's favicon service for ${siteDomain}`);
     const googleResponse = await fetch(
-      `https://www.google.com/s2/favicons?domain=${decodeURIComponent(siteDomain)}&sz=64`
+      `https://www.google.com/s2/favicons?domain=${decodeURIComponent(siteDomain)}&sz=64`,
     );
 
     if (!googleResponse.ok) {
@@ -180,8 +165,7 @@ export const GET: APIRoute = async ({ params, request }) => {
     }
 
     // Get content type and the binary data
-    const contentType =
-      googleResponse.headers.get("Content-Type") || "image/x-icon";
+    const contentType = googleResponse.headers.get("Content-Type") || "image/x-icon";
     const imageBuffer = await googleResponse.arrayBuffer();
 
     // Store in cache
@@ -217,7 +201,7 @@ export const GET: APIRoute = async ({ params, request }) => {
           "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*", // Allow CORS
         },
-      }
+      },
     );
   }
 };

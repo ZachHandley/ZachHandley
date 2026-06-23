@@ -1,1 +1,141 @@
 @import "tailwindcss";
+@import "@fontsource-variable/inter";
+@import "@fontsource-variable/jetbrains-mono";
+
+/* ─── Design tokens ───────────────────────────────────────────────────────
+   Semantic token names beat literal palette names: every component reaches
+   for `bg-bg`, `text-fg`, `text-fg-muted`, `border-border`, `bg-accent`,
+   never `bg-gray-900` / `text-orange-200`. Themes swap by overriding these.
+   OKLCH keeps perceptual contrast consistent across hues.
+─────────────────────────────────────────────────────────────────────────── */
+@theme {
+  /* Fonts */
+  --font-sans:
+    "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono:
+    "JetBrains Mono Variable", ui-monospace, "Fira Code", "JetBrains Mono", Menlo, monospace;
+  --font-display: var(--font-mono);
+
+  /* Type scale (1.2 ratio, base 16px) with paired line-heights.
+     Tailwind v4 picks up the `--text-{size}--line-height` pair when you
+     write `text-base` etc., so we never juggle leading separately for the
+     common cases. Heading sizes get tighter leading (per
+     BlackLeafDocs/design/08-typography.md). */
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl: 1.875rem;
+  --text-3xl--line-height: 2.25rem;
+  --text-4xl: 2.25rem;
+  --text-4xl--line-height: 2.5rem;
+  --text-5xl: 3rem;
+  --text-5xl--line-height: 1;
+  --text-6xl: 3.75rem;
+  --text-6xl--line-height: 1;
+  --text-7xl: 4.5rem;
+  --text-7xl--line-height: 1;
+
+  /* Leading helpers when a non-paired size needs an explicit line-height. */
+  --leading-tight: 1.15;
+  --leading-snug: 1.3;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
+
+  /* Tracking — only used where it earns its keep (all-caps, large display). */
+  --tracking-tight: -0.02em;
+  --tracking-tighter: -0.04em;
+  --tracking-wide: 0.025em;
+
+  /* Semantic colors — dark theme (default). The medieval scene is dark,
+     warm, and ember-accented. Tokens stay warm-neutral so they don't fight
+     the orange/gold lighting in the 3D scene. */
+  --color-bg: oklch(0.18 0.018 55);
+  --color-bg-elev: oklch(0.23 0.022 55);
+  --color-bg-elev-2: oklch(0.29 0.026 55);
+  --color-fg: oklch(0.97 0.018 70);
+  --color-fg-muted: oklch(0.72 0.024 70);
+  --color-fg-subtle: oklch(0.52 0.022 70);
+  --color-accent: oklch(0.72 0.18 50);
+  --color-accent-strong: oklch(0.6 0.2 45);
+  --color-accent-fg: oklch(0.99 0.012 60);
+  --color-border: oklch(0.4 0.022 55 / 0.35);
+  --color-border-strong: oklch(0.55 0.03 55 / 0.55);
+  --color-danger: oklch(0.62 0.22 25);
+  --color-success: oklch(0.66 0.18 145);
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 150ms;
+  --dur-mid: 300ms;
+  --dur-slow: 500ms;
+}
+
+/* Light theme — defined now so future toggle is one attribute away. */
+[data-theme="light"] {
+  --color-bg: oklch(0.98 0.008 70);
+  --color-bg-elev: oklch(0.95 0.012 70);
+  --color-bg-elev-2: oklch(0.91 0.016 70);
+  --color-fg: oklch(0.22 0.022 55);
+  --color-fg-muted: oklch(0.4 0.022 55);
+  --color-fg-subtle: oklch(0.56 0.022 55);
+  --color-accent: oklch(0.56 0.18 45);
+  --color-accent-strong: oklch(0.48 0.2 42);
+  --color-accent-fg: oklch(0.99 0.012 60);
+  --color-border: oklch(0.7 0.018 55 / 0.55);
+  --color-border-strong: oklch(0.55 0.022 55 / 0.7);
+}
+
+/* ─── Reset / base ───────────────────────────────────────────────────── */
+html,
+body {
+  font-family: var(--font-sans);
+  background: var(--color-bg);
+  color: var(--color-fg);
+}
+
+::selection {
+  background: var(--color-accent);
+  color: var(--color-accent-fg);
+}
+
+/* Reduced motion: collapse durations, kill any animation/transition.
+   Components should still read --ease-* so semantics survive. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur-mid: 0ms;
+    --dur-slow: 0ms;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Icon container styles for StackedLinks (3D scene) */
+.icon-container svg {
+  width: 100% !important;
+  height: 100% !important;
+  fill: currentColor !important;
+}
+
+.icon-container {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}

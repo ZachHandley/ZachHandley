@@ -340,21 +340,19 @@
   </T.Mesh>
 
   <!-- Path leading to barracks - aligned with center and widened -->
-  <T.Mesh
-    position={[0, -0.95, 0]}
-    rotation={[-Math.PI / 2, 0, 0]}
-    receiveShadow
-  >
+  <T.Mesh position={[0, -0.95, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
     <T.PlaneGeometry args={[20, 80]} />
     <T.MeshStandardMaterial color="#8b7355" />
   </T.Mesh>
 
-  <!-- Castle/Barracks at the back - positioned better for orthographic -->
+  <!-- Castle/Barracks at the back. Pulled deeper + shrunk vs the original
+       so the dragon reads as the focal point rather than the temple
+       (live scene had the temple dominating). -->
   <TempleSecondAge
     {dracoLoader}
-    position={[0, -1, -40]}
+    position={[0, -1, -80]}
     rotation={[0, 0, 0]}
-    scale={[20, 10, 10]}
+    scale={[12, 6, 6]}
   />
 
   <MountainGroup1
@@ -382,16 +380,8 @@
   {#each grassInstances as instance}
     <Grass
       {dracoLoader}
-      position={[
-        instance.position[0],
-        instance.position[1],
-        instance.position[2],
-      ]}
-      rotation={[
-        instance.rotation[0],
-        instance.rotation[1],
-        instance.rotation[2],
-      ]}
+      position={[instance.position[0], instance.position[1], instance.position[2]]}
+      rotation={[instance.rotation[0], instance.rotation[1], instance.rotation[2]]}
       scale={instance.scale}
     />
   {/each}
@@ -400,16 +390,8 @@
   {#each flowerInstances as instance}
     <Flowers
       {dracoLoader}
-      position={[
-        instance.position[0],
-        instance.position[1],
-        instance.position[2],
-      ]}
-      rotation={[
-        instance.rotation[0],
-        instance.rotation[1],
-        instance.rotation[2],
-      ]}
+      position={[instance.position[0], instance.position[1], instance.position[2]]}
+      rotation={[instance.rotation[0], instance.rotation[1], instance.rotation[2]]}
       scale={instance.scale}
     />
   {/each}
@@ -418,16 +400,8 @@
   {#each pine1Instances as instance}
     <PineTree1
       {dracoLoader}
-      position={[
-        instance.position[0],
-        instance.position[1],
-        instance.position[2],
-      ]}
-      rotation={[
-        instance.rotation[0],
-        instance.rotation[1],
-        instance.rotation[2],
-      ]}
+      position={[instance.position[0], instance.position[1], instance.position[2]]}
+      rotation={[instance.rotation[0], instance.rotation[1], instance.rotation[2]]}
       scale={[instance.scale[0], instance.scale[1], instance.scale[2]]}
     />
   {/each}
@@ -436,16 +410,8 @@
   {#each pine2Instances as instance}
     <PineTree2
       {dracoLoader}
-      position={[
-        instance.position[0],
-        instance.position[1],
-        instance.position[2],
-      ]}
-      rotation={[
-        instance.rotation[0],
-        instance.rotation[1],
-        instance.rotation[2],
-      ]}
+      position={[instance.position[0], instance.position[1], instance.position[2]]}
+      rotation={[instance.rotation[0], instance.rotation[1], instance.rotation[2]]}
       scale={[instance.scale[0], instance.scale[1], instance.scale[2]]}
     />
   {/each}
@@ -454,16 +420,8 @@
   {#each rock1Instances as instance}
     <Rock1
       {dracoLoader}
-      position={[
-        instance.position[0],
-        instance.position[1],
-        instance.position[2],
-      ]}
-      rotation={[
-        instance.rotation[0],
-        instance.rotation[1],
-        instance.rotation[2],
-      ]}
+      position={[instance.position[0], instance.position[1], instance.position[2]]}
+      rotation={[instance.rotation[0], instance.rotation[1], instance.rotation[2]]}
       scale={[instance.scale[0], instance.scale[1], instance.scale[2]]}
     />
   {/each}
@@ -472,16 +430,8 @@
   {#each rock2Instances as instance}
     <Rock2
       {dracoLoader}
-      position={[
-        instance.position[0],
-        instance.position[1],
-        instance.position[2],
-      ]}
-      rotation={[
-        instance.rotation[0],
-        instance.rotation[1],
-        instance.rotation[2],
-      ]}
+      position={[instance.position[0], instance.position[1], instance.position[2]]}
+      rotation={[instance.rotation[0], instance.rotation[1], instance.rotation[2]]}
       scale={[instance.scale[0], instance.scale[1], instance.scale[2]]}
     />
   {/each}
@@ -490,16 +440,8 @@
   {#each logPlacements as instance}
     <WoodLogMoss
       {dracoLoader}
-      position={[
-        instance.position[0],
-        instance.position[1],
-        instance.position[2],
-      ]}
-      rotation={[
-        instance.rotation[0],
-        instance.rotation[1],
-        instance.rotation[2],
-      ]}
+      position={[instance.position[0], instance.position[1], instance.position[2]]}
+      rotation={[instance.rotation[0], instance.rotation[1], instance.rotation[2]]}
       scale={instance.scale}
     />
   {/each}
