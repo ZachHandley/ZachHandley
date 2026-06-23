@@ -340,21 +340,30 @@
     const originalScale = group.scale.clone();
     group.scale.set(1, 1, 1);
 
-    // Find the primary mesh. The CrateExplode glb names its main body "Cube002"
-    // (not "Cube200" — easy typo) and that mesh sits at a hardcoded internal
-    // transform (CrateExplode.svelte:319 → position={[0, 2.95, -0.2]} scale=1.21).
-    // Measuring `primary.geometry.boundingBox` alone misses that transform
-    // because geometry bounds are in the MESH'S local frame, not the group's.
-    const primary =
-      findPrimaryMesh(group, { name: "Cube002" }) ??
-      findPrimaryMesh(group, { name: "Cube200" }) ??
-      group;
+    // CrateExplode.svelte:319 wraps the visible crate body in
+    //   <T.Group name="Cube002" position={[0, 2.95, -0.2]} scale={1.21}>
+    //     <T.Mesh name="Cube001" .../>
+    //     <T.Mesh name="Cube001_1" .../>
+    //   </T.Group>
+    // PLUS dozens of `Cube002_cell*` shard meshes at random positions
+    // (invisible by default — opacity=1-mainBodyOpacity — but their bboxes
+    // are still walked by Three.js setFromObject). We measure the Cube002
+    // GROUP specifically (not the meshes inside, not the whole group with
+    // shards), because:
+    //   1. setFromObject walks descendants and inherits the group's
+    //      [0, 2.95, -0.2] + scale 1.21 — captures the actual visible
+    //      crate placement.
+    //   2. findPrimaryMesh skips groups (only `isMesh` true), so we use
+    //      Object3D.getObjectByName here instead. See threejs.org docs
+    //      for getObjectByName: walks all descendants by name.
+    //   3. Measuring `group` (the outer bind:ref) would union shard
+    //      positions and inflate modelHeight ~3-4x.
+    const primary = group.getObjectByName("Cube002") ?? group;
 
-    // Take the bbox in the GROUP'S local frame: setFromObject gives world
-    // coords (it walks each child's matrixWorld), then subtract the group's
-    // own world position. With group.scale temporarily reset to (1,1,1) this
-    // delta IS the local-frame bbox extent — invariant to the outer crate
-    // group's world Y (which is what broke the previous world-coord approach).
+    // Take the bbox in the bind:ref group's LOCAL frame. setFromObject
+    // gives world coords (walks each child's matrixWorld); subtracting the
+    // bound group's own world position yields local-frame extent — invariant
+    // to the outer crate's world Y (top row vs bottom row).
     group.updateMatrixWorld(true);
     const worldBox = new THREE.Box3().setFromObject(primary);
     const worldCenter = worldBox.getCenter(new THREE.Vector3());
@@ -365,8 +374,8 @@
     modelHeight = worldSize.y;
     modelDepth = worldSize.z;
 
-    // Local-frame center Y at scale=1. The runtime scale (height/modelHeight)
-    // is applied below to land containerYOffset in the parent's parent-frame.
+    // Local-frame center Y at scale=1. Runtime scale (height/modelHeight)
+    // is applied below to land containerYOffset in parent-frame units.
     const localCenterY = worldCenter.y - groupWorldPos.y;
     const scaleY = height / Math.max(modelHeight, 1e-6);
     modelCenterY = localCenterY * scaleY;
