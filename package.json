@@ -2,6 +2,7 @@
   "name": "zachhandley-monorepo",
   "private": true,
   "version": "0.0.0",
+  "packageManager": "pnpm@11.8.0",
   "scripts": {
     "dev": "pnpm --filter website dev",
     "build": "pnpm --filter website build",
