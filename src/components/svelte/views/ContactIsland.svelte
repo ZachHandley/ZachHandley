@@ -38,7 +38,7 @@
   <div class="mx-auto max-w-3xl px-6 pt-12 pb-24 md:pt-20">
     <header class="mb-10">
       <p class="font-mono text-xs uppercase tracking-[0.2em] text-accent">
-        ~/zachhandley/contact
+        ~/zachhandley/contact $ echo $EMAIL
       </p>
       <h1 class="mt-2 font-mono text-4xl font-medium leading-tight text-fg md:text-5xl">
         let's build something
@@ -73,7 +73,7 @@
             width={14}
             height={14}
           />
-          {copied ? "copied" : "copy"}
+          {copied ? "copied" : "copy email"}
         </button>
       </div>
     </section>

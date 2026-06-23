@@ -57,7 +57,8 @@
   <a
     href="/"
     aria-label="zachhandley — home"
-    class="mb-2 inline-flex h-9 w-9 items-center justify-center rounded-md font-mono text-sm font-medium text-fg hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+    title="home"
+    class="mb-2 inline-flex h-11 w-11 items-center justify-center rounded-md font-mono text-sm font-medium text-fg hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
   >
     zh
   </a>

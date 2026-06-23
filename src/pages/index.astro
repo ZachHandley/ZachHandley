@@ -6,6 +6,6 @@ import { fetchPublishedLinks } from "~/server/fetchPublishedLinks";
 const links = await fetchPublishedLinks();
 ---
 
-<Layout title="zachhandley" description="rust + typescript + edge — what I'm shipping and how to reach me.">
+<Layout title="zachhandley — software that ships" description="rust + typescript + edge — what I'm shipping and how to reach me.">
   <HomeIsland client:load {links} />
 </Layout>

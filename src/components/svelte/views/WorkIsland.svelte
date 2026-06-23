@@ -43,7 +43,7 @@
   <div class="mx-auto max-w-5xl px-6 pt-12 pb-24 md:pt-20">
     <header class="mb-10">
       <p class="font-mono text-xs uppercase tracking-[0.2em] text-accent">
-        ~/zachhandley/work
+        ~/zachhandley/work $ ls --featured
       </p>
       <h1 class="mt-2 font-mono text-4xl font-medium leading-tight text-fg md:text-5xl">
         featured projects
@@ -55,7 +55,18 @@
     </header>
 
     {#if projects.length === 0}
-      <p class="font-mono text-sm text-fg-muted">no featured projects yet — check back soon.</p>
+      <div class="rounded-lg border border-border bg-bg-elev p-6">
+        <h2 class="font-mono text-lg text-fg">nothing featured yet</h2>
+        <p class="mt-2 font-sans text-sm leading-relaxed text-fg-muted">
+          Between launches. Browse every public project on the code page.
+        </p>
+        <a
+          href="/code"
+          class="mt-4 inline-flex min-h-11 items-center gap-2 rounded-md border border-border px-3 py-1.5 font-mono text-xs text-fg-muted hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          open code →
+        </a>
+      </div>
     {:else}
       <ul class="grid gap-4 md:grid-cols-2">
         {#each projects as p (p.name)}
@@ -103,7 +114,7 @@
                     style="transition: color var(--dur-fast), border-color var(--dur-fast);"
                   >
                     <Icon icon="lucide:github" width={14} height={14} />
-                    repo
+                    view repo
                   </a>
                 {/if}
                 {#if p.url && p.url !== p.repoUrl}
@@ -114,7 +125,7 @@
                     class="inline-flex min-h-9 items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 font-mono text-xs text-accent-fg hover:bg-accent-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                     style="transition: background-color var(--dur-fast) var(--ease-out);"
                   >
-                    live
+                    open live site
                     <Icon icon="lucide:external-link" width={14} height={14} />
                   </a>
                 {/if}
