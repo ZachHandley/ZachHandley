@@ -192,12 +192,6 @@
   let resetTimeout: ReturnType<typeof setTimeout> | null = null;
   let actualAnimationDuration = $derived(explodeDuration);
 
-  // Content Z position - store as state instead of derived
-  let contentZOffset = $state(0.3);
-
-  // Dynamic container offsets based on crate dimensions (using $derived for reactive computation)
-  let containerZOffset = $derived(depth * 0.4);
-
   // ---- measurement state ----
   // All content positioning is driven by these measured bboxes, not by guess
   // percentages. Each piece stays at opacity 0 until its bbox is known.
@@ -209,10 +203,34 @@
   let titleTextMesh = $state<THREE.Mesh | null>(null);
   let domainTextMesh = $state<THREE.Mesh | null>(null);
 
-  // Y center of the scaled crate model's primary mesh, relative to the parent
-  // group. Used to derive containerYOffset so the model sits centered at parent
-  // Y=0 — eliminating the legacy `height * -0.7` guess.
-  let modelCenterY = $state<number | null>(null);
+  // Raw mesh-local measurements at scale=1. These are properties of the GLB
+  // geometry, invariant across prop changes and instance lifetime. Written
+  // exactly once by the boundingBoxTask when Cube002 mounts. All position
+  // values derive reactively from these + current width/height/depth props,
+  // so changing prop dims (category → link-grid view → back button) updates
+  // the layout instead of freezing at first-measurement values.
+  let localCenterY = $state<number | null>(null);
+  let localMaxZ = $state<number | null>(null);
+
+  // Derived scales — used both by getCalculatedScale() and by the offset
+  // derivations below. When width/height/depth change, these recompute.
+  const scaleY = $derived(height / Math.max(modelHeight, 1e-6));
+  const scaleZ = $derived(depth / Math.max(modelDepth, 1e-6));
+
+  // Scaled model center Y in the model group's local frame. NULL until the
+  // bbox has been measured; downstream uses fall back gracefully.
+  const modelCenterY = $derived(localCenterY === null ? null : localCenterY * scaleY);
+
+  // Dynamic container offsets.
+  const containerZOffset = $derived(depth * 0.4);
+
+  // Content Z = front face of the model in the outer crate's local frame,
+  // plus 0.03 z-fight margin. Chain: outer → model group at (0, *, containerZOffset)
+  // with scaleZ → Cube002 children with local max.z = localMaxZ. So
+  // outer-local front face = containerZOffset + scaleZ * localMaxZ.
+  const contentZOffset = $derived(
+    localMaxZ === null ? 0.3 : containerZOffset + scaleZ * localMaxZ + 0.03,
+  );
 
   const inlineMeasured = $derived(
     iconLocalSize !== null && textLocalSize !== null && modelCenterY !== null,
@@ -340,47 +358,33 @@
     //     <T.Mesh name="Cube001" .../>
     //     <T.Mesh name="Cube001_1" .../>
     //   </T.Group>
-    // findPrimaryMesh skips groups (only `isMesh` true), so we use
-    // Object3D.getObjectByName which walks all descendants by name.
+    // Measure in PURE LOCAL FRAME — bypass matrixWorld entirely. The
+    // GLTF animation mixer (useGltfAnimations in CrateExplode.svelte:165)
+    // mutates intermediate matrixWorld values once the explode/reassemble
+    // mixer has been primed; setFromObject(cube002) then returns world
+    // coords whose offset doesn't match the bind:ref group's world
+    // position, and the subtraction-based local-frame derivation breaks.
+    // Geometry data is immutable across animations, so reading
+    // cube001.geometry.boundingBox + Cube002.position/scale gives the
+    // same result for every crate instance, animation state, and
+    // matrix-tree freshness.
     const cube002 = group.getObjectByName("Cube002");
-    if (!cube002 || cube002.children.length === 0) return true; // retry next frame
+    if (!cube002 || cube002.children.length === 0) return true;
+    const cube001 = group.getObjectByName("Cube001") as THREE.Mesh | null;
+    if (!cube001 || !cube001.geometry) return true;
+    if (!cube001.geometry.boundingBox) cube001.geometry.computeBoundingBox();
+    const bb = cube001.geometry.boundingBox;
+    if (!bb || bb.isEmpty()) return true;
 
-    // Temporarily reset scale to measure in local-frame units.
-    const originalScale = group.scale.clone();
-    group.scale.set(1, 1, 1);
+    const c2sx = cube002.scale.x;
+    const c2sy = cube002.scale.y;
+    const c2sz = cube002.scale.z;
 
-    // setFromObject walks each descendant's matrixWorld; subtracting the
-    // bound group's world position yields local-frame extent — invariant to
-    // the outer crate's world Y (top row vs bottom row).
-    group.updateMatrixWorld(true);
-    const worldBox = new THREE.Box3().setFromObject(cube002);
-    if (worldBox.isEmpty()) {
-      group.scale.copy(originalScale);
-      return true; // still racing — try again next frame
-    }
-    const worldCenter = worldBox.getCenter(new THREE.Vector3());
-    const worldSize = worldBox.getSize(new THREE.Vector3());
-    const groupWorldPos = group.getWorldPosition(new THREE.Vector3());
-
-    modelWidth = worldSize.x;
-    modelHeight = worldSize.y;
-    modelDepth = worldSize.z;
-
-    // Local-frame center Y at scale=1. Runtime scale (height/modelHeight)
-    // is applied below to land containerYOffset in parent-frame units.
-    const localCenterY = worldCenter.y - groupWorldPos.y;
-    const scaleY = height / Math.max(modelHeight, 1e-6);
-    modelCenterY = localCenterY * scaleY;
-
-    // Front-face Z of the visible model in the OUTER crate group's local
-    // frame. Chain: outer → model group at (0, containerYOffset, containerZOffset)
-    // with scale=(*, *, scaleZ) → Cube002 children whose max.z in model-group's
-    // local frame is `localMaxZ`. Outer-local Z of the visible front face is
-    // `containerZOffset + scaleZ * localMaxZ`. Content sits +0.03 in front
-    // (z-fight margin).
-    const localMaxZ = worldBox.max.z - groupWorldPos.z;
-    const scaleZ = depth / Math.max(modelDepth, 1e-6);
-    contentZOffset = containerZOffset + localMaxZ * scaleZ + 0.03;
+    modelWidth = (bb.max.x - bb.min.x) * c2sx;
+    modelHeight = (bb.max.y - bb.min.y) * c2sy;
+    modelDepth = (bb.max.z - bb.min.z) * c2sz;
+    localCenterY = ((bb.min.y + bb.max.y) / 2) * c2sy + cube002.position.y;
+    localMaxZ = bb.max.z * c2sz + cube002.position.z;
 
     // Clone materials for this instance to prevent shared opacity issues.
     if (!materialsCloned) {
@@ -403,7 +407,6 @@
       materialsCloned = true;
     }
 
-    group.scale.copy(originalScale);
     boundingBoxCalculated = true;
     return false;
   });
