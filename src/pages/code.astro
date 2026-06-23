@@ -1,0 +1,11 @@
+---
+import Layout from "~/layouts/Layout.astro";
+import CodeIsland from "~/components/svelte/views/CodeIsland.svelte";
+import { fetchPublishedLinks } from "~/server/fetchPublishedLinks";
+
+const links = await fetchPublishedLinks();
+---
+
+<Layout title="code — zachhandley" description="every public project I maintain, filterable by language.">
+  <CodeIsland client:load {links} />
+</Layout>

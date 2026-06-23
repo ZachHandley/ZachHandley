@@ -1,0 +1,11 @@
+---
+import Layout from "~/layouts/Layout.astro";
+import WorkIsland from "~/components/svelte/views/WorkIsland.svelte";
+import { fetchPublishedLinks } from "~/server/fetchPublishedLinks";
+
+const links = await fetchPublishedLinks();
+---
+
+<Layout title="work — zachhandley" description="featured open-source projects, refreshed from GitHub every six hours.">
+  <WorkIsland client:load {links} />
+</Layout>
