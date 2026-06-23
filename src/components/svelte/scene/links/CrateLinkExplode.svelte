@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { T, useThrelte } from "@threlte/core";
+  import { T, useThrelte, useTask } from "@threlte/core";
   import { Text, useGltf } from "@threlte/extras";
   import CrateExplode from "../../models/CrateExplode.svelte";
   import * as THREE from "three";
@@ -330,42 +330,44 @@
   // CrateExplode component reference for animations
   let crateExplodeRef: any = null;
 
-  // Calculate bounding box and content positions reactively
-  $effect(() => {
-    if (!group || !$gltf) return;
-
-    if (boundingBoxCalculated) return;
-
-    // Temporarily reset scale to measure
-    const originalScale = group.scale.clone();
-    group.scale.set(1, 1, 1);
+  // Calculate bounding box and content positions on every frame until the
+  // CrateExplode child has actually mounted Cube002 into the scene tree.
+  // Why useTask instead of $effect:
+  //   This component spawns a child <CrateExplode> that loads the same GLB
+  //   via its own useGltf + {#await gltf}{:then} render block. There's no
+  //   synchronous signal from "our $gltf resolved" to "child has rendered
+  //   Cube002 into our group". An $effect that fires on $gltf can run BEFORE
+  //   the child's {:then} block, in which case getObjectByName returns null,
+  //   setFromObject returns an empty Box3 (Infinity bounds), scaleY blows up,
+  //   and crates render at huge scale off-screen. useTask polls every frame
+  //   until the bbox is real, then stops.
+  const boundingBoxTask = useTask(() => {
+    if (!group || !$gltf) return true;
+    if (boundingBoxCalculated) return false;
 
     // CrateExplode.svelte:319 wraps the visible crate body in
     //   <T.Group name="Cube002" position={[0, 2.95, -0.2]} scale={1.21}>
     //     <T.Mesh name="Cube001" .../>
     //     <T.Mesh name="Cube001_1" .../>
     //   </T.Group>
-    // PLUS dozens of `Cube002_cell*` shard meshes at random positions
-    // (invisible by default — opacity=1-mainBodyOpacity — but their bboxes
-    // are still walked by Three.js setFromObject). We measure the Cube002
-    // GROUP specifically (not the meshes inside, not the whole group with
-    // shards), because:
-    //   1. setFromObject walks descendants and inherits the group's
-    //      [0, 2.95, -0.2] + scale 1.21 — captures the actual visible
-    //      crate placement.
-    //   2. findPrimaryMesh skips groups (only `isMesh` true), so we use
-    //      Object3D.getObjectByName here instead. See threejs.org docs
-    //      for getObjectByName: walks all descendants by name.
-    //   3. Measuring `group` (the outer bind:ref) would union shard
-    //      positions and inflate modelHeight ~3-4x.
-    const primary = group.getObjectByName("Cube002") ?? group;
+    // findPrimaryMesh skips groups (only `isMesh` true), so we use
+    // Object3D.getObjectByName which walks all descendants by name.
+    const cube002 = group.getObjectByName("Cube002");
+    if (!cube002 || cube002.children.length === 0) return true; // retry next frame
 
-    // Take the bbox in the bind:ref group's LOCAL frame. setFromObject
-    // gives world coords (walks each child's matrixWorld); subtracting the
-    // bound group's own world position yields local-frame extent — invariant
-    // to the outer crate's world Y (top row vs bottom row).
+    // Temporarily reset scale to measure in local-frame units.
+    const originalScale = group.scale.clone();
+    group.scale.set(1, 1, 1);
+
+    // setFromObject walks each descendant's matrixWorld; subtracting the
+    // bound group's world position yields local-frame extent — invariant to
+    // the outer crate's world Y (top row vs bottom row).
     group.updateMatrixWorld(true);
-    const worldBox = new THREE.Box3().setFromObject(primary);
+    const worldBox = new THREE.Box3().setFromObject(cube002);
+    if (worldBox.isEmpty()) {
+      group.scale.copy(originalScale);
+      return true; // still racing — try again next frame
+    }
     const worldCenter = worldBox.getCenter(new THREE.Vector3());
     const worldSize = worldBox.getSize(new THREE.Vector3());
     const groupWorldPos = group.getWorldPosition(new THREE.Vector3());
@@ -380,17 +382,15 @@
     const scaleY = height / Math.max(modelHeight, 1e-6);
     modelCenterY = localCenterY * scaleY;
 
-    // Ensure content appears in front of crate. 0.03 is enough margin to avoid
-    // z-fighting with the textured front face for SDF text/icons.
+    // Ensure content appears in front of crate. 0.03 is enough margin to
+    // avoid z-fighting with the textured front face for SDF text/icons.
     contentZOffset = modelDepth / 2 + 0.03;
 
-    // Clone materials for this instance to prevent shared material issues
+    // Clone materials for this instance to prevent shared opacity issues.
     if (!materialsCloned) {
-      console.log(`🎨 Cloning materials for '${title}' to prevent shared opacity issues`);
       group.traverse((object) => {
         if (object instanceof THREE.Mesh && object.material) {
           if (Array.isArray(object.material)) {
-            // Clone each material in the array
             const clonedMaterialArray = object.material.map((mat) => {
               const cloned = mat.clone();
               clonedMaterials.push(cloned);
@@ -398,7 +398,6 @@
             });
             object.material = clonedMaterialArray;
           } else {
-            // Clone single material
             const cloned = object.material.clone();
             clonedMaterials.push(cloned);
             object.material = cloned;
@@ -406,12 +405,11 @@
         }
       });
       materialsCloned = true;
-      console.log(`✅ Cloned ${clonedMaterials.length} materials for '${title}'`);
     }
 
-    // Restore scale
     group.scale.copy(originalScale);
     boundingBoxCalculated = true;
+    return false;
   });
 
   // Simple animation functions using CrateExplode component
