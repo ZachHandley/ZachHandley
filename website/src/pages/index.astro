@@ -23,7 +23,7 @@ const links = rawLinks.map((doc) => ({
 const isAdmin = (await requireAdmin(Astro.cookies)).ok;
 ---
 
-<Layout title="Home" description="Use Steve the dragon to navigate my site">
+<Layout title="Home" description="Use Steve the dragon to navigate my site" lockViewport>
   <main class="w-full min-h-screen min-w-screen relative bg-gray-900">
     <LinkApp client:only="svelte" {links} {isAdmin} />
   </main>
