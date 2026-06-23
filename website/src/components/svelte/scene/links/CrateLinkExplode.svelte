@@ -10,7 +10,6 @@
   import { fetchIconData } from "~/utils/iconify";
   import { createSvgMesh, calculateVisualScale } from "~/utils/svgUtils";
   import type { DRACOLoader } from "three/examples/jsm/Addons.js";
-  import { perspectiveCenterShift } from "~/components/svelte/utils/viewportLayout.svelte";
   import {
     measureObject3D,
     measureTroikaText,
@@ -268,21 +267,12 @@
     return { titleY, iconY, domainY };
   });
 
-  // ---- perspective center shift (off-axis content) ----
-  // ENVIRONMENT_SCALE matches BaseScene; positionArray is in local (pre-scale) coords.
-  const ENV_SCALE = 1.5;
-  const contentShift = $derived.by(() => {
-    const cam = camera.current as THREE.PerspectiveCamera | null;
-    if (!cam) return { x: 0, y: 0 };
-    const targetWorld = {
-      x: positionArray[0] * ENV_SCALE,
-      y: positionArray[1] * ENV_SCALE,
-      z: positionArray[2] * ENV_SCALE,
-    };
-    const contentZWorld = targetWorld.z + contentZOffset * ENV_SCALE;
-    const s = perspectiveCenterShift(cam, targetWorld, contentZWorld);
-    return { x: s.x / ENV_SCALE, y: s.y / ENV_SCALE };
-  });
+  // No parallax correction needed: the content group is a child of the same
+  // outer crate group as the model. They share a single world transform and
+  // project to the same screen coordinates by construction. The previous
+  // `perspectiveCenterShift` math computed a fictitious off-axis offset
+  // (worse, against an `ENV_SCALE`-shifted target that StackedLinks doesn't
+  // live under), which was the entire source of the horizontal label drift.
 
   function onInlineTextSync() {
     if (!inlineTextMesh) return;
@@ -382,9 +372,15 @@
     const scaleY = height / Math.max(modelHeight, 1e-6);
     modelCenterY = localCenterY * scaleY;
 
-    // Ensure content appears in front of crate. 0.03 is enough margin to
-    // avoid z-fighting with the textured front face for SDF text/icons.
-    contentZOffset = modelDepth / 2 + 0.03;
+    // Front-face Z of the visible model in the OUTER crate group's local
+    // frame. Chain: outer → model group at (0, containerYOffset, containerZOffset)
+    // with scale=(*, *, scaleZ) → Cube002 children whose max.z in model-group's
+    // local frame is `localMaxZ`. Outer-local Z of the visible front face is
+    // `containerZOffset + scaleZ * localMaxZ`. Content sits +0.03 in front
+    // (z-fight margin).
+    const localMaxZ = worldBox.max.z - groupWorldPos.z;
+    const scaleZ = depth / Math.max(modelDepth, 1e-6);
+    contentZOffset = containerZOffset + localMaxZ * scaleZ + 0.03;
 
     // Clone materials for this instance to prevent shared opacity issues.
     if (!materialsCloned) {
@@ -1214,19 +1210,13 @@
   </T.Group>
 
   <!-- Content Container -->
-  <!-- Content sits at outer-frame Y=0 directly. The MODEL group cancels its
-       internal Cube002 offset via `containerYOffset` (scale × Cube002.position
-       internally lands at outer-frame Y=0). The content group does NOT need
-       the same offset — its title/icon/domain layout is already centered
-       around the group's own origin, which IS outer-frame Y=0. Applying the
-       model's offset here drops content below the crate by ~modelCenterY units. -->
+  <!-- Anchored at outer-frame (0, 0, contentZOffset). No X/Y offset: model
+       and content share this outer group, so their screen projection
+       coincides automatically. contentZOffset is computed from the model's
+       measured front-face Z + 0.03 z-fight margin (see boundingBoxTask). -->
   {#if contentVisible}
     <T.Group
-      position={[
-        link.inlineIcon ? 0 : contentShift.x,
-        link.inlineIcon ? 0 : contentShift.y,
-        contentZOffset,
-      ]}
+      position={[0, 0, contentZOffset]}
       rotation={[0, 0, 0]}
       name={`crate-content-${columnKey}-${index}`}
       onclick={handleClick}
@@ -1303,7 +1293,6 @@
           {:else if faviconLoaded && faviconTexture}
             <T.Mesh
               scale={[getFaviconScale()[0], getFaviconScale()[1], getFaviconScale()[2]]}
-              position.y={-height / 3}
             >
               <T.PlaneGeometry args={[1, 1, 1]} />
               <T.MeshStandardMaterial
