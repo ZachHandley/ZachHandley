@@ -4,7 +4,14 @@ packages:
   - scripts
 
 allowBuilds:
+  '@parcel/watcher': true
+  '@swc/core': true
+  '@tailwindcss/oxide': true
+  esbuild: true
+  sharp: true
   workerd: true
 
-onlyBuiltDependencies:
-  - workerd
+overrides:
+  three: ^0.184.0
+
+confirmModulesPurge: false

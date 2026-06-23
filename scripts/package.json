@@ -1,0 +1,16 @@
+{
+  "name": "@zachhandley/scripts",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "description": "Repo-level automation: featured-projects sync, etc.",
+  "scripts": {
+    "sync:featured": "node sync-featured.mjs",
+    "sync:featured:dry": "node sync-featured.mjs --dry-run"
+  },
+  "packageManager": "pnpm@10.33.4",
+  "dependencies": {
+    "@octokit/rest": "^22.0.1",
+    "node-appwrite": "^23.1.0"
+  }
+}

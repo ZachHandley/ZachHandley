@@ -343,16 +343,34 @@
     // Measure the primary mesh of the crate (filters out explode-piece geometry).
     // Falls back to the largest mesh by bbox volume if the named match is missing.
     const primary = findPrimaryMesh(group, { name: "Cube200" }) ?? group;
-    const { size, center: rawCenter } = measureObject3D(primary);
 
-    modelWidth = size.x;
-    modelHeight = size.y;
-    modelDepth = size.z;
+    // Use the mesh's LOCAL geometry bbox rather than `measureObject3D` (which
+    // returns the WORLD bbox via Box3.setFromObject). World measurement folds
+    // in the parent crate group's world Y position — that varies per category
+    // (top row ≈ y=6.3, bottom row ≈ y=1.7), so the same model produced a
+    // different `modelCenterY` per instance and `containerYOffset` decoupled
+    // the model from its title/icon content for the second row of categories.
+    let localCenterY = 0;
+    if (primary instanceof THREE.Mesh && primary.geometry) {
+      if (!primary.geometry.boundingBox) primary.geometry.computeBoundingBox();
+      const bb = primary.geometry.boundingBox!;
+      modelWidth = bb.max.x - bb.min.x;
+      modelHeight = bb.max.y - bb.min.y;
+      modelDepth = bb.max.z - bb.min.z;
+      localCenterY = (bb.min.y + bb.max.y) / 2;
+    } else {
+      // Fallback (group hit, not a mesh) — keep the old world-bbox path.
+      const m = measureObject3D(primary);
+      modelWidth = m.size.x;
+      modelHeight = m.size.y;
+      modelDepth = m.size.z;
+      localCenterY = m.center.y;
+    }
 
     // Capture the scaled center Y so `containerYOffset` lands the visible bbox
     // at parent Y=0 — replacing the legacy `height * -0.7` guess.
     const scaleY = height / Math.max(modelHeight, 1e-6);
-    modelCenterY = rawCenter.y * scaleY;
+    modelCenterY = localCenterY * scaleY;
 
     // Ensure content appears in front of crate. 0.03 is enough margin to avoid
     // z-fighting with the textured front face for SDF text/icons.

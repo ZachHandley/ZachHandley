@@ -1,0 +1,77 @@
+# === Default ===
+* text=auto eol=lf
+
+# === Force-LF for shell / config / source ===
+*.sh        text eol=lf
+*.bash      text eol=lf
+*.zsh       text eol=lf
+*.fish      text eol=lf
+*.ps1       text eol=crlf
+*.bat       text eol=crlf
+*.cmd       text eol=crlf
+
+# === Source ===
+*.ts        text eol=lf diff=typescript
+*.tsx       text eol=lf diff=typescript
+*.js        text eol=lf diff=javascript
+*.jsx       text eol=lf diff=javascript
+*.mjs       text eol=lf diff=javascript
+*.cjs       text eol=lf diff=javascript
+*.svelte    text eol=lf
+*.astro     text eol=lf
+*.vue       text eol=lf
+*.py        text eol=lf diff=python
+*.rs        text eol=lf diff=rust
+*.go        text eol=lf diff=golang
+*.toml      text eol=lf
+*.yaml      text eol=lf
+*.yml       text eol=lf
+*.json      text eol=lf
+*.md        text eol=lf
+
+# === Generated / vendored — exclude from language stats and diffs ===
+**/*.lock             linguist-generated=true
+**/dist/**            linguist-generated=true -diff
+**/build/**           linguist-generated=true -diff
+**/target/**          linguist-generated=true -diff
+**/.astro/**          linguist-generated=true -diff
+**/.wrangler/**       linguist-generated=true -diff
+**/.svelte-kit/**     linguist-generated=true -diff
+**/node_modules/**    linguist-vendored=true
+**/.venv/**           linguist-vendored=true
+**/vendor/**          linguist-vendored=true
+**/coverage/**        linguist-generated=true -diff
+**/__generated__/**   linguist-generated=true -diff
+*.min.js              linguist-generated=true -diff
+*.min.css             linguist-generated=true -diff
+*.map                 linguist-generated=true -diff
+
+# === Binaries ===
+*.png       binary
+*.jpg       binary
+*.jpeg      binary
+*.gif       binary
+*.webp      binary
+*.avif      binary
+*.ico       binary
+*.pdf       binary
+*.zip       binary
+*.tar.gz    binary
+*.7z        binary
+*.wasm      binary
+*.so        binary
+*.dylib     binary
+*.dll       binary
+*.exe       binary
+
+# === 3D / audio / video assets ===
+*.glb       binary
+*.gltf      binary
+*.fbx       binary
+*.obj       binary
+*.wav       binary
+*.mp3       binary
+*.ogg       binary
+*.mp4       binary
+*.mov       binary
+*.webm      binary

@@ -7,8 +7,7 @@
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",
-    "typecheck": "astro check",
-    "seed:links": "node --env-file=.env scripts/seed-links.mjs"
+    "typecheck": "astro check"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^13.2.2",

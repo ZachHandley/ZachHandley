@@ -8,11 +8,6 @@
     "preview": "pnpm --filter website preview",
     "typecheck": "pnpm -r typecheck"
   },
-  "pnpm": {
-    "overrides": {
-      "three": "^0.184.0"
-    }
-  },
   "devDependencies": {
     "prettier": "^3.8.3",
     "prettier-plugin-astro": "^0.14.1",

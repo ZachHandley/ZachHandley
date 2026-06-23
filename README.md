@@ -12,22 +12,26 @@ Founder/CTO @ **[Socialaize](https://socialaize.com)** · Founder @ **[Black Lea
 - **[Black Leaf Digital](https://blackleafdigital.com)** — agency / consulting since 2019.
 - **[zachhandley.com](https://github.com/zachhandley/zachhandley)** — this site. Threlte/Svelte 3D scene + Appwrite-backed link CMS on Cloudflare Workers. Source ↗.
 
-## Recent Rust
+## Rust
 
-- **[ELID](https://github.com/zachhandley/ELID)** — sortable hash IDs for vector embeddings: ULID-shaped, but the IDs preserve "closeness" so neighbours sort near each other.
-- **[Blazen](https://github.com/zachhandley/Blazen)** — workflow & event-driven orchestration for agentic flows (works for any workflow).
-- **[FakeNotify](https://github.com/zachhandley/FakeNotify)** — inotify-shaped FS events for NFS mounts, because real inotify doesn't reach there.
-- **[ZVD](https://github.com/zachhandley/ZVD)** — FFmpeg, in Rust.
-- **[ZSync](https://github.com/zachhandley/ZSync)** — central-server file sync platform with SSH key management.
-- **[Z3Fungi](https://github.com/zachhandley/Z3Fungi)** — distributed caching layer for S3.
+<!-- featured:rust:start -->
+- **[ELID](https://github.com/zachhandley/ELID)** — ELID is based on ULID, except for vector embeddings -- the general idea is, what if we had a way to represent a vector as a sortable hash that was also similar in "closeness" to other ID's on the same dimension, created from embeddings.
+- **[Blazen](https://github.com/zachhandley/Blazen)** — Blazen is a workflow/event based orchestration system for agentic flows, but can be used for workflows of any kind.
+- **[FakeNotify](https://github.com/zachhandley/FakeNotify)** — inotify for FS events doesn't work on NFS mounts, and that's annoying, so this emulates them.
+<!-- featured:rust:end -->
 
-## Open source you might already use
+## TypeScript
 
-- **[AppwriteUtils](https://github.com/zachhandley/AppwriteUtils)** ⭐30 — migrations + dev-ergonomics toolkit for Appwrite. (Powers this site's schema.)
-- **[ez-i18n](https://github.com/zachhandley/ez-i18n)** ⭐7 — tiny i18n with first-class SSR.
-- **[ZAstroWebsockets](https://github.com/zachhandley/ZAstroWebsockets)** — Astro Node + Cloudflare SSR adapters with WebSocket server support.
-- **[ContentShield](https://github.com/zachhandley/ContentShield)** — multilingual profanity check.
-- **[amplify-astro-adapter](https://github.com/zachhandley/amplify-astro-adapter)** — AWS Amplify adapter for modern Astro (`GetEnv` + session support).
+<!-- featured:typescript:start -->
+- **[AppwriteUtils](https://github.com/zachhandley/AppwriteUtils)** ⭐30 — Migrations code for Appwrite.
+- **[ez-i18n](https://github.com/zachhandley/ez-i18n)** ⭐7 — i18n in typescript with SSR support.
+- **[ZAstroWebsockets](https://github.com/zachhandley/ZAstroWebsockets)** — A sort-of-fork / side-by-side copy of Astro's Node and Cloudflare (I can do Deno if people request it but I am inherently lazy) SSR runners with WebSocket Server Support.
+<!-- featured:typescript:end -->
+
+> The two blocks above are regenerated from Appwrite by
+> [`.github/workflows/sync-featured.yml`](./.github/workflows/sync-featured.yml).
+> Curate at `/admin`; the workflow refreshes descriptions and unfeatures
+> repos that go private.
 
 ## Stack
 
