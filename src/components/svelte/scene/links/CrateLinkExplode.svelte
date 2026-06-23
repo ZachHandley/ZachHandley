@@ -340,35 +340,34 @@
     const originalScale = group.scale.clone();
     group.scale.set(1, 1, 1);
 
-    // Measure the primary mesh of the crate (filters out explode-piece geometry).
-    // Falls back to the largest mesh by bbox volume if the named match is missing.
-    const primary = findPrimaryMesh(group, { name: "Cube200" }) ?? group;
+    // Find the primary mesh. The CrateExplode glb names its main body "Cube002"
+    // (not "Cube200" — easy typo) and that mesh sits at a hardcoded internal
+    // transform (CrateExplode.svelte:319 → position={[0, 2.95, -0.2]} scale=1.21).
+    // Measuring `primary.geometry.boundingBox` alone misses that transform
+    // because geometry bounds are in the MESH'S local frame, not the group's.
+    const primary =
+      findPrimaryMesh(group, { name: "Cube002" }) ??
+      findPrimaryMesh(group, { name: "Cube200" }) ??
+      group;
 
-    // Use the mesh's LOCAL geometry bbox rather than `measureObject3D` (which
-    // returns the WORLD bbox via Box3.setFromObject). World measurement folds
-    // in the parent crate group's world Y position — that varies per category
-    // (top row ≈ y=6.3, bottom row ≈ y=1.7), so the same model produced a
-    // different `modelCenterY` per instance and `containerYOffset` decoupled
-    // the model from its title/icon content for the second row of categories.
-    let localCenterY = 0;
-    if (primary instanceof THREE.Mesh && primary.geometry) {
-      if (!primary.geometry.boundingBox) primary.geometry.computeBoundingBox();
-      const bb = primary.geometry.boundingBox!;
-      modelWidth = bb.max.x - bb.min.x;
-      modelHeight = bb.max.y - bb.min.y;
-      modelDepth = bb.max.z - bb.min.z;
-      localCenterY = (bb.min.y + bb.max.y) / 2;
-    } else {
-      // Fallback (group hit, not a mesh) — keep the old world-bbox path.
-      const m = measureObject3D(primary);
-      modelWidth = m.size.x;
-      modelHeight = m.size.y;
-      modelDepth = m.size.z;
-      localCenterY = m.center.y;
-    }
+    // Take the bbox in the GROUP'S local frame: setFromObject gives world
+    // coords (it walks each child's matrixWorld), then subtract the group's
+    // own world position. With group.scale temporarily reset to (1,1,1) this
+    // delta IS the local-frame bbox extent — invariant to the outer crate
+    // group's world Y (which is what broke the previous world-coord approach).
+    group.updateMatrixWorld(true);
+    const worldBox = new THREE.Box3().setFromObject(primary);
+    const worldCenter = worldBox.getCenter(new THREE.Vector3());
+    const worldSize = worldBox.getSize(new THREE.Vector3());
+    const groupWorldPos = group.getWorldPosition(new THREE.Vector3());
 
-    // Capture the scaled center Y so `containerYOffset` lands the visible bbox
-    // at parent Y=0 — replacing the legacy `height * -0.7` guess.
+    modelWidth = worldSize.x;
+    modelHeight = worldSize.y;
+    modelDepth = worldSize.z;
+
+    // Local-frame center Y at scale=1. The runtime scale (height/modelHeight)
+    // is applied below to land containerYOffset in the parent's parent-frame.
+    const localCenterY = worldCenter.y - groupWorldPos.y;
     const scaleY = height / Math.max(modelHeight, 1e-6);
     modelCenterY = localCenterY * scaleY;
 
@@ -1208,11 +1207,15 @@
   </T.Group>
 
   <!-- Content Container -->
+  <!-- Content rides the same `containerYOffset` as the model so the title /
+       icon / domain band stays vertically aligned with the visible crate.
+       Without this the label sat at parent Y=0 while the model floated at
+       Y=containerYOffset, giving the "crates up, labels down" desync. -->
   {#if contentVisible}
     <T.Group
       position={[
         link.inlineIcon ? 0 : contentShift.x,
-        link.inlineIcon ? 0 : contentShift.y,
+        containerYOffset + (link.inlineIcon ? 0 : contentShift.y),
         contentZOffset,
       ]}
       rotation={[0, 0, 0]}
