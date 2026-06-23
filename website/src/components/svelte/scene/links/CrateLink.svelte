@@ -163,9 +163,15 @@
   let inlineTextMesh = $state<THREE.Mesh | null>(null);
   let titleTextMesh = $state<THREE.Mesh | null>(null);
   let domainTextMesh = $state<THREE.Mesh | null>(null);
-  // Y center of the primary crate mesh after scaling. CrateLink's model sits
-  // at parent origin already; measurement just confirms that.
+  // Y center of the primary crate mesh after scaling — used to center the
+  // visible bbox at parent Y=0 and to anchor the content/label group at the
+  // same vertical offset as the model.
   let modelCenterY = $state<number | null>(null);
+
+  // Offset applied to BOTH model group and content group so the visible crate
+  // and its title/icon/domain ride the same anchor. Falls back to the legacy
+  // estimate during the first frame so the model doesn't snap.
+  const containerYOffset = $derived(modelCenterY !== null ? -modelCenterY : 0);
 
   const inlineMeasured = $derived(
     iconLocalSize !== null && textLocalSize !== null && modelCenterY !== null,
@@ -277,28 +283,24 @@
     const originalScale = group.scale.clone();
     group.scale.set(1, 1, 1);
 
-    // Measure the primary mesh of the crate (filters out decorative geometry).
-    // Use the LOCAL geometry bbox rather than `measureObject3D` (world bbox via
-    // Box3.setFromObject), because the world version folds in the parent crate's
-    // world Y position — that varies per category and decouples the crate model
-    // from its title/icon content for the bottom row of categories.
+    // Take the bbox in the GROUP'S local frame: setFromObject gives world
+    // coords, then subtract the group's own world position. With group.scale
+    // temporarily set to (1,1,1) this delta IS the local-frame bbox extent —
+    // invariant to the outer crate group's world Y and inclusive of any
+    // per-mesh transforms inside the model.
     const primary = findPrimaryMesh(group, { name: "Cube200" }) ?? group;
-    let localCenterY = 0;
-    if (primary instanceof THREE.Mesh && primary.geometry) {
-      if (!primary.geometry.boundingBox) primary.geometry.computeBoundingBox();
-      const bb = primary.geometry.boundingBox!;
-      modelWidth = bb.max.x - bb.min.x;
-      modelHeight = bb.max.y - bb.min.y;
-      modelDepth = bb.max.z - bb.min.z;
-      localCenterY = (bb.min.y + bb.max.y) / 2;
-    } else {
-      const m = measureObject3D(primary);
-      modelWidth = m.size.x;
-      modelHeight = m.size.y;
-      modelDepth = m.size.z;
-      localCenterY = m.center.y;
-    }
 
+    group.updateMatrixWorld(true);
+    const worldBox = new THREE.Box3().setFromObject(primary);
+    const worldCenter = worldBox.getCenter(new THREE.Vector3());
+    const worldSize = worldBox.getSize(new THREE.Vector3());
+    const groupWorldPos = group.getWorldPosition(new THREE.Vector3());
+
+    modelWidth = worldSize.x;
+    modelHeight = worldSize.y;
+    modelDepth = worldSize.z;
+
+    const localCenterY = worldCenter.y - groupWorldPos.y;
     const scaleY = height / Math.max(modelHeight, 1e-6);
     modelCenterY = localCenterY * scaleY;
 
@@ -744,10 +746,13 @@
   rotation={[rotationArray[0], rotationArray[1], rotationArray[2]]}
   name={`crate-link-${columnKey}-${index}`}
 >
-  <!-- Crate model container -->
+  <!-- Crate model container. Offset by containerYOffset so the visible mesh
+       bbox lands centered at parent Y=0; the content group below applies the
+       same offset so labels track the model. -->
   <T.Group
     bind:ref={group}
     scale={getCalculatedScale() as [number, number, number]}
+    position={[0, containerYOffset, 0]}
     {height}
     {width}
     {depth}
@@ -797,11 +802,13 @@
   </T.Group>
 
   <!-- Content Container -->
+  <!-- Content rides the same `containerYOffset` as the model so the title /
+       icon / domain band stays vertically aligned with the visible crate. -->
   {#if contentVisible}
     <T.Group
       position={[
         link.inlineIcon ? 0 : contentShift.x,
-        link.inlineIcon ? 0 : contentShift.y,
+        containerYOffset + (link.inlineIcon ? 0 : contentShift.y),
         contentZOffset,
       ]}
       rotation={[0, 0, 0]}
