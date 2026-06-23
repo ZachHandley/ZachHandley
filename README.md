@@ -9,6 +9,7 @@ Founder/CTO @ **[Socialaize](https://socialaize.com)** · Founder @ **[Black Lea
 ## What I'm shipping
 
 - **[Socialaize](https://socialaize.com)** — AI-powered social media management. Astro SSR + Vue 3 + Python AI workers, subscription billing, cross-platform scheduling & analytics.
+- **[Staryo](https://staryo.com)** — partnerships, payouts, and DMs for the creator economy.
 - **[Black Leaf Digital](https://blackleafdigital.com)** — agency / consulting since 2019.
 - **[zachhandley.com](https://github.com/zachhandley/zachhandley)** — this site. Threlte/Svelte 3D scene + Appwrite-backed link CMS on Cloudflare Workers. Source ↗.
 
