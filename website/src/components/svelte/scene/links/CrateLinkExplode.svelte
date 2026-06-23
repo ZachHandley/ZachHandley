@@ -1214,15 +1214,17 @@
   </T.Group>
 
   <!-- Content Container -->
-  <!-- Content rides the same `containerYOffset` as the model so the title /
-       icon / domain band stays vertically aligned with the visible crate.
-       Without this the label sat at parent Y=0 while the model floated at
-       Y=containerYOffset, giving the "crates up, labels down" desync. -->
+  <!-- Content sits at outer-frame Y=0 directly. The MODEL group cancels its
+       internal Cube002 offset via `containerYOffset` (scale × Cube002.position
+       internally lands at outer-frame Y=0). The content group does NOT need
+       the same offset — its title/icon/domain layout is already centered
+       around the group's own origin, which IS outer-frame Y=0. Applying the
+       model's offset here drops content below the crate by ~modelCenterY units. -->
   {#if contentVisible}
     <T.Group
       position={[
         link.inlineIcon ? 0 : contentShift.x,
-        containerYOffset + (link.inlineIcon ? 0 : contentShift.y),
+        link.inlineIcon ? 0 : contentShift.y,
         contentZOffset,
       ]}
       rotation={[0, 0, 0]}

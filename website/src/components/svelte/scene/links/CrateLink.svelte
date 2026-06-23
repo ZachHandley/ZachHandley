@@ -801,14 +801,15 @@
     {/await}
   </T.Group>
 
-  <!-- Content Container -->
-  <!-- Content rides the same `containerYOffset` as the model so the title /
-       icon / domain band stays vertically aligned with the visible crate. -->
+  <!-- Content Container — sits at outer-frame Y=0 (no containerYOffset).
+       The MODEL group's offset accounts for its internal mesh transform; the
+       content group is already centered around its own origin and lands at
+       outer-frame Y=0 alongside the model's visible center. -->
   {#if contentVisible}
     <T.Group
       position={[
         link.inlineIcon ? 0 : contentShift.x,
-        containerYOffset + (link.inlineIcon ? 0 : contentShift.y),
+        link.inlineIcon ? 0 : contentShift.y,
         contentZOffset,
       ]}
       rotation={[0, 0, 0]}
