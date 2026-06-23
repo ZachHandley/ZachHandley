@@ -278,15 +278,29 @@
     group.scale.set(1, 1, 1);
 
     // Measure the primary mesh of the crate (filters out decorative geometry).
+    // Use the LOCAL geometry bbox rather than `measureObject3D` (world bbox via
+    // Box3.setFromObject), because the world version folds in the parent crate's
+    // world Y position — that varies per category and decouples the crate model
+    // from its title/icon content for the bottom row of categories.
     const primary = findPrimaryMesh(group, { name: "Cube200" }) ?? group;
-    const { size, center: rawCenter } = measureObject3D(primary);
-
-    modelWidth = size.x;
-    modelHeight = size.y;
-    modelDepth = size.z;
+    let localCenterY = 0;
+    if (primary instanceof THREE.Mesh && primary.geometry) {
+      if (!primary.geometry.boundingBox) primary.geometry.computeBoundingBox();
+      const bb = primary.geometry.boundingBox!;
+      modelWidth = bb.max.x - bb.min.x;
+      modelHeight = bb.max.y - bb.min.y;
+      modelDepth = bb.max.z - bb.min.z;
+      localCenterY = (bb.min.y + bb.max.y) / 2;
+    } else {
+      const m = measureObject3D(primary);
+      modelWidth = m.size.x;
+      modelHeight = m.size.y;
+      modelDepth = m.size.z;
+      localCenterY = m.center.y;
+    }
 
     const scaleY = height / Math.max(modelHeight, 1e-6);
-    modelCenterY = rawCenter.y * scaleY;
+    modelCenterY = localCenterY * scaleY;
 
     // Ensure content appears in front of crate. 0.03 is enough margin to avoid
     // z-fighting with the textured front face for SDF text/icons.

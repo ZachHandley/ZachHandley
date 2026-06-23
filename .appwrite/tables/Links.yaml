@@ -85,3 +85,7 @@ columns:
     type: string
     size: 512
     required: false
+  - key: descriptionLocked
+    type: boolean
+    required: false
+    default: false

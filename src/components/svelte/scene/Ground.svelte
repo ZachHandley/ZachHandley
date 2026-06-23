@@ -345,12 +345,14 @@
     <T.MeshStandardMaterial color="#8b7355" />
   </T.Mesh>
 
-  <!-- Castle/Barracks at the back - positioned better for orthographic -->
+  <!-- Castle/Barracks at the back. Pulled deeper + shrunk vs the original
+       so the dragon reads as the focal point rather than the temple
+       (live scene had the temple dominating). -->
   <TempleSecondAge
     {dracoLoader}
-    position={[0, -1, -40]}
+    position={[0, -1, -80]}
     rotation={[0, 0, 0]}
-    scale={[20, 10, 10]}
+    scale={[12, 6, 6]}
   />
 
   <MountainGroup1
