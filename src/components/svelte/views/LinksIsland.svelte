@@ -6,6 +6,7 @@
 
   type Props = { links: Link[] };
   const { links }: Props = $props();
+  publicLinksStore.init(links);
 
   const ORDER = ["projects", "professional", "personal", "downloads"] as const;
   const LABEL: Record<string, string> = {

@@ -6,6 +6,7 @@
 
   type Props = { links: Link[] };
   const { links }: Props = $props();
+  publicLinksStore.init(links);
 
   const projects = $derived(
     publicLinksStore.links

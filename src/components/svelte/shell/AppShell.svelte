@@ -24,10 +24,13 @@
     children,
   }: Props = $props();
 
+  // Seed the store synchronously so SSR + first client paint see the data,
+  // not the empty-state placeholder. start() subscribes to live updates.
+  publicLinksStore.init(links);
+
   let stop: (() => Promise<void> | void) | null = null;
 
   onMount(() => {
-    publicLinksStore.init(links);
     publicLinksStore.start().then((s) => {
       stop = s;
     });
