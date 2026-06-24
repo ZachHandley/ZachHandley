@@ -8,9 +8,10 @@
   const { links }: Props = $props();
   publicLinksStore.init(links);
 
-  const ORDER = ["projects", "professional", "personal", "downloads"] as const;
+  const ORDER = ["projects", "code", "professional", "personal", "downloads"] as const;
   const LABEL: Record<string, string> = {
     projects: "projects",
+    code: "code",
     professional: "work",
     personal: "personal",
     downloads: "downloads",

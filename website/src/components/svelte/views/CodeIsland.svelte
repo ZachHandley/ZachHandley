@@ -10,7 +10,7 @@
 
   const projects = $derived(
     publicLinksStore.links
-      .filter((l: Link) => l.category === "projects" && !!l.url)
+      .filter((l: Link) => l.category === "code" && !!l.url)
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
   );
 
