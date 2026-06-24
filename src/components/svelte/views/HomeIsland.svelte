@@ -8,7 +8,7 @@
 
   const featured = $derived(
     links
-      .filter((l) => l.featured && l.category === "projects" && !!l.url)
+      .filter((l) => l.featured && !!l.url)
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
       .slice(0, 3),
   );
