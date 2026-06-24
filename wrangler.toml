@@ -1,7 +1,7 @@
 name = "zachhandley"
-compatibility_flags = [ "nodejs_compat" ]
 compatibility_date = "2025-06-15"
-pages_build_output_dir = "dist"
+compatibility_flags = ["nodejs_compat"]
+preview_urls = true
 
 [[kv_namespaces]]
 binding = "ZSESSION"
@@ -9,3 +9,6 @@ id = "df4e65f081824d0cb86b29afb2a83f60"
 
 [vars]
 NODE_VERSION = "22.11.0"
+
+[observability]
+enabled = true

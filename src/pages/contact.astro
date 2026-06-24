@@ -1,0 +1,11 @@
+---
+import Layout from "~/layouts/Layout.astro";
+import ContactIsland from "~/components/svelte/views/ContactIsland.svelte";
+import { fetchPublishedLinks } from "~/server/fetchPublishedLinks";
+
+const links = await fetchPublishedLinks();
+---
+
+<Layout title="contact — zachhandley" description="email, socials, and downloads. best reached by email.">
+  <ContactIsland client:load {links} />
+</Layout>

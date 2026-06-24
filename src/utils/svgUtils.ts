@@ -96,18 +96,24 @@ export function createSvgMesh(
   // Apply scale
   svgGroup.scale.set(scale, scale, scale);
 
-  // Center the SVG if requested
+  // Center the SVG if requested. ORDER MATTERS: flip Y BEFORE measuring +
+  // centering. SVG coords are Y-down, Three.js is Y-up; the `scale.y *= -1`
+  // reflects the mesh. Measuring before the flip and applying the flip after
+  // the position-fix reflects the already-centered mesh around its new
+  // origin, leaving the visible bbox center at +center.y rather than 0 — a
+  // bias that propagates into every downstream layout consumer.
   if (center) {
-    // Calculate bounding box
-    const box = new THREE.Box3().setFromObject(svgGroup);
-    const center = box.getCenter(new THREE.Vector3());
-
-    // Center the group
-    svgGroup.position.x = -center.x;
-    svgGroup.position.y = -center.y;
-
-    // Flip Y coordinate to match Three.js system
+    // 1. Flip Y first so the visible mesh is in its final orientation.
     svgGroup.scale.y *= -1;
+
+    // 2. Measure the final visible bbox.
+    svgGroup.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(svgGroup);
+    const c = box.getCenter(new THREE.Vector3());
+
+    // 3. Translate so the bbox center lands at the group's local (0, 0, 0).
+    svgGroup.position.x -= c.x;
+    svgGroup.position.y -= c.y;
   }
 
   return svgGroup;

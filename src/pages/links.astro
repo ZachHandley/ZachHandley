@@ -1,0 +1,11 @@
+---
+import Layout from "~/layouts/Layout.astro";
+import LinksIsland from "~/components/svelte/views/LinksIsland.svelte";
+import { fetchPublishedLinks } from "~/server/fetchPublishedLinks";
+
+const links = await fetchPublishedLinks();
+---
+
+<Layout title="links — zachhandley" description="every link in every category, curated in Appwrite, live-updated.">
+  <LinksIsland client:load {links} />
+</Layout>

@@ -4,9 +4,10 @@ import SiteMetadata from "../components/global/SiteMetadata.astro";
 export interface Props {
   title: string;
   description: string;
+  lockViewport?: boolean;
 }
 
-const { title, description } = Astro.props;
+const { title, description, lockViewport = false } = Astro.props;
 ---
 
 <!doctype html>
@@ -15,7 +16,13 @@ const { title, description } = Astro.props;
     <SiteMetadata title={title} description={description} />
     <title>{title}</title>
   </head>
-  <body>
+  <body class={lockViewport ? "route-locked" : undefined}>
+    <a
+      href="#main"
+      class="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-accent focus:px-3 focus:py-2 focus:font-mono focus:text-xs focus:text-accent-fg"
+    >
+      skip to main content
+    </a>
     <slot />
   </body>
 </html>
@@ -24,9 +31,13 @@ const { title, description } = Astro.props;
   body {
     margin: 0;
     padding: 0;
+    font-family: system-ui, sans-serif;
+  }
+
+  /* Routes that own the full viewport (3D scenes, immersive views) opt in. */
+  body.route-locked {
     height: 100%;
     overflow: hidden;
-    font-family: system-ui, sans-serif;
   }
 
   /* Screen reader only utility */

@@ -1,30 +1,11 @@
 ---
-import Layout from "../layouts/Layout.astro";
-import LinkApp from "~/components/svelte/LinkApp.svelte";
-import { AppwriteServer } from "~/server/appwriteServer";
-import { requireAdmin } from "~/server/auth";
+import Layout from "~/layouts/Layout.astro";
+import HomeIsland from "~/components/svelte/views/HomeIsland.svelte";
+import { fetchPublishedLinks } from "~/server/fetchPublishedLinks";
 
-const appwriteServer = new AppwriteServer();
-const rawLinks = await appwriteServer.listPublished();
-const links = rawLinks.map((doc) => ({
-  name: doc.title,
-  url: doc.url ?? undefined,
-  icon: doc.icon ?? undefined,
-  type: (doc.type ?? "url") as "url" | "download" | "contact" | "action" | "category",
-  category: doc.category ?? undefined,
-  active: doc.active,
-  order: doc.order,
-  featured: doc.featured ?? false,
-  stack: doc.stack ?? undefined,
-  repoUrl: doc.repoUrl ?? undefined,
-  description: doc.description ?? undefined,
-}));
-
-const isAdmin = (await requireAdmin(Astro.cookies)).ok;
+const links = await fetchPublishedLinks();
 ---
 
-<Layout title="Home" description="Use Steve the dragon to navigate my site">
-  <main class="w-full min-h-screen min-w-screen relative bg-gray-900">
-    <LinkApp client:only="svelte" {links} {isAdmin} />
-  </main>
+<Layout title="zachhandley — software that ships" description="rust + typescript + edge — what I'm shipping and how to reach me.">
+  <HomeIsland client:load {links} />
 </Layout>

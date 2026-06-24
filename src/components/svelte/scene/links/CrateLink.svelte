@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { T, useTask, useThrelte } from "@threlte/core";
+  import { T, useTask } from "@threlte/core";
   import { Text, useGltf } from "@threlte/extras";
   import * as THREE from "three";
   import { Spring } from "svelte/motion";
@@ -8,7 +8,6 @@
   import { fetchIconData } from "~/utils/iconify";
   import { createSvgMesh, calculateVisualScale } from "~/utils/svgUtils";
   import type { DRACOLoader } from "three/examples/jsm/Addons.js";
-  import { perspectiveCenterShift } from "~/components/svelte/utils/viewportLayout.svelte";
   import {
     measureObject3D,
     measureTroikaText,
@@ -71,7 +70,6 @@
   } & { ref?: THREE.Group } = $props();
 
   // Get Threlte context
-  const { camera } = useThrelte();
 
   // Extract link properties (reactive to prop changes)
   const url = $derived(link?.url ?? "");
@@ -151,9 +149,6 @@
   let faviconAspectRatio = $state(1); // Default 1:1 aspect ratio
   let resetTimeout: ReturnType<typeof setTimeout> | null = null;
 
-  // Content Z position - store as state instead of derived
-  let contentZOffset = $state(0.3);
-
   // ---- measurement state ----
   // Content positioning is driven by measured bboxes; opacity gates off them.
   let iconLocalSize = $state<{ width: number; height: number } | null>(null);
@@ -163,9 +158,30 @@
   let inlineTextMesh = $state<THREE.Mesh | null>(null);
   let titleTextMesh = $state<THREE.Mesh | null>(null);
   let domainTextMesh = $state<THREE.Mesh | null>(null);
-  // Y center of the primary crate mesh after scaling. CrateLink's model sits
-  // at parent origin already; measurement just confirms that.
-  let modelCenterY = $state<number | null>(null);
+
+  // Raw mesh-local measurements at scale=1. Properties of the GLB —
+  // invariant across prop changes. Written once by boundingBoxTask.
+  // Every prop-dependent position is `$derived` from these + current
+  // width/height/depth so resizing the crate updates the layout.
+  let localCenterY = $state<number | null>(null);
+  let localMaxZ = $state<number | null>(null);
+
+  const scaleY = $derived(height / Math.max(modelHeight, 1e-6));
+  const scaleZ = $derived(depth / Math.max(modelDepth, 1e-6));
+
+  // Scaled center Y in model-group local frame.
+  const modelCenterY = $derived(localCenterY === null ? null : localCenterY * scaleY);
+
+  // Content sits +0.03 in front of the model's actual front face. CrateLink's
+  // model group has no Z position offset (unlike CrateLinkExplode), so the
+  // outer-local front face is just scaleZ * localMaxZ.
+  const contentZOffset = $derived(
+    localMaxZ === null ? 0.3 : scaleZ * localMaxZ + 0.03,
+  );
+
+  // Offset applied to BOTH model group and content group so the visible crate
+  // and its title/icon/domain ride the same anchor.
+  const containerYOffset = $derived(modelCenterY !== null ? -modelCenterY : 0);
 
   const inlineMeasured = $derived(
     iconLocalSize !== null && textLocalSize !== null && modelCenterY !== null,
@@ -213,20 +229,9 @@
     return { titleY, iconY, domainY };
   });
 
-  // ---- perspective center shift (off-axis content) ----
-  const ENV_SCALE = 1.5;
-  const contentShift = $derived.by(() => {
-    const cam = camera.current as THREE.PerspectiveCamera | null;
-    if (!cam) return { x: 0, y: 0 };
-    const targetWorld = {
-      x: positionArray[0] * ENV_SCALE,
-      y: positionArray[1] * ENV_SCALE,
-      z: positionArray[2] * ENV_SCALE,
-    };
-    const contentZWorld = targetWorld.z + contentZOffset * ENV_SCALE;
-    const s = perspectiveCenterShift(cam, targetWorld, contentZWorld);
-    return { x: s.x / ENV_SCALE, y: s.y / ENV_SCALE };
-  });
+  // No parallax correction needed: content and model share the same outer
+  // crate group, so their world transforms — and therefore screen
+  // projections — coincide automatically.
 
   function onInlineTextSync() {
     if (!inlineTextMesh) return;
@@ -273,41 +278,23 @@
     if (!group || !$gltf) return true;
     if (boundingBoxCalculated) return false;
 
-    // Temporarily reset scale to measure
-    const originalScale = group.scale.clone();
-    group.scale.set(1, 1, 1);
+    // Measure in PURE LOCAL FRAME. The mesh `Cube200` is a direct child of
+    // the bind:ref group with no intermediate animated transforms (CrateLink
+    // does not use CrateExplode's animation mixer). Reading the static
+    // geometry bbox bypasses any matrix-tree weirdness and produces the
+    // same value every call.
+    const primary = findPrimaryMesh(group, { name: "Cube200" });
+    if (!primary || !primary.geometry) return true;
+    if (!primary.geometry.boundingBox) primary.geometry.computeBoundingBox();
+    const bb = primary.geometry.boundingBox;
+    if (!bb || bb.isEmpty()) return true;
 
-    // Measure the primary mesh of the crate (filters out decorative geometry).
-    // Use the LOCAL geometry bbox rather than `measureObject3D` (world bbox via
-    // Box3.setFromObject), because the world version folds in the parent crate's
-    // world Y position — that varies per category and decouples the crate model
-    // from its title/icon content for the bottom row of categories.
-    const primary = findPrimaryMesh(group, { name: "Cube200" }) ?? group;
-    let localCenterY = 0;
-    if (primary instanceof THREE.Mesh && primary.geometry) {
-      if (!primary.geometry.boundingBox) primary.geometry.computeBoundingBox();
-      const bb = primary.geometry.boundingBox!;
-      modelWidth = bb.max.x - bb.min.x;
-      modelHeight = bb.max.y - bb.min.y;
-      modelDepth = bb.max.z - bb.min.z;
-      localCenterY = (bb.min.y + bb.max.y) / 2;
-    } else {
-      const m = measureObject3D(primary);
-      modelWidth = m.size.x;
-      modelHeight = m.size.y;
-      modelDepth = m.size.z;
-      localCenterY = m.center.y;
-    }
+    modelWidth = bb.max.x - bb.min.x;
+    modelHeight = bb.max.y - bb.min.y;
+    modelDepth = bb.max.z - bb.min.z;
+    localCenterY = (bb.min.y + bb.max.y) / 2;
+    localMaxZ = bb.max.z;
 
-    const scaleY = height / Math.max(modelHeight, 1e-6);
-    modelCenterY = localCenterY * scaleY;
-
-    // Ensure content appears in front of crate. 0.03 is enough margin to avoid
-    // z-fighting with the textured front face for SDF text/icons.
-    contentZOffset = modelDepth / 2 + 0.03;
-
-    // Restore scale
-    group.scale.copy(originalScale);
     boundingBoxCalculated = true;
 
     return false;
@@ -558,6 +545,9 @@
           faviconAspectRatio = texture.image.width / Math.max(texture.image.height, 1);
         }
 
+        // Unblock the layout gate — see CrateLinkExplode's matching comment.
+        iconLocalSize = { width: faviconAspectRatio, height: 1 };
+
         return; // Success, no need to try other URLs
       }
 
@@ -596,6 +586,7 @@
           faviconTexture = texture;
           faviconLoaded = true;
           faviconAspectRatio = img.width / Math.max(img.height, 1);
+          iconLocalSize = { width: faviconAspectRatio, height: 1 };
         }
 
         resolve();
@@ -679,6 +670,11 @@
       faviconLoadFailed = true;
     } finally {
       isLoadingIcon = false;
+      // Failsafe: if no icon source populated iconLocalSize, default it so
+      // contentMeasured can resolve and the title/domain text render.
+      if (iconLocalSize === null) {
+        iconLocalSize = { width: 1, height: 1 };
+      }
     }
   });
 
@@ -744,10 +740,13 @@
   rotation={[rotationArray[0], rotationArray[1], rotationArray[2]]}
   name={`crate-link-${columnKey}-${index}`}
 >
-  <!-- Crate model container -->
+  <!-- Crate model container. Offset by containerYOffset so the visible mesh
+       bbox lands centered at parent Y=0; the content group below applies the
+       same offset so labels track the model. -->
   <T.Group
     bind:ref={group}
     scale={getCalculatedScale() as [number, number, number]}
+    position={[0, containerYOffset, 0]}
     {height}
     {width}
     {depth}
@@ -796,14 +795,11 @@
     {/await}
   </T.Group>
 
-  <!-- Content Container -->
+  <!-- Content Container — outer-frame (0, 0, contentZOffset). No parallax
+       offset: content and model share this outer group's world transform. -->
   {#if contentVisible}
     <T.Group
-      position={[
-        link.inlineIcon ? 0 : contentShift.x,
-        link.inlineIcon ? 0 : contentShift.y,
-        contentZOffset,
-      ]}
+      position={[0, 0, contentZOffset]}
       rotation={[0, 0, 0]}
       name={`crate-content-${columnKey}-${index}`}
       onclick={handleClick}
@@ -878,7 +874,6 @@
             <!-- Use favicon texture with proper scaling -->
             <T.Mesh
               scale={[getFaviconScale()[0], getFaviconScale()[1], getFaviconScale()[2]]}
-              position.y={-height / 3}
             >
               <T.PlaneGeometry args={[1, 1, 1]} />
               <T.MeshStandardMaterial

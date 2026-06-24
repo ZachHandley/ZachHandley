@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { T, useThrelte } from "@threlte/core";
+  import { T, useThrelte, useTask } from "@threlte/core";
   import { Text, useGltf } from "@threlte/extras";
   import CrateExplode from "../../models/CrateExplode.svelte";
   import * as THREE from "three";
@@ -10,7 +10,6 @@
   import { fetchIconData } from "~/utils/iconify";
   import { createSvgMesh, calculateVisualScale } from "~/utils/svgUtils";
   import type { DRACOLoader } from "three/examples/jsm/Addons.js";
-  import { perspectiveCenterShift } from "~/components/svelte/utils/viewportLayout.svelte";
   import {
     measureObject3D,
     measureTroikaText,
@@ -193,12 +192,6 @@
   let resetTimeout: ReturnType<typeof setTimeout> | null = null;
   let actualAnimationDuration = $derived(explodeDuration);
 
-  // Content Z position - store as state instead of derived
-  let contentZOffset = $state(0.3);
-
-  // Dynamic container offsets based on crate dimensions (using $derived for reactive computation)
-  let containerZOffset = $derived(depth * 0.4);
-
   // ---- measurement state ----
   // All content positioning is driven by these measured bboxes, not by guess
   // percentages. Each piece stays at opacity 0 until its bbox is known.
@@ -210,10 +203,34 @@
   let titleTextMesh = $state<THREE.Mesh | null>(null);
   let domainTextMesh = $state<THREE.Mesh | null>(null);
 
-  // Y center of the scaled crate model's primary mesh, relative to the parent
-  // group. Used to derive containerYOffset so the model sits centered at parent
-  // Y=0 — eliminating the legacy `height * -0.7` guess.
-  let modelCenterY = $state<number | null>(null);
+  // Raw mesh-local measurements at scale=1. These are properties of the GLB
+  // geometry, invariant across prop changes and instance lifetime. Written
+  // exactly once by the boundingBoxTask when Cube002 mounts. All position
+  // values derive reactively from these + current width/height/depth props,
+  // so changing prop dims (category → link-grid view → back button) updates
+  // the layout instead of freezing at first-measurement values.
+  let localCenterY = $state<number | null>(null);
+  let localMaxZ = $state<number | null>(null);
+
+  // Derived scales — used both by getCalculatedScale() and by the offset
+  // derivations below. When width/height/depth change, these recompute.
+  const scaleY = $derived(height / Math.max(modelHeight, 1e-6));
+  const scaleZ = $derived(depth / Math.max(modelDepth, 1e-6));
+
+  // Scaled model center Y in the model group's local frame. NULL until the
+  // bbox has been measured; downstream uses fall back gracefully.
+  const modelCenterY = $derived(localCenterY === null ? null : localCenterY * scaleY);
+
+  // Dynamic container offsets.
+  const containerZOffset = $derived(depth * 0.4);
+
+  // Content Z = front face of the model in the outer crate's local frame,
+  // plus 0.03 z-fight margin. Chain: outer → model group at (0, *, containerZOffset)
+  // with scaleZ → Cube002 children with local max.z = localMaxZ. So
+  // outer-local front face = containerZOffset + scaleZ * localMaxZ.
+  const contentZOffset = $derived(
+    localMaxZ === null ? 0.3 : containerZOffset + scaleZ * localMaxZ + 0.03,
+  );
 
   const inlineMeasured = $derived(
     iconLocalSize !== null && textLocalSize !== null && modelCenterY !== null,
@@ -268,21 +285,12 @@
     return { titleY, iconY, domainY };
   });
 
-  // ---- perspective center shift (off-axis content) ----
-  // ENVIRONMENT_SCALE matches BaseScene; positionArray is in local (pre-scale) coords.
-  const ENV_SCALE = 1.5;
-  const contentShift = $derived.by(() => {
-    const cam = camera.current as THREE.PerspectiveCamera | null;
-    if (!cam) return { x: 0, y: 0 };
-    const targetWorld = {
-      x: positionArray[0] * ENV_SCALE,
-      y: positionArray[1] * ENV_SCALE,
-      z: positionArray[2] * ENV_SCALE,
-    };
-    const contentZWorld = targetWorld.z + contentZOffset * ENV_SCALE;
-    const s = perspectiveCenterShift(cam, targetWorld, contentZWorld);
-    return { x: s.x / ENV_SCALE, y: s.y / ENV_SCALE };
-  });
+  // No parallax correction needed: the content group is a child of the same
+  // outer crate group as the model. They share a single world transform and
+  // project to the same screen coordinates by construction. The previous
+  // `perspectiveCenterShift` math computed a fictitious off-axis offset
+  // (worse, against an `ENV_SCALE`-shifted target that StackedLinks doesn't
+  // live under), which was the entire source of the horizontal label drift.
 
   function onInlineTextSync() {
     if (!inlineTextMesh) return;
@@ -330,59 +338,59 @@
   // CrateExplode component reference for animations
   let crateExplodeRef: any = null;
 
-  // Calculate bounding box and content positions reactively
-  $effect(() => {
-    if (!group || !$gltf) return;
+  // Calculate bounding box and content positions on every frame until the
+  // CrateExplode child has actually mounted Cube002 into the scene tree.
+  // Why useTask instead of $effect:
+  //   This component spawns a child <CrateExplode> that loads the same GLB
+  //   via its own useGltf + {#await gltf}{:then} render block. There's no
+  //   synchronous signal from "our $gltf resolved" to "child has rendered
+  //   Cube002 into our group". An $effect that fires on $gltf can run BEFORE
+  //   the child's {:then} block, in which case getObjectByName returns null,
+  //   setFromObject returns an empty Box3 (Infinity bounds), scaleY blows up,
+  //   and crates render at huge scale off-screen. useTask polls every frame
+  //   until the bbox is real, then stops.
+  const boundingBoxTask = useTask(() => {
+    if (!group || !$gltf) return true;
+    if (boundingBoxCalculated) return false;
 
-    if (boundingBoxCalculated) return;
+    // CrateExplode.svelte:319 wraps the visible crate body in
+    //   <T.Group name="Cube002" position={[0, 2.95, -0.2]} scale={1.21}>
+    //     <T.Mesh name="Cube001" .../>
+    //     <T.Mesh name="Cube001_1" .../>
+    //   </T.Group>
+    // Measure in PURE LOCAL FRAME — bypass matrixWorld entirely. The
+    // GLTF animation mixer (useGltfAnimations in CrateExplode.svelte:165)
+    // mutates intermediate matrixWorld values once the explode/reassemble
+    // mixer has been primed; setFromObject(cube002) then returns world
+    // coords whose offset doesn't match the bind:ref group's world
+    // position, and the subtraction-based local-frame derivation breaks.
+    // Geometry data is immutable across animations, so reading
+    // cube001.geometry.boundingBox + Cube002.position/scale gives the
+    // same result for every crate instance, animation state, and
+    // matrix-tree freshness.
+    const cube002 = group.getObjectByName("Cube002");
+    if (!cube002 || cube002.children.length === 0) return true;
+    const cube001 = group.getObjectByName("Cube001") as THREE.Mesh | null;
+    if (!cube001 || !cube001.geometry) return true;
+    if (!cube001.geometry.boundingBox) cube001.geometry.computeBoundingBox();
+    const bb = cube001.geometry.boundingBox;
+    if (!bb || bb.isEmpty()) return true;
 
-    // Temporarily reset scale to measure
-    const originalScale = group.scale.clone();
-    group.scale.set(1, 1, 1);
+    const c2sx = cube002.scale.x;
+    const c2sy = cube002.scale.y;
+    const c2sz = cube002.scale.z;
 
-    // Measure the primary mesh of the crate (filters out explode-piece geometry).
-    // Falls back to the largest mesh by bbox volume if the named match is missing.
-    const primary = findPrimaryMesh(group, { name: "Cube200" }) ?? group;
+    modelWidth = (bb.max.x - bb.min.x) * c2sx;
+    modelHeight = (bb.max.y - bb.min.y) * c2sy;
+    modelDepth = (bb.max.z - bb.min.z) * c2sz;
+    localCenterY = ((bb.min.y + bb.max.y) / 2) * c2sy + cube002.position.y;
+    localMaxZ = bb.max.z * c2sz + cube002.position.z;
 
-    // Use the mesh's LOCAL geometry bbox rather than `measureObject3D` (which
-    // returns the WORLD bbox via Box3.setFromObject). World measurement folds
-    // in the parent crate group's world Y position — that varies per category
-    // (top row ≈ y=6.3, bottom row ≈ y=1.7), so the same model produced a
-    // different `modelCenterY` per instance and `containerYOffset` decoupled
-    // the model from its title/icon content for the second row of categories.
-    let localCenterY = 0;
-    if (primary instanceof THREE.Mesh && primary.geometry) {
-      if (!primary.geometry.boundingBox) primary.geometry.computeBoundingBox();
-      const bb = primary.geometry.boundingBox!;
-      modelWidth = bb.max.x - bb.min.x;
-      modelHeight = bb.max.y - bb.min.y;
-      modelDepth = bb.max.z - bb.min.z;
-      localCenterY = (bb.min.y + bb.max.y) / 2;
-    } else {
-      // Fallback (group hit, not a mesh) — keep the old world-bbox path.
-      const m = measureObject3D(primary);
-      modelWidth = m.size.x;
-      modelHeight = m.size.y;
-      modelDepth = m.size.z;
-      localCenterY = m.center.y;
-    }
-
-    // Capture the scaled center Y so `containerYOffset` lands the visible bbox
-    // at parent Y=0 — replacing the legacy `height * -0.7` guess.
-    const scaleY = height / Math.max(modelHeight, 1e-6);
-    modelCenterY = localCenterY * scaleY;
-
-    // Ensure content appears in front of crate. 0.03 is enough margin to avoid
-    // z-fighting with the textured front face for SDF text/icons.
-    contentZOffset = modelDepth / 2 + 0.03;
-
-    // Clone materials for this instance to prevent shared material issues
+    // Clone materials for this instance to prevent shared opacity issues.
     if (!materialsCloned) {
-      console.log(`🎨 Cloning materials for '${title}' to prevent shared opacity issues`);
       group.traverse((object) => {
         if (object instanceof THREE.Mesh && object.material) {
           if (Array.isArray(object.material)) {
-            // Clone each material in the array
             const clonedMaterialArray = object.material.map((mat) => {
               const cloned = mat.clone();
               clonedMaterials.push(cloned);
@@ -390,7 +398,6 @@
             });
             object.material = clonedMaterialArray;
           } else {
-            // Clone single material
             const cloned = object.material.clone();
             clonedMaterials.push(cloned);
             object.material = cloned;
@@ -398,12 +405,10 @@
         }
       });
       materialsCloned = true;
-      console.log(`✅ Cloned ${clonedMaterials.length} materials for '${title}'`);
     }
 
-    // Restore scale
-    group.scale.copy(originalScale);
     boundingBoxCalculated = true;
+    return false;
   });
 
   // Simple animation functions using CrateExplode component
@@ -879,6 +884,18 @@
           faviconAspectRatio = texture.image.width / Math.max(texture.image.height, 1);
         }
 
+        // Populate iconLocalSize so the layout gate (contentMeasured) doesn't
+        // wait on an SVG that will never load. The favicon plane is rendered
+        // at the size returned by getFaviconScale() (height * 0.4 in world
+        // units, aspect-corrected); we represent that here as a unit-height
+        // intrinsic with the matching aspect — normalLayout multiplies by
+        // normalIconScale (=height*ICON_SCALE_RATIO) when allocating the row,
+        // and the favicon plane scales independently via its own getFaviconScale.
+        iconLocalSize = {
+          width: faviconAspectRatio,
+          height: 1,
+        };
+
         return; // Success, no need to try other URLs
       }
 
@@ -917,6 +934,12 @@
           faviconTexture = texture;
           faviconLoaded = true;
           faviconAspectRatio = img.width / Math.max(img.height, 1);
+          // Same reasoning as loadFavicon: populate iconLocalSize so the
+          // layout gate doesn't stick waiting for an SVG measurement.
+          iconLocalSize = {
+            width: faviconAspectRatio,
+            height: 1,
+          };
         }
 
         resolve();
@@ -1009,6 +1032,14 @@
       faviconLoadFailed = true;
     } finally {
       isLoadingIcon = false;
+      // Failsafe: if no icon path populated iconLocalSize (e.g. all icon
+      // sources failed and there's no domain to favicon-fall-back on),
+      // default it. Otherwise the contentMeasured gate sticks at false and
+      // the title/domain text never render — i.e. a row with an empty
+      // `icon` field would silently hide all its text.
+      if (iconLocalSize === null) {
+        iconLocalSize = { width: 1, height: 1 };
+      }
     }
 
     // Optional entrance flourish: start exploded, then reassemble. Only fires
@@ -1208,13 +1239,13 @@
   </T.Group>
 
   <!-- Content Container -->
+  <!-- Anchored at outer-frame (0, 0, contentZOffset). No X/Y offset: model
+       and content share this outer group, so their screen projection
+       coincides automatically. contentZOffset is computed from the model's
+       measured front-face Z + 0.03 z-fight margin (see boundingBoxTask). -->
   {#if contentVisible}
     <T.Group
-      position={[
-        link.inlineIcon ? 0 : contentShift.x,
-        link.inlineIcon ? 0 : contentShift.y,
-        contentZOffset,
-      ]}
+      position={[0, 0, contentZOffset]}
       rotation={[0, 0, 0]}
       name={`crate-content-${columnKey}-${index}`}
       onclick={handleClick}
@@ -1291,7 +1322,6 @@
           {:else if faviconLoaded && faviconTexture}
             <T.Mesh
               scale={[getFaviconScale()[0], getFaviconScale()[1], getFaviconScale()[2]]}
-              position.y={-height / 3}
             >
               <T.PlaneGeometry args={[1, 1, 1]} />
               <T.MeshStandardMaterial
