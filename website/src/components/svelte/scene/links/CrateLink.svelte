@@ -545,6 +545,9 @@
           faviconAspectRatio = texture.image.width / Math.max(texture.image.height, 1);
         }
 
+        // Unblock the layout gate — see CrateLinkExplode's matching comment.
+        iconLocalSize = { width: faviconAspectRatio, height: 1 };
+
         return; // Success, no need to try other URLs
       }
 
@@ -583,6 +586,7 @@
           faviconTexture = texture;
           faviconLoaded = true;
           faviconAspectRatio = img.width / Math.max(img.height, 1);
+          iconLocalSize = { width: faviconAspectRatio, height: 1 };
         }
 
         resolve();
@@ -666,6 +670,11 @@
       faviconLoadFailed = true;
     } finally {
       isLoadingIcon = false;
+      // Failsafe: if no icon source populated iconLocalSize, default it so
+      // contentMeasured can resolve and the title/domain text render.
+      if (iconLocalSize === null) {
+        iconLocalSize = { width: 1, height: 1 };
+      }
     }
   });
 

@@ -884,6 +884,18 @@
           faviconAspectRatio = texture.image.width / Math.max(texture.image.height, 1);
         }
 
+        // Populate iconLocalSize so the layout gate (contentMeasured) doesn't
+        // wait on an SVG that will never load. The favicon plane is rendered
+        // at the size returned by getFaviconScale() (height * 0.4 in world
+        // units, aspect-corrected); we represent that here as a unit-height
+        // intrinsic with the matching aspect — normalLayout multiplies by
+        // normalIconScale (=height*ICON_SCALE_RATIO) when allocating the row,
+        // and the favicon plane scales independently via its own getFaviconScale.
+        iconLocalSize = {
+          width: faviconAspectRatio,
+          height: 1,
+        };
+
         return; // Success, no need to try other URLs
       }
 
@@ -922,6 +934,12 @@
           faviconTexture = texture;
           faviconLoaded = true;
           faviconAspectRatio = img.width / Math.max(img.height, 1);
+          // Same reasoning as loadFavicon: populate iconLocalSize so the
+          // layout gate doesn't stick waiting for an SVG measurement.
+          iconLocalSize = {
+            width: faviconAspectRatio,
+            height: 1,
+          };
         }
 
         resolve();
@@ -1014,6 +1032,14 @@
       faviconLoadFailed = true;
     } finally {
       isLoadingIcon = false;
+      // Failsafe: if no icon path populated iconLocalSize (e.g. all icon
+      // sources failed and there's no domain to favicon-fall-back on),
+      // default it. Otherwise the contentMeasured gate sticks at false and
+      // the title/domain text never render — i.e. a row with an empty
+      // `icon` field would silently hide all its text.
+      if (iconLocalSize === null) {
+        iconLocalSize = { width: 1, height: 1 };
+      }
     }
 
     // Optional entrance flourish: start exploded, then reassemble. Only fires
