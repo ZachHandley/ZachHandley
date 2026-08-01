@@ -9,18 +9,35 @@ interface Props {
   description: string;
   image?: string;
   noindex?: boolean;
+  /**
+   * Opt a single route into `viewport-fit=cover`, which is what makes
+   * `env(safe-area-inset-*)` resolve to anything other than 0. Deliberately
+   * per-route: enabling it globally would slide every other page's content
+   * under the notch and home indicator.
+   */
+  viewportFit?: boolean;
 }
 
-const { title, description, image = "/og-image.png", noindex = false } = Astro.props;
+const {
+  title,
+  description,
+  image = "/og-image.png",
+  noindex = false,
+  viewportFit = false,
+} = Astro.props;
 
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 const siteName = "ZachHandley";
 const fullTitle = `${title} - ${siteName}`;
+// No user-scalable=no / maximum-scale — blocking pinch-zoom fails WCAG 1.4.4.
+const viewportContent = `width=device-width, initial-scale=1.0${
+  viewportFit ? ", viewport-fit=cover" : ""
+}`;
 ---
 
 <!-- Essential Meta Tags -->
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content={viewportContent} />
 <meta name="generator" content={Astro.generator} />
 
 <!-- SEO Meta Tags -->

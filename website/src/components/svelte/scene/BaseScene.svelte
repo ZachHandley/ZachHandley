@@ -3,16 +3,24 @@
   import { Sky, AudioListener, HTML } from "@threlte/extras";
   import * as THREE from "three";
   import { onDestroy, onMount } from "svelte";
+  import { measureObject3D } from "centerthree";
   import { Tween } from "svelte/motion";
   import { cubicInOut } from "svelte/easing";
   import Dragon from "../models/Dragon.svelte";
   import Ground from "./Ground.svelte";
   import Fireball from "./effects/Fireball.svelte";
   import StackedLinks from "./StackedLinks.svelte";
-  import ModalManager from "../ui/ModalManager.svelte";
   import type { Link } from "~/types/baseSchemas";
-  import CrateExplode from "../models/CrateExplode.svelte";
   import { SceneController } from "~/components/svelte/utils/sceneController.svelte.ts";
+  import {
+    CAMERA_BASE_POSITION,
+    CAMERA_FOV,
+    CAMERA_TARGET,
+    DRAGON_WIDTH_FALLBACK,
+    ENVIRONMENT_SCALE,
+    LINKS_Z_DEPTH,
+    solveCameraZ,
+  } from "./rig";
 
   let {
     handleDragonClick,
@@ -32,12 +40,12 @@
     screenWidth: number;
     screenHeight: number;
     modalManager?: {
-      showModal: (link: Link, x: number, y: number) => void;
+      showModal: (link: Link) => void;
       hideModal: () => void;
     } | null;
   } = $props();
 
-  const { size: rendererSize, renderer } = useThrelte();
+  const { size: rendererSize, renderer, scene } = useThrelte();
 
   // Core scene references
   let cameraRef = $state<THREE.PerspectiveCamera | undefined>(undefined);
@@ -45,7 +53,6 @@
   let dragonRef = $state<THREE.Group | null>(null);
   let dragonEyeGlow = $state(0);
   let mounted = $state(false);
-  let testCrateRef = $state<{ explode: () => void; reset: () => void } | null>(null);
   let prevRendererSize = $state<{ width: number; height: number } | undefined>(undefined);
   let particlePoolContainer = $state<THREE.Group | undefined>(undefined);
 
@@ -57,16 +64,69 @@
     });
   });
 
-  // Statically define these to avoid recreating them
-  const ENVIRONMENT_SCALE = 1.5;
-  const cameraPosition = { x: 0, y: 7.5, z: 15 * ENVIRONMENT_SCALE };
-  const cameraTarget = { x: 0, y: 5, z: 0 };
+  // Camera rig constants now live in ./rig so the layout solves against the same
+  // numbers instead of re-guessing them (see rig.ts).
+  const cameraTarget = CAMERA_TARGET;
+
+  // Measured once the dragon model mounts. The layout has to know how much
+  // horizontal room the dragon actually takes; it previously hardcoded two
+  // different guesses (9 in calculateCategoryPositions, 3 in calculateGridLayout).
+  let dragonWidth = $state(DRAGON_WIDTH_FALLBACK);
+  let dragonMeasured = $state(false);
+
+  // Measured per-frame rather than in an $effect, for two reasons that a
+  // one-shot effect gets wrong:
+  //
+  //  1. Dragon.svelte assigns `dragonRef = ref` the moment its outer T.Group
+  //     exists, which is BEFORE its `{#await gltf}` block mounts any geometry.
+  //     An $effect keyed on `dragonRef` therefore measures an empty Box3, and
+  //     never re-runs, because the group's object identity never changes. That
+  //     silently pinned the rig to DRAGON_WIDTH_FALLBACK (9) when the real
+  //     dragon is ~5.3 wide — over-dollying the camera on every portrait
+  //     viewport and shrinking the whole scene for no reason.
+  //  2. The dragon is animated, so any single frame is a sample of a wing
+  //     cycle. Take the widest reading over a short window instead of trusting
+  //     whichever frame happened to be first.
+  const DRAGON_SAMPLE_FRAMES = 30;
+  let dragonSamples = 0;
+  let dragonWidestSeen = 0;
+
+  const dragonMeasureTask = useTask(
+    () => {
+      if (!dragonRef) return;
+      const { size } = measureObject3D(dragonRef);
+      if (!Number.isFinite(size.x) || size.x <= 0) return; // geometry not mounted yet
+      dragonWidestSeen = Math.max(dragonWidestSeen, size.x);
+      if (++dragonSamples < DRAGON_SAMPLE_FRAMES) return;
+      // Clamp so a pathological measurement can't destroy the layout.
+      dragonWidth = Math.min(
+        DRAGON_WIDTH_FALLBACK * 1.6,
+        Math.max(DRAGON_WIDTH_FALLBACK * 0.3, dragonWidestSeen),
+      );
+      dragonMeasured = true;
+    },
+    { running: () => !dragonMeasured },
+  );
+
+  const viewportAspect = $derived(
+    $rendererSize && $rendererSize.height > 0 ? $rendererSize.width / $rendererSize.height : 1,
+  );
+
+  // Portrait viewports lose horizontal frustum width (visible height is
+  // aspect-independent), so the camera pulls back until a category crate fits
+  // beside the dragon. Returns the art-directed z unchanged for every aspect >= 1.
+  const cameraZ = $derived(solveCameraZ(viewportAspect, dragonWidth));
+  const cameraPosition = $derived({
+    x: CAMERA_BASE_POSITION.x,
+    y: CAMERA_BASE_POSITION.y,
+    z: cameraZ,
+  });
 
   // Initialize the scene controller
   const sceneController = new SceneController({
     environmentScale: ENVIRONMENT_SCALE,
-    zDepth: 6, // LINKS_Z_DEPTH
-    dragonWidth: 6 * ENVIRONMENT_SCALE,
+    zDepth: LINKS_Z_DEPTH,
+    dragonWidth: DRAGON_WIDTH_FALLBACK,
     maxFireballs: 10,
     onLoadingStateChange: (loading, progress, message) =>
       onLoadingStateChange?.(loading, progress, message),
@@ -94,8 +154,32 @@
     } catch {}
   });
 
+  // Dev-only scene handle. There is no way to reach a Threlte scene graph from
+  // outside the component tree, which made every past change here verifiable
+  // only by eyeballing screenshots. With this, a headless browser can assert on
+  // the real thing — crate transforms, material identity, camera dolly.
+  // `import.meta.env.DEV` is compile-time, so this is absent from prod builds.
+  if (import.meta.env.DEV) {
+    $effect(() => {
+      const w = window as unknown as Record<string, unknown>;
+      w.__zhScene = scene;
+      w.__zhCamera = cameraRef;
+      w.__zhTHREE = THREE;
+    });
+  }
+
   // Camera update debounce timer (trailing-edge debounce guarantees final value fires)
   let cameraUpdateTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // Keep the camera pointed at the same spot after an aspect-driven dolly.
+  // The rig used to be immobile, so a single lookAt in `oncreate` was enough;
+  // now that z moves with aspect, the view has to be re-aimed or the framing
+  // drifts upward as the camera pulls back.
+  $effect(() => {
+    if (!cameraRef) return;
+    void cameraPosition.z;
+    cameraRef.lookAt(cameraTarget.x, cameraTarget.y, cameraTarget.z);
+  });
 
   // Setup for perspective camera
   $effect(() => {
@@ -109,7 +193,6 @@
     ) {
       const doUpdate = () => {
         if (!cameraRef || !$rendererSize) return;
-        console.log("Camera aspect updated");
         cameraRef.aspect = $rendererSize.width / $rendererSize.height;
         cameraRef.updateProjectionMatrix();
         prevRendererSize = {
@@ -279,8 +362,8 @@
 <T.PerspectiveCamera
   bind:ref={cameraRef}
   makeDefault
-  fov={60}
-  aspect={$rendererSize ? $rendererSize.width / $rendererSize.height : 1}
+  fov={CAMERA_FOV}
+  aspect={viewportAspect}
   near={0.1}
   far={200}
   position={[cameraPosition.x, cameraPosition.y, cameraPosition.z]}
@@ -313,7 +396,7 @@
   links={links as Link[]}
   onLinkClick={handleLinkClick}
   visible={mounted}
-  useExplodingCrates={true}
+  {dragonWidth}
   {sceneController}
   {screenWidth}
   {screenHeight}

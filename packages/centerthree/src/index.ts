@@ -1,5 +1,6 @@
 export * from "./types.ts";
 export * from "./frustum.ts";
+export * from "./camera.ts";
 export * from "./bbox.ts";
 export * from "./perspective.ts";
 export * from "./layout.ts";

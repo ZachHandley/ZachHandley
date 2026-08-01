@@ -1,6 +1,31 @@
+<script module lang="ts">
+  // `cursor-pointer` is a single class on a single <body>, but N crates are
+  // mounted at once and each used to add/remove it unconditionally. Sweep the
+  // pointer from crate A onto crate B and back off B and B's leave stripped the
+  // class while A was still hovered — the cursor silently stopped reflecting
+  // hover for the rest of that pass. Refcount the class at module scope instead
+  // so it only flips on the 0->1 and 1->0 transitions and overlapping hovers
+  // compose. Module scope is what makes this shared across instances; an
+  // instance-scope counter would just be the old bug with more steps.
+  let cursorPointerHolders = 0;
+
+  function acquireCursorPointer(): void {
+    if (typeof document === "undefined") return;
+    cursorPointerHolders += 1;
+    if (cursorPointerHolders === 1) document.body.classList.add("cursor-pointer");
+  }
+
+  function releaseCursorPointer(): void {
+    if (typeof document === "undefined") return;
+    cursorPointerHolders = Math.max(0, cursorPointerHolders - 1);
+    if (cursorPointerHolders === 0) document.body.classList.remove("cursor-pointer");
+  }
+</script>
+
 <script lang="ts">
   import { T, useThrelte, useTask } from "@threlte/core";
   import { Text, useGltf } from "@threlte/extras";
+  import type { IntersectionEvent } from "@threlte/extras";
   import CrateExplode from "../../models/CrateExplode.svelte";
   import * as THREE from "three";
   import { Spring, Tween } from "svelte/motion";
@@ -16,6 +41,7 @@
     layoutInlineRow,
     findPrimaryMesh,
   } from "centerthree";
+  import { useViewportLayout } from "~/components/svelte/utils/viewportLayout.svelte";
 
   // Typography scale factors (fractions of crate height). These are design knobs,
   // not measurements — adjust as needed but don't pretend they're derived from anything.
@@ -25,6 +51,16 @@
   const INLINE_ICON_RATIO = 0.28;
   const INLINE_TEXT_RATIO = 0.18;
   const INLINE_GAP_RATIO = 0.06;
+
+  // Minimum comfortable touch target in CSS pixels (Apple HIG and WCAG 2.5.5
+  // both land on 44). The crate itself is sized by the layout curves and can
+  // legitimately land below this on a phone, so the hit proxy floors it.
+  const MIN_TAP_CSS_PX = 44;
+
+  // The hit proxy sits this far in FRONT of the content plane so the raycaster
+  // reaches it before the crate body — which matters because its handler is the
+  // one that calls stopPropagation() (see handleClick).
+  const TAP_PROXY_Z_EPSILON = 0.01;
 
   // Props for the component
   let {
@@ -36,7 +72,7 @@
     index = 0,
     width = 4,
     height = 4,
-    depth = 0.5,
+    depth = undefined,
     explodeDistance = 5,
     explodeDuration = 1,
     resetDelay = 1500,
@@ -79,8 +115,10 @@
     opacity?: number;
     crateId?: string;
     screenWidth?: number;
+    /** `showModal` takes no coordinates: LinkModal centers itself in CSS and
+     *  never read the position it used to be handed. */
     modalManager?: {
-      showModal: (link: LinkType, x: number, y: number) => void;
+      showModal: (link: LinkType) => void;
       hideModal: () => void;
     } | null;
     /** When true, the crate mounts with content faded out, then plays the
@@ -90,10 +128,14 @@
   } & { ref?: THREE.Group } = $props();
 
   // Get Threlte context
-  const { size, camera } = useThrelte();
+  const { size } = useThrelte();
 
-  // Mobile detection - prefer Threlte renderer size, fallback to passed screenWidth
-  let isMobile = $derived(($size?.width ?? screenWidth) < 768);
+  // Same layout lib StackedLinks solves this crate's position and size from, so
+  // the frustum the tap-target floor is measured against is the frustum the
+  // crate is actually laid out in. Instantiated without the measured dragon
+  // width (that lives in BaseScene), which only shifts the aspect-driven camera
+  // dolly a few percent — irrelevant to a minimum.
+  const layout = useViewportLayout();
 
   // Extract link properties (reactive to prop changes)
   const url = $derived(link?.url ?? "");
@@ -159,6 +201,9 @@
   let modelHeight = $state(1);
   let modelDepth = $state(1);
   let boundingBoxCalculated = $state(false);
+  // Whether THIS instance currently holds a cursor-pointer refcount. It used to
+  // be written and never read; it is load-bearing now, because the unmount path
+  // (onDestroy) has no other way to know it still owes a release.
   let hovering = $state(false);
   let isExploding = $state(false);
   let isExploded = $state(false);
@@ -167,8 +212,6 @@
   let isReassembling = $state(false);
   let contentVisible = $state(true);
   let actionExecuted = $state(false); // Flag to prevent duplicate coordinatedAction execution
-  let materialsCloned = $state(false); // Flag to track if materials have been cloned for this instance
-  let clonedMaterials = $state<THREE.Material[]>([]); // Store cloned materials for this instance
 
   // Tweens for smooth opacity animations
   const modelOpacityTween = new Tween(1, {
@@ -214,15 +257,28 @@
 
   // Derived scales — used both by getCalculatedScale() and by the offset
   // derivations below. When width/height/depth change, these recompute.
+  const scaleX = $derived(width / Math.max(modelWidth, 1e-6));
   const scaleY = $derived(height / Math.max(modelHeight, 1e-6));
-  const scaleZ = $derived(depth / Math.max(modelDepth, 1e-6));
+
+  // Z scale matches X unless a caller explicitly asks for a depth. `depth` used
+  // to default to 0.5 against a modelDepth of ~1.9, and nothing in the scene
+  // ever passed it, so every crate was squashed to ~26% along the camera axis.
+  // A still crate viewed head-on hides that; the explosion does not, because it
+  // throws shards outward in all three axes — flattening Z turns a burst into an
+  // in-plane shatter.
+  const scaleZ = $derived(depth != null ? depth / Math.max(modelDepth, 1e-6) : scaleX);
 
   // Scaled model center Y in the model group's local frame. NULL until the
   // bbox has been measured; downstream uses fall back gracefully.
   const modelCenterY = $derived(localCenterY === null ? null : localCenterY * scaleY);
 
-  // Dynamic container offsets.
-  const containerZOffset = $derived(depth * 0.4);
+  // Dynamic container offsets. This was `depth * 0.4`, which with the old
+  // never-overridden default of 0.5 was always exactly 0.2 — so it is pinned to
+  // that, rather than growing with the now-correct depth and shoving every crate
+  // toward the camera. `contentZOffset` below still tracks the real depth via
+  // scaleZ, which is what actually needs to follow the crate's front face.
+  const MODEL_GROUP_Z_NUDGE = 0.2;
+  const containerZOffset = $derived(depth != null ? depth * 0.4 : MODEL_GROUP_Z_NUDGE);
 
   // Content Z = front face of the model in the outer crate's local frame,
   // plus 0.03 z-fight margin. Chain: outer → model group at (0, *, containerZOffset)
@@ -231,6 +287,33 @@
   const contentZOffset = $derived(
     localMaxZ === null ? 0.3 : containerZOffset + scaleZ * localMaxZ + 0.03,
   );
+
+  // ---- tap target ----
+  // At 390x844 the rig solves to ~34.5 CSS px per world unit on the crate plane,
+  // so a link crate sitting on its 1.05-world floor (`crateSizeClamp` in
+  // centerthree) renders ~36px and the back button ~36x38px — both under the 44px
+  // minimum, on the two crates a phone user has to hit most. Scaling the crates up
+  // to compensate would blow up the layout they were solved into, so the visible
+  // geometry keeps its size and an invisible proxy carries the touch.
+  //
+  // World-per-pixel is just the frustum width at the crate plane over the canvas
+  // width in CSS px (Threlte's `size` is getBoundingClientRect-based, so it is
+  // already CSS px, not device px). `$derived` rather than a mount-time constant
+  // because both terms move on every resize and orientation change.
+  //
+  // Measured at LINKS_Z_DEPTH; the back button parks 2 units nearer the camera
+  // and so already reads larger than that plane, which only makes its floor
+  // conservative. A tap target erring large is the harmless direction.
+  const canvasWidthPx = $derived($size?.width ?? 0);
+  const MIN_TAP_WORLD = $derived(
+    canvasWidthPx > 0 ? (MIN_TAP_CSS_PX * layout.frustumWidth) / canvasWidthPx : 0,
+  );
+  const tapW = $derived(Math.max(width, MIN_TAP_WORLD));
+  const tapH = $derived(Math.max(height, MIN_TAP_WORLD));
+
+  // Stable identifier for this crate's scene-graph objects. See the note above
+  // the template for why this is keyed off crateId rather than column/index.
+  const sceneKey = $derived(crateId || `${columnKey}-${index}`);
 
   const inlineMeasured = $derived(
     iconLocalSize !== null && textLocalSize !== null && modelCenterY !== null,
@@ -349,67 +432,63 @@
   //   setFromObject returns an empty Box3 (Infinity bounds), scaleY blows up,
   //   and crates render at huge scale off-screen. useTask polls every frame
   //   until the bbox is real, then stops.
-  const boundingBoxTask = useTask(() => {
-    if (!group || !$gltf) return true;
-    if (boundingBoxCalculated) return false;
+  const boundingBoxTask = useTask(
+    () => {
+      if (!group || !$gltf) return;
+      if (boundingBoxCalculated) return;
 
-    // CrateExplode.svelte:319 wraps the visible crate body in
-    //   <T.Group name="Cube002" position={[0, 2.95, -0.2]} scale={1.21}>
-    //     <T.Mesh name="Cube001" .../>
-    //     <T.Mesh name="Cube001_1" .../>
-    //   </T.Group>
-    // Measure in PURE LOCAL FRAME — bypass matrixWorld entirely. The
-    // GLTF animation mixer (useGltfAnimations in CrateExplode.svelte:165)
-    // mutates intermediate matrixWorld values once the explode/reassemble
-    // mixer has been primed; setFromObject(cube002) then returns world
-    // coords whose offset doesn't match the bind:ref group's world
-    // position, and the subtraction-based local-frame derivation breaks.
-    // Geometry data is immutable across animations, so reading
-    // cube001.geometry.boundingBox + Cube002.position/scale gives the
-    // same result for every crate instance, animation state, and
-    // matrix-tree freshness.
-    const cube002 = group.getObjectByName("Cube002");
-    if (!cube002 || cube002.children.length === 0) return true;
-    const cube001 = group.getObjectByName("Cube001") as THREE.Mesh | null;
-    if (!cube001 || !cube001.geometry) return true;
-    if (!cube001.geometry.boundingBox) cube001.geometry.computeBoundingBox();
-    const bb = cube001.geometry.boundingBox;
-    if (!bb || bb.isEmpty()) return true;
+      // CrateExplode.svelte wraps the visible crate body in
+      //   <T.Group name="Cube002" position={[0, 2.95, -0.2]} scale={1.21}>
+      //     <T.Mesh name="Cube001" .../>
+      //     <T.Mesh name="Cube001_1" .../>
+      //   </T.Group>
+      // Measure in PURE LOCAL FRAME — bypass matrixWorld entirely. The
+      // GLTF animation mixer (useGltfAnimations in CrateExplode.svelte)
+      // mutates intermediate matrixWorld values once the explode/reassemble
+      // mixer has been primed; setFromObject(cube002) then returns world
+      // coords whose offset doesn't match the bind:ref group's world
+      // position, and the subtraction-based local-frame derivation breaks.
+      //
+      // Only the GEOMETRY bbox is animation-invariant. Cube002's own
+      // position/scale are NOT: the GLB's `Cube.002Action` clip keyframes that
+      // exact node — decoding it shows scale 1.21370 -> 0.00285 by t=0.0833s and
+      // translation flung out to [-73.357, 5.3053, 75.915], clamped there for the
+      // rest of the explosion. Sampling those mid- or post-explosion would report
+      // a model ~426x shorter than it is and inflate scaleY by the same factor.
+      // So this must run exactly once, BEFORE any explosion can start. Two things
+      // guarantee that: the `boundingBoxCalculated` latch (which also stops the
+      // task — see the `running` option), and stage ordering — this task is on
+      // Threlte's mainStage, which the render stage is created `after`, so the
+      // measurement lands on the first frame Cube002 exists while an explosion
+      // can only be triggered by a click on an already-rendered frame.
+      const cube002 = group.getObjectByName("Cube002");
+      if (!cube002 || cube002.children.length === 0) return;
+      const cube001 = group.getObjectByName("Cube001") as THREE.Mesh | null;
+      if (!cube001 || !cube001.geometry) return;
+      if (!cube001.geometry.boundingBox) cube001.geometry.computeBoundingBox();
+      const bb = cube001.geometry.boundingBox;
+      if (!bb || bb.isEmpty()) return;
 
-    const c2sx = cube002.scale.x;
-    const c2sy = cube002.scale.y;
-    const c2sz = cube002.scale.z;
+      const c2sx = cube002.scale.x;
+      const c2sy = cube002.scale.y;
+      const c2sz = cube002.scale.z;
 
-    modelWidth = (bb.max.x - bb.min.x) * c2sx;
-    modelHeight = (bb.max.y - bb.min.y) * c2sy;
-    modelDepth = (bb.max.z - bb.min.z) * c2sz;
-    localCenterY = ((bb.min.y + bb.max.y) / 2) * c2sy + cube002.position.y;
-    localMaxZ = bb.max.z * c2sz + cube002.position.z;
+      modelWidth = (bb.max.x - bb.min.x) * c2sx;
+      modelHeight = (bb.max.y - bb.min.y) * c2sy;
+      modelDepth = (bb.max.z - bb.min.z) * c2sz;
+      localCenterY = ((bb.min.y + bb.max.y) / 2) * c2sy + cube002.position.y;
+      localMaxZ = bb.max.z * c2sz + cube002.position.z;
 
-    // Clone materials for this instance to prevent shared opacity issues.
-    if (!materialsCloned) {
-      group.traverse((object) => {
-        if (object instanceof THREE.Mesh && object.material) {
-          if (Array.isArray(object.material)) {
-            const clonedMaterialArray = object.material.map((mat) => {
-              const cloned = mat.clone();
-              clonedMaterials.push(cloned);
-              return cloned;
-            });
-            object.material = clonedMaterialArray;
-          } else {
-            const cloned = object.material.clone();
-            clonedMaterials.push(cloned);
-            object.material = cloned;
-          }
-        }
-      });
-      materialsCloned = true;
-    }
-
-    boundingBoxCalculated = true;
-    return false;
-  });
+      boundingBoxCalculated = true;
+    },
+    // useTask's callback return value is IGNORED in Threlte 8 — the signature is
+    // `(delta: number) => void` — so the `return true` / `return false` this used
+    // to end on stopped nothing and every crate re-ran this measurement on every
+    // frame for its whole lifetime. `running` is the supported switch (`start` /
+    // `stop` are deprecated in 8), and it takes a getter so the `$state` latch
+    // drives it.
+    { running: () => !boundingBoxCalculated },
+  );
 
   // Simple animation functions using CrateExplode component
   function playExplosion() {
@@ -468,21 +547,42 @@
     }
   });
 
-  // Pointer events
-  function onPointerEnter() {
-    hovering = true;
+  // Pointer events.
+  //
+  // Hover is a mouse-only affordance. A tap on a touchscreen still produces a
+  // pointerenter, so on a phone every tap used to swell the crate to 1.05 and
+  // paint a `cursor-pointer` nobody can see — and the matching leave is not
+  // reliable (see onDestroy), so it could stick. Threlte hands the underlying DOM
+  // event through as `nativeEvent`, which is the only place `pointerType`
+  // survives the raycast. `!== "mouse"` rather than `=== "touch"` so pen input
+  // is excluded too — it has no hover state either.
+  function onPointerEnter(event: IntersectionEvent<PointerEvent>) {
+    const pointerType = event.nativeEvent?.pointerType;
+    if (pointerType && pointerType !== "mouse") return;
     scaleSpring.set(1.05);
-    if (typeof document !== "undefined") {
-      document.body.classList.add("cursor-pointer");
-    }
+    // Guarded so this instance can never hold more than one refcount, whatever
+    // the enter/leave pairing happens to be — an unmatched acquire would pin the
+    // class on for the rest of the page's life.
+    if (hovering) return;
+    hovering = true;
+    acquireCursorPointer();
   }
 
+  // Deliberately NOT pointerType-guarded: a leave only ever resets state, so
+  // refusing to run one can strand the crate scaled up with the cursor class
+  // held. endHover is idempotent, so a leave with no matching enter (the tap we
+  // skipped above) just re-settles the spring and touches no refcount.
   function onPointerLeave() {
-    hovering = false;
+    endHover();
+  }
+
+  // The one teardown for a hover, shared by the two ways one can end: the
+  // pointer leaving, and this crate being destroyed while still under it.
+  function endHover() {
     scaleSpring.set(1);
-    if (typeof document !== "undefined") {
-      document.body.classList.remove("cursor-pointer");
-    }
+    if (!hovering) return;
+    hovering = false;
+    releaseCursorPointer();
   }
 
   // Explode animation - no automatic reassembly, modal system handles timing
@@ -590,8 +690,18 @@
     return startReassembly();
   }
 
-  // Click handlers
+  // The crate's ONE click handler, registered on the hit proxy only. It used to
+  // be bound on both <CrateExplode> and the content group; two registrations on
+  // two objects in one interactivity context both raycast-hit a tap that lands on
+  // the text/icon plane, so the whole sequence ran twice.
   function handleClick(event: any) {
+    // Stop first, before the state guard. CrateExplode keeps its own
+    // `onclick={explode}` on the model group behind us, and nothing overrides it
+    // now that this handler lives on the proxy instead of on the component — so a
+    // click we decline (mid-reassembly, say) would fall through to that raw
+    // explode() and desync the model from this component's state machine.
+    event.stopPropagation();
+
     console.log(
       `🖱️ CLICK on '${title}' (${type}) - Current state: exploding=${isExploding}, exploded=${isExploded}`,
     );
@@ -608,8 +718,6 @@
       return;
     }
 
-    event.stopPropagation();
-
     // Reset the action executed flag for new click
     actionExecuted = false;
 
@@ -621,7 +729,7 @@
 
     console.log(`📡 Calling parent onLinkClick for '${title}' (${type}), passing action callback`);
 
-    // Modal-based navigation with fallback for accessibility/reliability
+    // Modal-based navigation
     const coordinatedAction = () => {
       // Prevent duplicate execution (fireball system calls this again)
       if (actionExecuted) {
@@ -630,9 +738,7 @@
       }
 
       actionExecuted = true;
-      console.log(
-        `🎯 Coordinated action executing for '${title}' (${type}) - Modal system with fallback`,
-      );
+      console.log(`🎯 Coordinated action executing for '${title}' (${type})`);
       console.log(`📋 Debug info:`, {
         type,
         hasModalManager: !!modalManager,
@@ -643,65 +749,17 @@
 
       // For regular navigation links, show modal if available
       if ((type === "url" || type === "download" || type === "contact") && modalManager && url) {
-        console.log(`✅ Modal conditions met - proceeding with modal display`);
+        // No screen coordinates. This used to project the crate's world position
+        // through the camera into pixels, with two fallbacks that passed
+        // `screenWidth * 0.6` — a WIDTH-derived number — as the Y coordinate. All
+        // three were dead: LinkModal's calculateModalPosition ignored the position
+        // it was handed and centered the modal regardless. LinkModal now centers
+        // in CSS and showModal takes the link alone.
+        console.log(`🚀 Modal conditions met - showing modal for '${link.name}'`);
+        modalManager.showModal(link);
 
-        try {
-          // Convert 3D crate position to screen coordinates for modal positioning
-          if (camera.current && $size) {
-            console.log(`📐 Converting 3D position to screen coordinates...`);
-            console.log(`📐 Input data:`, {
-              cameraAvailable: !!camera.current,
-              sizeAvailable: !!$size,
-              size: $size,
-              positionArray,
-              height,
-            });
-
-            const screenPosition = new THREE.Vector3();
-            screenPosition.copy(
-              new THREE.Vector3(positionArray[0], positionArray[1] + height / 2, positionArray[2]),
-            );
-            screenPosition.project(camera.current);
-
-            // Convert from normalized device coordinates to screen coordinates
-            const screenX = ((screenPosition.x + 1) * $size.width) / 2;
-            const screenY = ((-screenPosition.y + 1) * $size.height) / 2;
-
-            console.log(`🌟 Calculated screen position:`, {
-              normalizedPosition: { x: screenPosition.x, y: screenPosition.y },
-              screenX,
-              screenY,
-              isFinite: isFinite(screenX) && isFinite(screenY),
-            });
-
-            // Validate coordinates and show modal
-            if (isFinite(screenX) && isFinite(screenY)) {
-              console.log(`🚀 Calling modalManager.showModal() with:`, {
-                link: link.name,
-                screenX,
-                screenY,
-              });
-              modalManager.showModal(link, screenX, screenY);
-            } else {
-              console.warn(`⚠️ Invalid coordinates, using center fallback`);
-              modalManager.showModal(link, screenWidth / 2, screenWidth * 0.6);
-            }
-          } else {
-            console.warn(`⚠️ Camera or size not available:`, {
-              camera: !!camera.current,
-              size: !!$size,
-              screenWidth,
-            });
-            // Use center of screen as fallback
-            console.log(`🚀 Calling modalManager.showModal() with fallback position`);
-            modalManager.showModal(link, screenWidth / 2, screenWidth * 0.6);
-          }
-
-          // DO NOT reset immediately after modal - let the explosion/fade cycle complete naturally
-          console.log(`🎬 Modal displayed - letting explosion animation complete naturally`);
-        } catch (error) {
-          console.error(`❌ Modal positioning failed:`, error);
-        }
+        // DO NOT reset immediately after modal - let the explosion/fade cycle complete naturally
+        console.log(`🎬 Modal displayed - letting explosion animation complete naturally`);
       } else {
         console.log(`❌ Modal conditions NOT met:`, {
           correctType: type === "url" || type === "download" || type === "contact",
@@ -1059,45 +1117,18 @@
     updateSvgMaterials();
   });
 
-  // Update crate model materials opacity (now using cloned materials per instance)
-  $effect(() => {
-    if (!group || !$gltf || !materialsCloned) return;
-
-    // Log opacity changes for debugging
-    console.log(
-      `🎨 Updating opacity for '${title}': modelOpacity=${modelOpacity.toFixed(2)}, isReassembling=${isReassembling}`,
-    );
-
-    // Traverse all meshes in the group and update their material opacity
-    // Skip main body meshes (Cube001, Cube001_1) as CrateExplode handles their opacity
-    // Since materials are now cloned per instance, this only affects this component
-    group.traverse((object) => {
-      if (object instanceof THREE.Mesh && object.material) {
-        // Skip main body meshes - let CrateExplode handle their opacity
-        if (
-          object.name === "Cube001" ||
-          object.name === "Cube001_1" ||
-          object.name === "Cube.002"
-        ) {
-          return;
-        }
-
-        if (Array.isArray(object.material)) {
-          object.material.forEach((mat) => {
-            if (mat instanceof THREE.MeshStandardMaterial) {
-              mat.transparent = modelOpacity < 1;
-              mat.opacity = modelOpacity;
-              mat.needsUpdate = true;
-            }
-          });
-        } else if (object.material instanceof THREE.MeshStandardMaterial) {
-          object.material.transparent = modelOpacity < 1;
-          object.material.opacity = modelOpacity;
-          object.material.needsUpdate = true;
-        }
-      }
-    });
-  });
+  // Crate material opacity is NOT handled here — `modelOpacity` is handed to
+  // <CrateExplode>, which owns it. This component used to re-clone the material
+  // of all ~55 meshes inside the frame task and then write opacity onto them
+  // here, which (a) orphaned the two per-instance clones CrateExplode had already
+  // made, (b) left Threlte's declared `material=` prop permanently pointing at a
+  // different object than the live `mesh.material`, and (c) disposed in a
+  // component that never created them. The name-skip that spared Cube001 /
+  // Cube001_1 / Cube.002 "so CrateExplode can handle their opacity" rested on a
+  // false premise: `opacity=` on a T.Mesh/T.Group is an inert no-op (Object3D has
+  // no opacity), so the crate body never faded at all — the shards went
+  // transparent while the coplanar body stayed fully opaque, and the result read
+  // as z-fighting speckle rather than a fade.
 
   // Clean up on destroy
   onDestroy(() => {
@@ -1105,11 +1136,13 @@
       clearTimeout(resetTimeout);
     }
 
-    // Clean up cloned materials to prevent memory leaks
-    clonedMaterials.forEach((material) => {
-      material.dispose();
-    });
-    clonedMaterials = [];
+    // A crate can be destroyed mid-hover — which is exactly what tapping a
+    // category crate does: explode, transition, unmount, with the pointer still
+    // on it. Threlte's cancelPointer then looks up handlers for an object whose
+    // entry the interactivity plugin's own cleanup already dropped via
+    // removeInteractiveObject, so onPointerLeave never fires and the body class
+    // would stay on for the rest of the session. Release what we still hold.
+    endHover();
 
     // Clean up textures
     if (faviconTexture) {
@@ -1122,10 +1155,6 @@
     if (!boundingBoxCalculated) {
       return [1, 1, 1];
     }
-
-    const scaleX = width / modelWidth;
-    const scaleY = height / modelHeight;
-    const scaleZ = depth / modelDepth;
 
     return [scaleX, scaleY, scaleZ];
   }
@@ -1213,11 +1242,17 @@
   };
 </script>
 
+<!-- Scene-graph object names. Keyed off `crateId` — the same key the crate is
+     registered under in CrateController — so an object found in the scene can be
+     traced straight back to its registry entry. The old `${columnKey}-${index}`
+     naming collided: the back button passes neither, so it took the same name as
+     the first left-column crate. Falls back to column/index for any caller that
+     does not supply a crateId. -->
 <!-- Main container -->
 <T.Group
   position={[positionArray[0], positionArray[1], positionArray[2]]}
   rotation={[rotationArray[0], rotationArray[1], rotationArray[2]]}
-  name={`crate-link-${columnKey}-${index}`}
+  name={`crate-link-${sceneKey}`}
 >
   <!-- Crate model container (offsets applied here so only the model moves, not the content) -->
   <T.Group
@@ -1228,15 +1263,36 @@
     {width}
     {depth}
   >
-    <!-- Use CrateExplode component for animation -->
+    <!-- Use CrateExplode component for animation. It is the single owner of the
+         crate's material opacity: it clones the GLB's two shared materials
+         per-instance and writes modelOpacity into them, so nothing out here may
+         touch mesh materials. Pointer handlers live on the hit proxy below, not
+         on this component — one registration per crate. -->
     <CrateExplode
       bind:this={crateExplodeRef}
-      onclick={handleClick}
-      onpointerenter={onPointerEnter}
-      onpointerleave={onPointerLeave}
+      {modelOpacity}
       scale={[hoverScale, hoverScale, hoverScale]}
     />
   </T.Group>
+
+  <!-- Tap proxy: the crate's only click/hover target.
+       `visible={false}` would be the wrong tool — three's raycaster does not
+       consult `visible`, so the mesh would still be hit and we'd have hidden it
+       for nothing. `colorWrite={false}` is what actually makes it contribute no
+       pixels while staying raycastable, and `depthWrite={false}` keeps it out of
+       the depth buffer so it cannot occlude the text sitting just behind it.
+       Sized to the crate but never smaller than MIN_TAP_WORLD, so a crate that
+       renders below 44 CSS px is still comfortably hittable. -->
+  <T.Mesh
+    position={[0, 0, contentZOffset + TAP_PROXY_Z_EPSILON]}
+    name={`crate-hit-${sceneKey}`}
+    onclick={handleClick}
+    onpointerenter={onPointerEnter}
+    onpointerleave={onPointerLeave}
+  >
+    <T.PlaneGeometry args={[tapW, tapH]} />
+    <T.MeshBasicMaterial transparent={true} opacity={0} depthWrite={false} colorWrite={false} />
+  </T.Mesh>
 
   <!-- Content Container -->
   <!-- Anchored at outer-frame (0, 0, contentZOffset). No X/Y offset: model
@@ -1247,8 +1303,7 @@
     <T.Group
       position={[0, 0, contentZOffset]}
       rotation={[0, 0, 0]}
-      name={`crate-content-${columnKey}-${index}`}
-      onclick={handleClick}
+      name={`crate-content-${sceneKey}`}
       scale={[hoverScale, hoverScale, hoverScale]}
     >
       {#if link.inlineIcon && svgGroup}
@@ -1320,9 +1375,7 @@
               <T is={svgGroup} />
             </T.Group>
           {:else if faviconLoaded && faviconTexture}
-            <T.Mesh
-              scale={[getFaviconScale()[0], getFaviconScale()[1], getFaviconScale()[2]]}
-            >
+            <T.Mesh scale={[getFaviconScale()[0], getFaviconScale()[1], getFaviconScale()[2]]}>
               <T.PlaneGeometry args={[1, 1, 1]} />
               <T.MeshStandardMaterial
                 map={faviconTexture}
