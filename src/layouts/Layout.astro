@@ -13,7 +13,7 @@ const { title, description, lockViewport = false } = Astro.props;
 <!doctype html>
 <html lang="en">
   <head>
-    <SiteMetadata title={title} description={description} />
+    <SiteMetadata title={title} description={description} viewportFit={lockViewport} />
     <title>{title}</title>
   </head>
   <body class={lockViewport ? "route-locked" : undefined}>
@@ -31,13 +31,39 @@ const { title, description, lockViewport = false } = Astro.props;
   body {
     margin: 0;
     padding: 0;
+    /* Without this on <html>, body's height: 100% resolves against an auto-height
+       parent and collapses to auto — the lock below would be overflow-only. */
+    height: 100%;
     font-family: system-ui, sans-serif;
   }
 
-  /* Routes that own the full viewport (3D scenes, immersive views) opt in. */
+  /* Routes that own the full viewport (3D scenes, immersive views) opt in.
+     overflow: hidden alone does not stop Chrome Android pull-to-refresh or iOS
+     rubber-banding over the canvas — position: fixed + overscroll-behavior do. */
   body.route-locked {
     height: 100%;
     overflow: hidden;
+    overscroll-behavior: none;
+    position: fixed;
+    inset: 0;
+    width: 100%;
+  }
+
+  /* Overscroll propagates up to the viewport element; some Chrome versions only
+     honour the boundary when it is declared on <html> as well. */
+  html:has(body.route-locked) {
+    overscroll-behavior: none;
+  }
+
+  /* The canvas owns every gesture on a locked route: touch-action keeps a two-finger
+     drag from pinch-zooming the page, and the callout/tap-highlight resets stop iOS
+     from popping a context menu or flashing blue over the scene. */
+  body.route-locked canvas {
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
+    -webkit-tap-highlight-color: transparent;
   }
 
   /* Screen reader only utility */

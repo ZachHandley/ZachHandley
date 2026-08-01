@@ -1,20 +1,18 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { Spring, Tween } from "svelte/motion";
-  import { cubicOut, backOut } from "svelte/easing";
+  import { cubicOut } from "svelte/easing";
   import Icon from "@iconify/svelte";
   import type { Link } from "~/types/baseSchemas";
 
   let {
     link,
-    isVisible = $bindable(),
-    clickPosition,
+    isVisible = $bindable(false),
     onNavigate,
     onClose,
   }: {
     link: Link | null;
-    isVisible: boolean;
-    clickPosition: { x: number; y: number } | null;
+    isVisible?: boolean;
     onNavigate: (url: string, type: Link["type"]) => void;
     onClose: () => void;
   } = $props();
@@ -35,67 +33,24 @@
     easing: cubicOut,
   });
 
-  // Position animation for smooth positioning
-  const positionSpring = new Spring(
-    { x: 0, y: 0 },
-    {
-      stiffness: 0.4,
-      damping: 0.7,
-    },
-  );
-
   let scale = $derived(scaleSpring.current);
   let opacity = $derived(opacityTween.current);
-  let position = $derived(positionSpring.current);
 
-  // Simple responsive modal positioning - just center it
-  function calculateModalPosition(clickPos: { x: number; y: number } | null): {
-    x: number;
-    y: number;
-  } {
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-
-    // Center the modal on screen for reliability
-    return {
-      x: (viewportWidth - 320) / 2, // 320px modal width
-      y: (viewportHeight - 280) / 2, // 280px modal height
-    };
-  }
-
-  // Handle modal visibility changes
+  // Handle modal visibility changes. Placement is pure CSS (see the modal's
+  // left/top/transform below), so this only drives the enter/exit animation.
   $effect(() => {
-    console.log(`🎬 LinkModal $effect triggered:`, {
-      isVisible,
-      hasLink: !!link,
-      linkName: link?.name,
-      hasClickPosition: !!clickPosition,
-      clickPosition,
-      mounted,
-    });
-
-    if (isVisible && link && clickPosition) {
-      console.log(`🎬 Modal showing - calculating position and animating in`);
-
-      // Calculate safe position
-      const safePosition = calculateModalPosition(clickPosition);
-      console.log(`🎬 Safe position calculated:`, safePosition);
-
-      // Set initial position
-      positionSpring.set(safePosition);
-
-      // Animate in
-      setTimeout(() => {
-        console.log(`🎬 Starting modal animation`);
+    if (isVisible && link) {
+      // Let the collapsed state paint once before springing open.
+      const timer = setTimeout(() => {
         scaleSpring.set(1);
         opacityTween.set(1);
       }, 10);
-    } else {
-      console.log(`🎬 Modal hiding or conditions not met - animating out`);
-      // Animate out
-      scaleSpring.set(0);
-      opacityTween.set(0);
+
+      return () => clearTimeout(timer);
     }
+
+    scaleSpring.set(0);
+    opacityTween.set(0);
   });
 
   // Handle clicks outside modal
@@ -230,26 +185,30 @@
     <div
       bind:this={modalElement}
       class="fixed bg-gradient-to-br {getThemeColors(link.type)
-        .bg} rounded-2xl shadow-2xl border {getThemeColors(link.type)
-        .border} p-6 max-w-sm backdrop-blur-lg"
+        .bg} rounded-2xl shadow-2xl border {getThemeColors(link.type).border} p-6 backdrop-blur-lg"
       style="
-        left: {position.x}px;
-        top: {position.y}px;
-        transform: scale({scale});
-        opacity: {opacity};
+        left: 50%;
+        top: 50%;
+        width: min(22rem, calc(100vw - 2rem));
+        max-height: calc(100svh - 2rem);
+        overflow-x: hidden;
+        overflow-y: auto;
+        padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+        transform: translate(-50%, -50%) scale({scale});
         transform-origin: center;
+        opacity: {opacity};
       "
     >
       <!-- Header -->
       <div class="flex items-start justify-between mb-4">
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-3 min-w-0">
           <div
-            class="w-10 h-10 flex items-center justify-center rounded-lg bg-black/20 backdrop-blur-sm"
+            class="w-10 h-10 shrink-0 flex items-center justify-center rounded-lg bg-black/20 backdrop-blur-sm"
           >
             <Icon icon={getDisplayIcon()} class="w-6 h-6 {getThemeColors(link.type).accent}" />
           </div>
-          <div>
-            <h3 class="text-white font-bold text-lg">{link.name}</h3>
+          <div class="min-w-0">
+            <h3 class="text-white font-bold text-lg break-words">{link.name}</h3>
             {#if link.type === "url" && link.url}
               <p class="text-gray-300 text-sm">{getDomain(link.url)}</p>
             {:else if link.category}
@@ -261,7 +220,7 @@
         <!-- Close button -->
         <button
           onclick={onClose}
-          class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-black/20 transition-colors"
+          class="w-8 h-8 shrink-0 flex items-center justify-center rounded-lg hover:bg-black/20 transition-colors"
           aria-label="Close modal"
         >
           <Icon icon="mdi:close" class="w-5 h-5 text-gray-400" />
@@ -332,10 +291,3 @@
     </div>
   </div>
 {/if}
-
-<style>
-  /* Add glassmorphism effects for better visual hierarchy */
-  .modal-container {
-    backdrop-filter: blur(16px);
-  }
-</style>

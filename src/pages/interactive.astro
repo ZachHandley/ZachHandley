@@ -6,6 +6,6 @@ import { fetchPublishedLinks } from "~/server/fetchPublishedLinks";
 const links = await fetchPublishedLinks();
 ---
 
-<Layout title="interactive — zachhandley" description="the medieval 3d scene. desktop only, opt-in." lockViewport>
+<Layout title="interactive — zachhandley" description="the medieval 3d scene. opt-in." lockViewport>
   <InteractiveIsland client:only="svelte" {links} />
 </Layout>
