@@ -46,6 +46,8 @@
   // Typography scale factors (fractions of crate height). These are design knobs,
   // not measurements — adjust as needed but don't pretend they're derived from anything.
   const TITLE_FONT_RATIO = 0.15;
+  // Fraction of the crate face the title may occupy before it is scaled down.
+  const TITLE_MAX_WIDTH_RATIO = 0.9;
   const ICON_SCALE_RATIO = 0.3;
   const DOMAIN_FONT_RATIO = 0.1;
   const INLINE_ICON_RATIO = 0.28;
@@ -241,6 +243,7 @@
   let iconLocalSize = $state<{ width: number; height: number } | null>(null);
   let textLocalSize = $state<{ width: number; height: number } | null>(null);
   let titleSize = $state<{ width: number; height: number } | null>(null);
+  let titleWidthPerFontUnit = $state<number | null>(null);
   let domainSize = $state<{ width: number; height: number } | null>(null);
   let inlineTextMesh = $state<THREE.Mesh | null>(null);
   let titleTextMesh = $state<THREE.Mesh | null>(null);
@@ -315,6 +318,18 @@
   // the template for why this is keyed off crateId rather than column/index.
   const sceneKey = $derived(crateId || `${columnKey}-${index}`);
 
+  // Usable label width on the crate's front panel — the crate face inset by the
+  // model's wooden frame.
+  const titleMaxWidth = $derived(width * TITLE_MAX_WIDTH_RATIO);
+
+  // Shrink the title only as far as it needs to fit. Long labels used to render
+  // at full size and spill past the panel (see onTitleTextSync).
+  const titleFontSize = $derived.by(() => {
+    const base = height * TITLE_FONT_RATIO;
+    if (!titleWidthPerFontUnit || titleWidthPerFontUnit <= 0) return base;
+    return Math.min(base, titleMaxWidth / titleWidthPerFontUnit);
+  });
+
   const inlineMeasured = $derived(
     iconLocalSize !== null && textLocalSize !== null && modelCenterY !== null,
   );
@@ -382,6 +397,17 @@
   function onTitleTextSync() {
     if (!titleTextMesh) return;
     titleSize = measureTroikaText(titleTextMesh as any);
+
+    // Record the title's width per unit of font size. Troika honours `maxWidth`
+    // by WRAPPING, which `whiteSpace="nowrap"` disables — so a long single word
+    // like "Professional" silently overflows the crate's front panel and gets
+    // clipped by its wooden frame. Rendered width is linear in font size, so
+    // dividing it out gives a font-size-independent constant; deriving the font
+    // size back from that converges in one sync instead of oscillating.
+    const usedFontSize = (titleTextMesh as unknown as { fontSize?: number }).fontSize;
+    if (titleSize && usedFontSize && usedFontSize > 0 && titleSize.width > 0) {
+      titleWidthPerFontUnit = titleSize.width / usedFontSize;
+    }
   }
   function onDomainTextSync() {
     if (!domainTextMesh) return;
@@ -469,15 +495,36 @@
       const bb = cube001.geometry.boundingBox;
       if (!bb || bb.isEmpty()) return;
 
+      // The visible body is TWO submeshes: Cube001 is the panel (Material.003)
+      // and Cube001_1 is the wooden frame (Material.004). The frame is the
+      // frontmost geometry — its local max.z is 1.0 against the panel's 0.9737 —
+      // so the content plane has to clear the FRAME, not the panel, or the frame
+      // renders in front of the label and eats the first and last glyph.
+      //
+      // This only became visible once the crate's depth was corrected: at the old
+      // squashed scaleZ (~0.26) the frame stood 0.007 world units proud of the
+      // panel and the 0.03 margin below cleared it by accident. At true depth it
+      // stands 0.054 proud, and the margin no longer covers it.
+      const cube001Frame = group.getObjectByName("Cube001_1") as THREE.Mesh | null;
+      let frontLocalMaxZ = bb.max.z;
+      if (cube001Frame?.geometry) {
+        if (!cube001Frame.geometry.boundingBox) cube001Frame.geometry.computeBoundingBox();
+        const fbb = cube001Frame.geometry.boundingBox;
+        if (fbb && !fbb.isEmpty()) frontLocalMaxZ = Math.max(frontLocalMaxZ, fbb.max.z);
+      }
+
       const c2sx = cube002.scale.x;
       const c2sy = cube002.scale.y;
       const c2sz = cube002.scale.z;
 
+      // Width/height/centre stay keyed to the panel: that is the face the label
+      // and icon are laid out against, and it is what `width`/`height` mean to
+      // callers. Only the content's Z clearance needs the frame.
       modelWidth = (bb.max.x - bb.min.x) * c2sx;
       modelHeight = (bb.max.y - bb.min.y) * c2sy;
       modelDepth = (bb.max.z - bb.min.z) * c2sz;
       localCenterY = ((bb.min.y + bb.max.y) / 2) * c2sy + cube002.position.y;
-      localMaxZ = bb.max.z * c2sz + cube002.position.z;
+      localMaxZ = frontLocalMaxZ * c2sz + cube002.position.z;
 
       boundingBoxCalculated = true;
     },
@@ -1345,12 +1392,12 @@
             bind:ref={titleTextMesh as any}
             text={title}
             color="white"
-            fontSize={height * TITLE_FONT_RATIO}
+            fontSize={titleFontSize}
             fontWeight="bold"
             whiteSpace="nowrap"
             anchorX="center"
             anchorY="middle"
-            maxWidth={width * 0.9}
+            maxWidth={titleMaxWidth}
             textAlign="center"
             fillOpacity={contentMeasured ? contentOpacity * opacity : 0}
             transparent={true}
