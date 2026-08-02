@@ -514,7 +514,7 @@
         explodeCrate: () => void;
         resetCrate: () => void;
         resetToDefault: () => void;
-        explodeWithAction: (action?: () => void) => Promise<void>;
+        explodeFromFireball: () => Promise<void>;
       }
     >
   >({});
@@ -603,7 +603,7 @@
       syncCrate(
         id,
         {
-          explode: () => component.explodeWithAction?.(() => selectCategory(category.id)),
+          explode: () => component.explodeFromFireball?.(),
           reset: () => component.resetCrate?.(),
         },
         getSafePosition(category.id),
@@ -618,7 +618,7 @@
       syncCrate(
         id,
         {
-          explode: () => component.explodeWithAction?.(() => selectCategory(category.id)),
+          explode: () => component.explodeFromFireball?.(),
           reset: () => component.resetCrate?.(),
         },
         getSafePosition(category.id),
@@ -685,7 +685,7 @@
     syncCrate(
       "back-button",
       {
-        explode: () => backButtonComponent.explodeWithAction?.(() => goBack()),
+        explode: () => backButtonComponent.explodeFromFireball?.(),
         reset: () => backButtonComponent.resetCrate?.(),
       },
       [0, backButtonYPosition, LINKS_Z_DEPTH + 3],

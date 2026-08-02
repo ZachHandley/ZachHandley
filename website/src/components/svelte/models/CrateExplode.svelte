@@ -218,19 +218,48 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
     console.log(`💥 Explosion started - ${actionsPlayed} actions playing`);
   };
 
-  export const reset = () => {
+  /**
+   * Snap straight back to the assembled pose with no animation.
+   *
+   * This is what a view change wants: the crate is being shown fresh and there
+   * is nothing to play back. Distinct from `reset()`, which animates.
+   */
+  export const snapToRest = () => {
+    for (const actionName in $actions) {
+      const action = $actions[actionName as ActionName];
+      if (!action) continue;
+      action.stop();
+      action.time = 0;
+      action.timeScale = 1;
+      action.paused = false;
+    }
+    mixer?.update(0); // flush t=0 onto the bones before the next render
+    currentlyExploded = false;
+    activeReassemblyActions = 0;
+    if (onReassemblyComplete) {
+      const complete = onReassemblyComplete;
+      onReassemblyComplete = null;
+      complete();
+    }
+  };
+
+  /**
+   * Reassemble by playing the shard clips backwards.
+   *
+   * `seedTime` scatters the shards to that point of the clip first — used only
+   * for the back button's mount flourish, which wants to fly together from a
+   * scattered state it was never actually in. Everything else omits it and
+   * rewinds from wherever the crate currently is.
+   */
+  export const reset = (seedTime?: number) => {
     // Guard on a reassembly already being IN FLIGHT, not on currentlyExploded:
-    // StackedLinks renders the back button with reassembleOnMount, so reset()
-    // legitimately runs on a crate that was never exploded, and an early return
-    // there left the completion callback un-fired and the button unclickable.
-    // reset() works from any state because it seeds each action to the end of its
-    // clip below. The guard still has to exist, though — a concurrent reset()
-    // would zero activeReassemblyActions under the running actions and their
-    // finished events would then drive the counter negative.
+    // the back button mounts with reassembleOnMount, so reset() legitimately runs
+    // on a crate that was never exploded, and an early return there left the
+    // completion callback un-fired and the button unclickable. The guard still has
+    // to exist — a concurrent reset() would zero activeReassemblyActions under the
+    // running actions and their finished events would drive the counter negative.
     if (activeReassemblyActions > 0) return;
     currentlyExploded = false;
-
-    console.log(`🔄 Reset: Starting reverse animation for reassembly`);
     activeReassemblyActions = 0; // Reset counter
 
     // Play all actions in reverse (reassemble) with original timing
@@ -239,17 +268,25 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
       // and fling it ~105 units away, so leaving it parked at the exploded end
       // keeps the body hidden while the shards fly home. The finished handler
       // rewinds and stops it once they land.
-      if (actionName === "Cube.002Action") {
-        console.log(`🚫 Skipping main body animation '${actionName}' during reassembly`);
-        continue;
-      }
+      if (actionName === "Cube.002Action") continue;
 
       const action = $actions[actionName as ActionName];
       if (action) {
-        // Ensure action is at the end position (exploded state)
-        action.time = action.getClip().duration;
+        // Rewind from where this shard ACTUALLY is.
+        //
+        // This used to unconditionally seed `action.time = clip.duration`. The
+        // clip runs 10.4s while an explosion only ever plays its first second
+        // (explodeDuration), so seeding to the end teleported every shard ~1024
+        // world units out and then crawled it home for ~8s — on real explosions
+        // AND, once reset() stopped no-oping on assembled crates, on all four
+        // category crates every time you pressed Back. Reversing from the current
+        // time makes a crate that is already at rest a genuine no-op, which is
+        // exactly what a view change needs.
+        if (seedTime !== undefined) {
+          action.time = Math.min(Math.max(seedTime, 0), action.getClip().duration);
+        }
+        if (action.time <= 0) continue; // already assembled; nothing to rewind
 
-        // Set up reverse playback
         action.setLoop(THREE.LoopOnce, 1);
         action.clampWhenFinished = true;
         action.timeScale = -2.21; // Back to original speed
@@ -257,13 +294,8 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         action.play();
 
         activeReassemblyActions++; // Count each action we start
-        console.log(
-          `🔄 Reset action '${actionName}': duration=${action.getClip().duration}, timeScale=${action.timeScale}`,
-        );
       }
     }
-
-    console.log(`🔄 Started ${activeReassemblyActions} reassembly actions`);
 
     // Nothing started — also what happens when $actions is still empty because
     // the GLB has not resolved yet. No "finished" event is coming, so complete

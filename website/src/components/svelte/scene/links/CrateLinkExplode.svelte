@@ -548,9 +548,12 @@
     }
   }
 
-  function playReassembly() {
+  // `seedTime` is only passed by the mount flourish, which needs the shards
+  // scattered to a state the crate was never actually in. A real reassembly
+  // rewinds from wherever the explosion got to.
+  function playReassembly(seedTime?: number) {
     if (crateExplodeRef && typeof crateExplodeRef.reset === "function") {
-      crateExplodeRef.reset();
+      crateExplodeRef.reset(seedTime);
     }
   }
 
@@ -681,7 +684,7 @@
   }
 
   // Reassembly animation - plays reverse explosion with fade-in (mixer-based timing)
-  async function startReassembly(): Promise<void> {
+  async function startReassembly(seedTime?: number): Promise<void> {
     if (isResetting || isReassembling) {
       console.log(`🚫 Reassembly blocked for '${title}' - already resetting/reassembling`);
       return;
@@ -727,7 +730,7 @@
       }
 
       // Start the reassembly animation
-      playReassembly();
+      playReassembly(seedTime);
     });
   }
 
@@ -1155,7 +1158,11 @@
       contentOpacityTween.set(0);
       contentVisible = false;
       isExploded = true;
-      void startReassembly();
+      // Seed to `explodeDuration`, not the end of the clip. The shard clips run
+      // 10.4s but an explosion only ever plays their first second, so seeding to
+      // the end scattered the back button ~1024 units and took ~10s to converge —
+      // it was still raining debris by the time you could click it.
+      void startReassembly(explodeDuration);
     }
   });
 
@@ -1243,9 +1250,13 @@
     modelOpacityTween.set(1);
     contentOpacityTween.set(1);
 
-    // Reset the CrateExplode component if available
-    if (crateExplodeRef && typeof crateExplodeRef.reset === "function") {
-      crateExplodeRef.reset();
+    // Snap, don't animate. This function's whole contract is "immediate, no
+    // animation" — it runs on view changes, against crates that were just
+    // mounted and have nothing to play back. Calling the animated reset() here
+    // is what made every category crate visibly explode-and-reassemble on each
+    // Back press.
+    if (crateExplodeRef && typeof crateExplodeRef.snapToRest === "function") {
+      crateExplodeRef.snapToRest();
     }
   }
 
@@ -1255,26 +1266,26 @@
     return startReassembly();
   }
 
-  // Explosion function that can be called from registry with action
-  function explodeWithAction(actionFunction?: () => void): Promise<void> {
-    console.log(
-      `🎯 explodeWithAction called for '${title}' (crateId='${crateId}') with action:`,
-      !!actionFunction,
-    );
-
-    if (type === "category" || type === "action") {
-      console.log(`🔄 Navigation link - triggering action immediately for '${title}'`);
-      // For navigation links: trigger action IMMEDIATELY before explosion
-      if (actionFunction) {
-        actionFunction();
-      }
-      // Start explosion animation (visual feedback only, no fade-out, no auto-reassembly)
-      return explodeVisualOnly();
-    } else {
-      console.log(`🔗 Regular link - normal explosion with auto-reassembly for '${title}'`);
-      // For regular links: normal explosion with automatic reassembly
-      return explodeCrate();
-    }
+  /**
+   * Explosion entry point for the crate registry (i.e. "a fireball just hit me").
+   *
+   * Purely visual — it does NOT run the navigation action, despite the name it
+   * inherited. FireballSystem.completeFireball already owns that sequencing: it
+   * calls this, waits 1500ms so the burst is actually on screen, and only then
+   * awaits the stored action.
+   *
+   * This used to invoke `actionFunction()` itself, at t=0. For a category crate
+   * that meant `selectCategory` flipped the view and unmounted the crate roughly
+   * 300ms into its own explosion, so the burst was never visible — measured peak
+   * shard displacement 6.32 world units against a resting 2.92, where a burst
+   * that plays out reaches ~455. It also meant the action ran TWICE: once here
+   * and again from completeFireball 1.5s later, which is why one tap of the back
+   * button fired goBack() twice.
+   */
+  function explodeFromFireball(): Promise<void> {
+    // Navigation crates stay exploded until the view change unmounts them;
+    // regular links auto-reassemble and fade back in.
+    return type === "category" || type === "action" ? explodeVisualOnly() : explodeCrate();
   }
 
   // Expose functions to parent
@@ -1284,7 +1295,7 @@
     startReassembly,
     resetToDefault,
     explodeVisualOnly,
-    explodeWithAction,
+    explodeFromFireball,
     onModalClosed,
   };
 </script>
