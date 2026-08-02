@@ -41,3 +41,30 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: website
           command: deploy --config dist/server/wrangler.json
+
+      # Worker secrets live on the Worker, not in the deploy artifact, so
+      # `wrangler deploy` neither sets nor clears them. Pushing them here makes
+      # GitHub the source of truth instead of a value someone typed into
+      # `wrangler secret put` once that nobody can audit afterwards.
+      #
+      # Deliberately NOT the wrangler-action `secrets:` input: that shells out to
+      # `wrangler secret bulk` passing only `--env`, ignoring `--config` and
+      # `--name`, so it resolves the Worker name from website/wrangler.toml
+      # ("zachhandley"). Harmless here — but on the dev workflow it would write
+      # the key onto production. Both workflows target the Worker explicitly.
+      #
+      # Runs after deploy so a first-ever deploy creates the Worker before we try
+      # to attach secrets to it.
+      - name: Sync Worker secrets
+        working-directory: website
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          APPWRITE_API_KEY: ${{ secrets.APPWRITE_API_KEY }}
+        run: |
+          if [ -z "$APPWRITE_API_KEY" ]; then
+            echo "::warning::APPWRITE_API_KEY is not set in repo secrets - leaving the Worker's existing secrets untouched. If the Worker has no key, /admin and the write paths on /api/links fall back to guest scope and 401."
+            exit 0
+          fi
+          jq -n --arg v "$APPWRITE_API_KEY" '{APPWRITE_API_KEY: $v}' \
+            | pnpm exec wrangler secret bulk --config dist/server/wrangler.json

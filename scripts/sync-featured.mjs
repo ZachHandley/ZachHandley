@@ -7,8 +7,12 @@
 // featured — it only fills in description / icon / stack from GitHub and
 // auto-unfeatures repos that have become private/404/archived.
 //
-// Env (set as GH Actions secrets):
-//   APPWRITE_ENDPOINT, APPWRITE_PROJECT_ID, APPWRITE_API_KEY
+// Env:
+//   APPWRITE_API_KEY      the only real secret. Required to WRITE rows; without
+//                         it the script runs read-only (README still regenerates,
+//                         Appwrite rows are left alone) rather than failing.
+//   APPWRITE_ENDPOINT     public, defaults to the value in website/src/env.ts
+//   APPWRITE_PROJECT_ID   public, defaults to the value in website/src/env.ts
 //   APPWRITE_DATABASE_ID  (default "main")
 //   APPWRITE_TABLE_ID     (default "links")
 //   GITHUB_TOKEN          (provided automatically in Actions)
@@ -113,27 +117,36 @@ function arrEq(a, b) {
 }
 
 async function main() {
+  // Endpoint and project id are public — they ship to the browser and already
+  // carry these exact defaults in website/src/env.ts. Requiring them as Actions
+  // secrets is what killed every scheduled run since this workflow was added:
+  // the loop below threw `Missing required env var: APPWRITE_ENDPOINT` before
+  // reaching the one value that is actually secret.
   const {
-    APPWRITE_ENDPOINT,
-    APPWRITE_PROJECT_ID,
+    APPWRITE_ENDPOINT = "https://appwrite.blackleafdigital.com/v1",
+    APPWRITE_PROJECT_ID = "68c3bb35001fe37018e4",
     APPWRITE_API_KEY,
     APPWRITE_DATABASE_ID = "main",
     APPWRITE_TABLE_ID = "links",
     GITHUB_TOKEN,
   } = process.env;
 
-  for (const [k, v] of Object.entries({
-    APPWRITE_ENDPOINT,
-    APPWRITE_PROJECT_ID,
-    APPWRITE_API_KEY,
-  })) {
-    if (!v) throw new Error(`Missing required env var: ${k}`);
+  // The key IS required to write: this script pushes GitHub metadata back into
+  // the rows via updateRow. But `links` is world-readable, so without a key we
+  // can still read it and regenerate the README. Degrade to a dry run instead of
+  // failing the job outright — a stale README block is worse than a partial sync.
+  const readOnly = !APPWRITE_API_KEY;
+  if (readOnly) {
+    console.warn(
+      "APPWRITE_API_KEY is not set - running read-only. The README will still be " +
+        "regenerated; Appwrite rows will not be updated.",
+    );
   }
 
-  const client = new Client()
-    .setEndpoint(APPWRITE_ENDPOINT)
-    .setProject(APPWRITE_PROJECT_ID)
-    .setKey(APPWRITE_API_KEY);
+  const client = new Client().setEndpoint(APPWRITE_ENDPOINT).setProject(APPWRITE_PROJECT_ID);
+  // Never call setKey with a falsy value: Appwrite rejects an invalid key with
+  // 401 instead of falling back to guest scope, which would break the read too.
+  if (APPWRITE_API_KEY) client.setKey(APPWRITE_API_KEY);
   const db = new TablesDB(client);
   const octokit = new Octokit({ auth: GITHUB_TOKEN || undefined });
 
@@ -171,7 +184,7 @@ async function main() {
       const status = e?.status ?? "?";
       if (status === 404 || status === 403 || status === 451) {
         // Private / gone / blocked → unfeature.
-        if (!DRY_RUN) {
+        if (!DRY_RUN && !readOnly) {
           await db.updateRow({
             databaseId: APPWRITE_DATABASE_ID,
             tableId: APPWRITE_TABLE_ID,
@@ -190,7 +203,7 @@ async function main() {
     }
 
     if (repo.archived || repo.private) {
-      if (!DRY_RUN) {
+      if (!DRY_RUN && !readOnly) {
         await db.updateRow({
           databaseId: APPWRITE_DATABASE_ID,
           tableId: APPWRITE_TABLE_ID,
@@ -220,7 +233,7 @@ async function main() {
 
     let action = "unchanged";
     if (Object.keys(next).length > 0) {
-      if (!DRY_RUN) {
+      if (!DRY_RUN && !readOnly) {
         await db.updateRow({
           databaseId: APPWRITE_DATABASE_ID,
           tableId: APPWRITE_TABLE_ID,
@@ -293,6 +306,8 @@ async function main() {
   const md = [];
   md.push("## Featured sync summary\n");
   if (DRY_RUN) md.push("**Dry run** — no writes performed.\n");
+  if (readOnly)
+    md.push("**Read-only** — APPWRITE_API_KEY is not set, so Appwrite rows were not updated.\n");
   md.push(`| Title | Action | Notes |\n| --- | --- | --- |`);
   for (const s of summary) {
     const notes = s.reason

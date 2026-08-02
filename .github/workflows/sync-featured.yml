@@ -2,7 +2,7 @@ name: Sync featured projects
 
 on:
   schedule:
-    - cron: "0 */6 * * *"  # every 6 hours
+    - cron: "0 */6 * * *" # every 6 hours
   workflow_dispatch:
 
 permissions:
@@ -32,10 +32,18 @@ jobs:
       - name: Install scripts deps
         run: pnpm install --filter @zachhandley/scripts --ignore-scripts
 
+      # APPWRITE_ENDPOINT / APPWRITE_PROJECT_ID are deliberately not passed: they
+      # are public (they ship to the browser) and the script defaults them to the
+      # same values as website/src/env.ts. Wiring them as secrets is what broke
+      # this job — they resolved to empty strings and the script hard-failed on
+      # `Missing required env var: APPWRITE_ENDPOINT` before it ever reached the
+      # one value that is actually secret.
+      #
+      # Without APPWRITE_API_KEY the script runs read-only: the README is still
+      # regenerated from the world-readable `links` table, and the Appwrite
+      # write-back is skipped and reported in the job summary.
       - name: Run sync
         env:
-          APPWRITE_ENDPOINT: ${{ secrets.APPWRITE_ENDPOINT }}
-          APPWRITE_PROJECT_ID: ${{ secrets.APPWRITE_PROJECT_ID }}
           APPWRITE_API_KEY: ${{ secrets.APPWRITE_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: pnpm --filter @zachhandley/scripts sync:featured
