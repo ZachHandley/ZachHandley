@@ -93,7 +93,14 @@
   let currentColor = $state("white");
 
   // Get animation actions
-  const { actions, mixer } = useGltfAnimations<ActionName>(gltf, ref);
+  // Getters, not (store, Object3D). @threlte/extras 9.17 rewrote this hook: the
+  // legacy overload is still DECLARED, so TypeScript stays quiet, but a raw
+  // Object3D root is silently dropped and the clips bind to gltf.scene instead of
+  // the tree we actually render under <T is={ref}> — every animation stops.
+  const { actions, mixer } = useGltfAnimations<ActionName>(
+    () => $gltf,
+    () => ref,
+  );
 
   // Control eye glow effect
   $effect(() => {

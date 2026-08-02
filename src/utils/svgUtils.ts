@@ -69,8 +69,9 @@ export function createSvgMesh(
       });
     }
 
-    // Use the SVGLoader's createShapes helper
-    const shapes = SVGLoader.createShapes(path);
+    // three r185 deprecated SVGLoader.createShapes in favour of the ShapePath's
+    // own toShapes(); the static helper is now just a forwarding shim.
+    const shapes = path.toShapes();
 
     for (let j = 0; j < shapes.length; j++) {
       const shape = shapes[j];
