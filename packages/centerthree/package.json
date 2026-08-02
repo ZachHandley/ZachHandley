@@ -23,8 +23,8 @@
     "three": ">=0.150.0"
   },
   "devDependencies": {
-    "@types/three": "^0.184.0",
-    "three": "^0.184.0",
+    "@types/three": "^0.185.3",
+    "three": "^0.185.1",
     "typescript": "^5.8.3"
   }
 }

@@ -12,6 +12,8 @@ allowBuilds:
   workerd: true
 
 overrides:
-  three: ^0.184.0
+  # Pins one three across website + centerthree + @newkrok/three-particles.
+  # Bump here first: the override wins over any `pnpm add three@...`.
+  three: ^0.185.1
 
 confirmModulesPurge: false

@@ -180,7 +180,14 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
     clonedM4?.dispose();
   });
 
-  export const { actions, mixer } = useGltfAnimations<ActionName>(gltf, ref);
+  // Getters, not (store, Object3D). @threlte/extras 9.17 rewrote this hook: the
+  // legacy overload is still DECLARED, so TypeScript stays quiet, but a raw
+  // Object3D root is silently dropped and the clips bind to gltf.scene instead of
+  // the tree we actually render under <T is={ref}> — every animation stops.
+  export const { actions, mixer } = useGltfAnimations<ActionName>(
+    () => $gltf,
+    () => ref,
+  );
 
   // Add completion callback system
   let onReassemblyComplete: (() => void) | null = null;
