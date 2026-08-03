@@ -160,9 +160,18 @@
     }
   }
 
-  // Filtered links based on selected category
+  // Filtered links based on selected category.
+  //
+  // Deliberately NOT gated on `transitioning`. It used to be, which meant that
+  // when selectCategory flipped `showingCategories` the back button mounted alone
+  // and the links stayed empty until `transitioning` cleared ~460ms later — so the
+  // button sat by itself on an empty scene and then every link popped in at full
+  // opacity, after its own fade-in tween had already finished. `showingCategories`
+  // alone is enough to key the branch: you can only reach another category by
+  // going back through the category view, so the {:else} branch is destroyed and
+  // rebuilt between any two selections regardless.
   let filteredLinks = $derived.by(() => {
-    if (!selectedCategory || transitioning) return [];
+    if (!selectedCategory) return [];
     return links.filter((link) => link.category === selectedCategory);
   });
 
@@ -450,13 +459,10 @@
 
   // Calculate grid layout reactively using $derived
   let calculatedGridLayout = $derived.by(() => {
-    if (
-      transitioning ||
-      showingCategories ||
-      filteredLinks.length === 0 ||
-      !$size ||
-      $size.width <= 0
-    ) {
+    // `transitioning` is not a guard here either — positions must be solved by
+    // the time the {:else} branch mounts, or the links have nowhere to render and
+    // the `{#if i < gridLayout.leftPositions.length}` gates hide them.
+    if (showingCategories || filteredLinks.length === 0 || !$size || $size.width <= 0) {
       return { leftPositions: [], rightPositions: [], linkSize: 4 };
     }
     return calculateGridLayout(filteredLinks);
@@ -847,7 +853,6 @@
         width={layout.backButtonSize.width}
         opacity={backButtonOpacity}
         crateId="back-button"
-        reassembleOnMount={true}
         bind:this={crateComponents["back-button"]}
         onLinkClick={(url, type, position, action) => {
           // Use fireball system with immediate action execution for back button
