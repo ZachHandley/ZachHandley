@@ -559,21 +559,20 @@
 
   // Handle opacity animations with proper timing coordination
   $effect(() => {
-    const isNavigationLink = type === "category" || type === "action";
-
     if (isExploding) {
-      if (isNavigationLink) {
-        // Navigation links: Keep content/model visible during explosion for visual feedback
-        // The actual view transition will handle overall fading via parent opacity
-        contentVisible = true;
-        modelOpacityTween.set(1);
-        contentOpacityTween.set(1);
-      } else {
-        // Regular links: Hide content during explosion, keep model visible to show explosion
-        contentOpacityTween.set(0);
-        contentVisible = false;
-        modelOpacityTween.set(1); // Keep model visible during explosion
-      }
+      // Drop the label the instant the crate comes apart, and keep the model
+      // visible so the shards are what you see.
+      //
+      // Navigation crates used to be special-cased here to hold content at full
+      // opacity "for visual feedback" until isExploding cleared. But isExploding
+      // only clears after `explodeDuration` (1s), while the shards clear the
+      // crate's own footprint in ~70ms and are 60x out by ~130ms — so the title
+      // and icon hung motionless in empty space for ~880ms and then popped.
+      // They are a sibling group of the shards and never move with them, so
+      // there is nothing to keep them around for.
+      contentOpacityTween.set(0);
+      contentVisible = false;
+      modelOpacityTween.set(1);
     } else if (isReassembling) {
       // During reassembly: Hide content, let CrateExplode component handle its own opacity
       contentOpacityTween.set(0);
@@ -869,7 +868,7 @@
   function updateSvgMaterials() {
     if (!svgGroup) return;
     const gate = link.inlineIcon ? (inlineMeasured ? 1 : 0) : normalMeasured ? 1 : 0;
-    const targetOpacity = contentOpacity * opacity * gate;
+    const targetOpacity = contentOpacity * gate;
 
     // Recursively traverse all objects in the group
     svgGroup.traverse((object) => {
@@ -1388,7 +1387,7 @@
               anchorY="middle"
               maxWidth={width * 0.8}
               textAlign="left"
-              fillOpacity={contentMeasured ? contentOpacity * opacity : 0}
+              fillOpacity={contentMeasured ? contentOpacity : 0}
               transparent={true}
               onsync={onInlineTextSync}
             />
@@ -1410,7 +1409,7 @@
             anchorY="middle"
             maxWidth={titleMaxWidth}
             textAlign="center"
-            fillOpacity={contentMeasured ? contentOpacity * opacity : 0}
+            fillOpacity={contentMeasured ? contentOpacity : 0}
             transparent={true}
             onsync={onTitleTextSync}
           />
@@ -1425,7 +1424,7 @@
               fontSize={height * TITLE_FONT_RATIO}
               anchorX="center"
               anchorY="middle"
-              fillOpacity={contentOpacity * opacity}
+              fillOpacity={contentOpacity}
               transparent={true}
             />
           {:else if svgGroup}
@@ -1440,18 +1439,14 @@
                 roughness={0.1}
                 metalness={0.1}
                 transparent={true}
-                opacity={contentOpacity * opacity}
+                opacity={contentOpacity}
                 side={THREE.DoubleSide}
               />
             </T.Mesh>
           {:else}
             <T.Mesh scale={[height * 0.25, height * 0.25, 1]}>
               <T.CircleGeometry args={[1, 32]} />
-              <T.MeshBasicMaterial
-                color="white"
-                transparent={true}
-                opacity={contentOpacity * opacity}
-              />
+              <T.MeshBasicMaterial color="white" transparent={true} opacity={contentOpacity} />
             </T.Mesh>
           {/if}
         </T.Group>
@@ -1468,7 +1463,7 @@
             anchorX="center"
             anchorY="middle"
             maxWidth={width * 0.9}
-            fillOpacity={contentMeasured ? contentOpacity * opacity : 0}
+            fillOpacity={contentMeasured ? contentOpacity : 0}
             transparent={true}
             onsync={onDomainTextSync}
           />

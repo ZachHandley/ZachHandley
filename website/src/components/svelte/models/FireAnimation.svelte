@@ -357,8 +357,20 @@
 
   // Use pre-warmed particle system pool from AssetManager (zero-lag activation!)
   $effect(() => {
-    // Only proceed if we have the essentials and haven't initialized yet
-    if (!particleRef || !isActive || systemsInitialized) {
+    // Gate on whether THIS mode's system exists, not on the shared
+    // `systemsInitialized` flag.
+    //
+    // This effect runs once per mode, but `systemsInitialized` is a single flag
+    // for both. Travel set it first, so the `mode === "explosion"` branch below
+    // was unreachable dead code and every explosion fell through to the
+    // per-frame lazy path instead — building a brand-new 120-particle system
+    // (BufferGeometry + ShaderMaterial) at the exact instant of the explosion,
+    // then never returning it to the pool, because assetManager only recycles
+    // systems it handed out. Measured: the pool container grew 10 -> 11 -> 12 ->
+    // 13 across three fireballs, and @newkrok's module-global registry keeps
+    // simulating every orphan on every frame.
+    const modeSystemReady = mode === "travel" ? !!fireballSystem : !!explosionSystem;
+    if (!particleRef || !isActive || modeSystemReady) {
       return;
     }
 

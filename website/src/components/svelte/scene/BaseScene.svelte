@@ -326,13 +326,32 @@
       }
     });
 
-    // Force shader pre-compilation to eliminate first-fire lag
-    if (renderer && cameraRef && particlePoolContainer) {
+    // Pre-compile shaders behind the loading screen, under the lighting state a
+    // fireball will actually create.
+    //
+    // The measured cost of the first fireball was ~233ms in production (1x CPU),
+    // and it is not the particles or the 17 flame meshes — isolating it showed a
+    // bare PointLight added to this scene costs 117ms on its own, and 0ms every
+    // time after. Fireball mounts a <T.PointLight>, taking the scene from 0 to 1
+    // point lights, which changes three's program cache key for every lit
+    // material in the scene: 157 unique materials across 1417 drawables all
+    // relink on that frame.
+    //
+    // Compiling only `particlePoolContainer` (as this did) cannot prevent that —
+    // it compiles a handful of unlit particle materials under 0 point lights,
+    // i.e. the wrong state entirely. Compiling the whole scene with a throwaway
+    // point light present populates the numPointLights=1 programs up front, so
+    // the first real fireball is a cache hit.
+    if (renderer && cameraRef) {
       try {
-        renderer.compile(particlePoolContainer, cameraRef);
-        console.log("Particle shaders pre-compiled");
+        const warmupLight = new THREE.PointLight(0xff7700, 0, 40, 1.5);
+        scene.add(warmupLight);
+        renderer.compile(scene, cameraRef);
+        scene.remove(warmupLight);
+        warmupLight.dispose();
+        console.log("Scene shaders pre-compiled (with point light present)");
       } catch (e) {
-        console.warn("Could not pre-compile particle shaders:", e);
+        console.warn("Could not pre-compile shaders:", e);
       }
     }
 
