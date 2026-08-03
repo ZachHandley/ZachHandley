@@ -744,11 +744,9 @@
   // two objects in one interactivity context both raycast-hit a tap that lands on
   // the text/icon plane, so the whole sequence ran twice.
   function handleClick(event: any) {
-    // Stop first, before the state guard. CrateExplode keeps its own
-    // `onclick={explode}` on the model group behind us, and nothing overrides it
-    // now that this handler lives on the proxy instead of on the component — so a
-    // click we decline (mid-reassembly, say) would fall through to that raw
-    // explode() and desync the model from this component's state machine.
+    // Stop first, before the state guard. This handler is registered on BOTH the
+    // hit proxy and the crate model, so a tap landing where they overlap would
+    // otherwise run the whole sequence twice.
     event.stopPropagation();
 
     console.log(
@@ -1323,11 +1321,18 @@
     <!-- Use CrateExplode component for animation. It is the single owner of the
          crate's material opacity: it clones the GLB's two shared materials
          per-instance and writes modelOpacity into them, so nothing out here may
-         touch mesh materials. Pointer handlers live on the hit proxy below, not
-         on this component — one registration per crate. -->
+         touch mesh materials.
+         `onclick` is bound here as well as on the hit proxy: the proxy is a flat
+         plane over the front face, but the crate is a cube whose side and top
+         panels are visibly clickable, and a tap there misses the proxy entirely.
+         Both registrations route to the same handler, which stopPropagation()s
+         first, so a tap that hits both dispatches once — safe now that there is a
+         single interactivity context (CrateExplode's own per-instance
+         `interactivity()` call is gone). -->
     <CrateExplode
       bind:this={crateExplodeRef}
       {modelOpacity}
+      onclick={handleClick}
       scale={[hoverScale, hoverScale, hoverScale]}
     />
   </T.Group>
