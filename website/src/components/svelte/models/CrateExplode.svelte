@@ -390,10 +390,16 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
   // does not cross contexts a single tap would dispatch the click handler twice.
 </script>
 
-<!-- {...props} comes after onclick deliberately: it lets the parent's handler
-     (CrateLinkExplode's handleClick) override the local explode(), which is what
-     we want — the parent sequences the explosion with the rest of its transition. -->
-<T is={ref} dispose={false} onclick={explode} {...props}>
+<!-- No local onclick. This used to carry `onclick={explode}`, relying on the
+     parent's `{...props}` spread to override it — which held only while the
+     parent passed an onclick. It stopped doing that when the click handler moved
+     onto a dedicated hit proxy, so nothing overrode this any more and clicking
+     the crate detonated it INSTANTLY, bypassing the fireball entirely. The proxy
+     is a flat plane over the front face, so it never covered the cube's visible
+     side and top panels — a tap there went straight to this handler.
+     Explosion is the fireball's to trigger (FireballSystem.completeFireball ->
+     CrateController.triggerExplosion), never a raw click. -->
+<T is={ref} dispose={false} {...props}>
   {#await gltf}
     {@render fallback?.()}
   {:then gltf}
