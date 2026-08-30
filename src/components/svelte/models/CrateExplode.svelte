@@ -8,25 +8,28 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
   import { Group } from "three";
   import { onDestroy, type Snippet } from "svelte";
   import { T, type Props } from "@threlte/core";
-  import { useGltf, useGltfAnimations, interactivity, useDraco } from "@threlte/extras";
+  import { useGltf, useGltfAnimations, useDraco } from "@threlte/extras";
 
   let {
     fallback,
     error,
     children,
     ref = $bindable(),
+    modelOpacity = 1,
     ...props
   }: Props<THREE.Group> & {
     ref?: THREE.Group;
     children?: Snippet<[{ ref: THREE.Group }]>;
     fallback?: Snippet;
     error?: Snippet<[{ error: Error }]>;
+    /** 0–1 fade for the whole crate. Destructured out of `props` so it never
+     * reaches the `<T is={ref}>` spread — Object3D has no `opacity`. */
+    modelOpacity?: number;
   } = $props();
 
   ref = new Group();
 
   let currentlyExploded = $state(false);
-  let mainBodyOpacity = $state(1); // State-driven opacity for main body (Cube002)
 
   const dracoLoader = useDraco();
 
@@ -148,13 +151,28 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
     if (clonedM3) return;
     Promise.resolve(gltf).then((resolved) => {
       if (clonedM3 || !resolved?.materials) return;
-      clonedM3 = (
-        resolved.materials["Material.003"] as THREE.MeshStandardMaterial
-      ).clone();
-      clonedM4 = (
-        resolved.materials["Material.004"] as THREE.MeshStandardMaterial
-      ).clone();
+      clonedM3 = (resolved.materials["Material.003"] as THREE.MeshStandardMaterial).clone();
+      clonedM4 = (resolved.materials["Material.004"] as THREE.MeshStandardMaterial).clone();
     });
+  });
+
+  // Single owner of this crate's material opacity. The body meshes AND every
+  // shard reference these same two clones, so one write here fades the whole
+  // crate; writing gltf.materials[...] instead would leak into every other crate
+  // sharing the useLoader cache (the bug described above).
+  $effect(() => {
+    if (!clonedM3 || !clonedM4) return;
+    const transparent = modelOpacity < 1;
+    for (const material of [clonedM3, clonedM4]) {
+      // three needs a program rebuild only when the blending mode itself flips;
+      // opacity alone is a uniform upload. The parent drives modelOpacity from a
+      // Tween, so recompiling on every fade frame would be a real stall — compare
+      // against the flag currently on the material to catch just the transition.
+      const transparencyFlipped = material.transparent !== transparent;
+      material.transparent = transparent;
+      material.opacity = modelOpacity;
+      if (transparencyFlipped) material.needsUpdate = true;
+    }
   });
 
   onDestroy(() => {
@@ -162,7 +180,14 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
     clonedM4?.dispose();
   });
 
-  export const { actions, mixer } = useGltfAnimations<ActionName>(gltf, ref);
+  // Getters, not (store, Object3D). @threlte/extras 9.17 rewrote this hook: the
+  // legacy overload is still DECLARED, so TypeScript stays quiet, but a raw
+  // Object3D root is silently dropped and the clips bind to gltf.scene instead of
+  // the tree we actually render under <T is={ref}> — every animation stops.
+  export const { actions, mixer } = useGltfAnimations<ActionName>(
+    () => $gltf,
+    () => ref,
+  );
 
   // Add completion callback system
   let onReassemblyComplete: (() => void) | null = null;
@@ -200,31 +225,75 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
     console.log(`💥 Explosion started - ${actionsPlayed} actions playing`);
   };
 
-  export const reset = () => {
-    if (!currentlyExploded) return;
+  /**
+   * Snap straight back to the assembled pose with no animation.
+   *
+   * This is what a view change wants: the crate is being shown fresh and there
+   * is nothing to play back. Distinct from `reset()`, which animates.
+   */
+  export const snapToRest = () => {
+    for (const actionName in $actions) {
+      const action = $actions[actionName as ActionName];
+      if (!action) continue;
+      action.stop();
+      action.time = 0;
+      action.timeScale = 1;
+      action.paused = false;
+    }
+    mixer?.update(0); // flush t=0 onto the bones before the next render
     currentlyExploded = false;
+    activeReassemblyActions = 0;
+    if (onReassemblyComplete) {
+      const complete = onReassemblyComplete;
+      onReassemblyComplete = null;
+      complete();
+    }
+  };
 
-    console.log(`🔄 Reset: Starting reverse animation for reassembly`);
+  /**
+   * Reassemble by playing the shard clips backwards.
+   *
+   * `seedTime` scatters the shards to that point of the clip first — used only
+   * for the back button's mount flourish, which wants to fly together from a
+   * scattered state it was never actually in. Everything else omits it and
+   * rewinds from wherever the crate currently is.
+   */
+  export const reset = (seedTime?: number) => {
+    // Guard on a reassembly already being IN FLIGHT, not on currentlyExploded:
+    // the back button mounts with reassembleOnMount, so reset() legitimately runs
+    // on a crate that was never exploded, and an early return there left the
+    // completion callback un-fired and the button unclickable. The guard still has
+    // to exist — a concurrent reset() would zero activeReassemblyActions under the
+    // running actions and their finished events would drive the counter negative.
+    if (activeReassemblyActions > 0) return;
+    currentlyExploded = false;
     activeReassemblyActions = 0; // Reset counter
-
-    // Set state to hide main body during reassembly
-    mainBodyOpacity = 0;
-    console.log(`🔄 Set mainBodyOpacity = 0 during reassembly`);
 
     // Play all actions in reverse (reassemble) with original timing
     for (const actionName in $actions) {
-      // Skip main body animation - we control its visibility via mainBodyOpacity
-      if (actionName === "Cube.002Action") {
-        console.log(`🚫 Skipping main body animation '${actionName}' during reassembly`);
-        continue;
-      }
+      // Skip the main body clip: its own keyframes crush Cube002 to ~0.2% scale
+      // and fling it ~105 units away, so leaving it parked at the exploded end
+      // keeps the body hidden while the shards fly home. The finished handler
+      // rewinds and stops it once they land.
+      if (actionName === "Cube.002Action") continue;
 
       const action = $actions[actionName as ActionName];
       if (action) {
-        // Ensure action is at the end position (exploded state)
-        action.time = action.getClip().duration;
+        // Rewind from where this shard ACTUALLY is.
+        //
+        // This used to unconditionally seed `action.time = clip.duration`. The
+        // clip runs 10.4s while an explosion only ever plays its first second
+        // (explodeDuration), so seeding to the end teleported every shard ~1024
+        // world units out and then crawled it home for ~8s — on real explosions
+        // AND, once reset() stopped no-oping on assembled crates, on all four
+        // category crates every time you pressed Back. Reversing from the current
+        // time makes a crate that is already at rest a genuine no-op, which is
+        // exactly what a view change needs.
+        if (seedTime !== undefined) {
+          action.time = Math.min(Math.max(seedTime, 0), action.getClip().duration);
+        }
+        if (action.time <= 0) continue; // already assembled; nothing to rewind
 
-        // Set up reverse playback
         action.setLoop(THREE.LoopOnce, 1);
         action.clampWhenFinished = true;
         action.timeScale = -2.21; // Back to original speed
@@ -232,13 +301,19 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         action.play();
 
         activeReassemblyActions++; // Count each action we start
-        console.log(
-          `🔄 Reset action '${actionName}': duration=${action.getClip().duration}, timeScale=${action.timeScale}`,
-        );
       }
     }
 
-    console.log(`🔄 Started ${activeReassemblyActions} reassembly actions`);
+    // Nothing started — also what happens when $actions is still empty because
+    // the GLB has not resolved yet. No "finished" event is coming, so complete
+    // synchronously: every reset() must either schedule a completion or produce
+    // one now, otherwise the caller waits on a callback that can never fire.
+    if (activeReassemblyActions === 0 && onReassemblyComplete) {
+      console.log(`✅ Reassembly had no actions to play - completing immediately`);
+      const complete = onReassemblyComplete;
+      onReassemblyComplete = null;
+      complete();
+    }
   };
 
   // Add timing debug function
@@ -276,24 +351,25 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
 
       // Check if this is a reassembly action (reverse playback)
       if (event.action.timeScale < 0) {
-        activeReassemblyActions--;
+        // Clamp at 0 and test <= 0: a stray reverse finish left over from an
+        // earlier cycle would otherwise push the counter negative, and every
+        // future reassembly on this instance would then never reach completion.
+        activeReassemblyActions = Math.max(0, activeReassemblyActions - 1);
         console.log(`🎭 Reassembly action finished: ${activeReassemblyActions} remaining`);
 
         // Only call completion when ALL reassembly actions are done
-        if (activeReassemblyActions === 0 && onReassemblyComplete) {
+        if (activeReassemblyActions <= 0 && onReassemblyComplete) {
           console.log(`✅ ALL reassembly animations completed`);
 
-          // Reset main body animation to initial state before making it visible
+          // Rewinding and stopping the skipped body clip is what makes the body
+          // visible again — it restores the un-keyframed transform, undoing the
+          // scale-to-zero + fling that hid it for the whole reassembly.
           const mainBodyAction = $actions["Cube.002Action"];
           if (mainBodyAction) {
             mainBodyAction.time = 0; // Reset to initial position
             mainBodyAction.stop(); // Stop the action
             console.log(`🔄 Reset main body animation to initial state`);
           }
-
-          // Set state to show main body when reassembly is complete
-          mainBodyOpacity = 1;
-          console.log(`✅ Set mainBodyOpacity = 1 when reassembly complete`);
 
           onReassemblyComplete();
           onReassemblyComplete = null; // Clear callback
@@ -308,10 +384,22 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
     };
   });
 
-  interactivity();
+  // No interactivity() here on purpose: StackedLinks (our only ancestor) already
+  // installs one. A second call would set a fresh context with its own Raycaster,
+  // canvas listeners and ResizeObserver per crate, and since stopPropagation()
+  // does not cross contexts a single tap would dispatch the click handler twice.
 </script>
 
-<T is={ref} dispose={false} onclick={explode} {...props}>
+<!-- No local onclick. This used to carry `onclick={explode}`, relying on the
+     parent's `{...props}` spread to override it — which held only while the
+     parent passed an onclick. It stopped doing that when the click handler moved
+     onto a dedicated hit proxy, so nothing overrode this any more and clicking
+     the crate detonated it INSTANTLY, bypassing the fireball entirely. The proxy
+     is a flat plane over the front face, so it never covered the cube's visible
+     side and top panels — a tap there went straight to this handler.
+     Explosion is the fireball's to trigger (FireballSystem.completeFireball ->
+     CrateController.triggerExplosion), never a raw click. -->
+<T is={ref} dispose={false} {...props}>
   {#await gltf}
     {@render fallback?.()}
   {:then gltf}
@@ -323,8 +411,6 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
           receiveShadow
           geometry={gltf.nodes.Cube001.geometry}
           material={clonedM3 ?? gltf.materials["Material.003"]}
-          transparent={mainBodyOpacity < 1}
-          opacity={mainBodyOpacity}
         />
         <T.Mesh
           name="Cube001_1"
@@ -332,8 +418,6 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
           receiveShadow
           geometry={gltf.nodes.Cube001_1.geometry}
           material={clonedM4 ?? gltf.materials["Material.004"]}
-          transparent={mainBodyOpacity < 1}
-          opacity={mainBodyOpacity}
         />
       </T.Group>
       <T.Mesh
@@ -343,9 +427,8 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         geometry={gltf.nodes.Cube002_cell001.geometry}
         material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[-0.52, 2.72, -0.12]}
-        opacity={1 - mainBodyOpacity}
       />
-      <T.Group name="Cube002_cell004" position={[1.02, 1.96, -1.13]} opacity={1 - mainBodyOpacity}>
+      <T.Group name="Cube002_cell004" position={[1.02, 1.96, -1.13]}>
         <T.Mesh
           name="Cube002_cell001_1"
           castShadow
@@ -361,7 +444,7 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
           material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
-      <T.Group name="Cube002_cell005" position={[-0.8, 3.87, 0.63]} opacity={1 - mainBodyOpacity}>
+      <T.Group name="Cube002_cell005" position={[-0.8, 3.87, 0.63]}>
         <T.Mesh
           name="Cube002_cell002_1"
           castShadow
@@ -377,7 +460,7 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
           material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
-      <T.Group name="Cube002_cell010" position={[-0.71, 1.93, 0.16]} opacity={1 - mainBodyOpacity}>
+      <T.Group name="Cube002_cell010" position={[-0.71, 1.93, 0.16]}>
         <T.Mesh
           name="Cube002_cell003"
           castShadow
@@ -393,7 +476,7 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
           material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
-      <T.Group name="Cube002_cell013" position={[-0.36, 1.93, 0.61]} opacity={1 - mainBodyOpacity}>
+      <T.Group name="Cube002_cell013" position={[-0.36, 1.93, 0.61]}>
         <T.Mesh
           name="Cube002_cell004_1"
           castShadow
@@ -409,7 +492,7 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
           material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
-      <T.Group name="Cube002_cell014" position={[-0.87, 3.28, 0.64]} opacity={1 - mainBodyOpacity}>
+      <T.Group name="Cube002_cell014" position={[-0.87, 3.28, 0.64]}>
         <T.Mesh
           name="Cube002_cell005_1"
           castShadow
@@ -425,7 +508,7 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
           material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
-      <T.Group name="Cube002_cell019" position={[0.64, 2.05, 0.77]} opacity={1 - mainBodyOpacity}>
+      <T.Group name="Cube002_cell019" position={[0.64, 2.05, 0.77]}>
         <T.Mesh
           name="Cube002_cell006"
           castShadow
@@ -441,7 +524,7 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
           material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
-      <T.Group name="Cube002_cell021" position={[-0.88, 3.7, -1]} opacity={1 - mainBodyOpacity}>
+      <T.Group name="Cube002_cell021" position={[-0.88, 3.7, -1]}>
         <T.Mesh
           name="Cube002_cell007"
           castShadow
@@ -457,7 +540,7 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
           material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
-      <T.Group name="Cube002_cell023" position={[0.98, 3.31, -0.88]} opacity={1 - mainBodyOpacity}>
+      <T.Group name="Cube002_cell023" position={[0.98, 3.31, -0.88]}>
         <T.Mesh
           name="Cube002_cell008"
           castShadow
@@ -473,7 +556,7 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
           material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
-      <T.Group name="Cube002_cell024" position={[0.78, 3.7, 0.58]} opacity={1 - mainBodyOpacity}>
+      <T.Group name="Cube002_cell024" position={[0.78, 3.7, 0.58]}>
         <T.Mesh
           name="Cube002_cell009"
           castShadow
@@ -489,7 +572,7 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
           material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
-      <T.Group name="Cube002_cell025" position={[-0.84, 3.83, -1.14]} opacity={1 - mainBodyOpacity}>
+      <T.Group name="Cube002_cell025" position={[-0.84, 3.83, -1.14]}>
         <T.Mesh
           name="Cube002_cell010_1"
           castShadow
@@ -505,7 +588,7 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
           material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
-      <T.Group name="Cube002_cell030" position={[-0.83, 1.98, -1.14]} opacity={1 - mainBodyOpacity}>
+      <T.Group name="Cube002_cell030" position={[-0.83, 1.98, -1.14]}>
         <T.Mesh
           name="Cube002_cell011"
           castShadow
@@ -528,9 +611,8 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         geometry={gltf.nodes.Cube002_cell032.geometry}
         material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[-0.43, 3.59, -0.65]}
-        opacity={1 - mainBodyOpacity}
       />
-      <T.Group name="Cube002_cell033" position={[-0.28, 3.85, -0.99]} opacity={1 - mainBodyOpacity}>
+      <T.Group name="Cube002_cell033" position={[-0.28, 3.85, -0.99]}>
         <T.Mesh
           name="Cube002_cell013_1"
           castShadow
@@ -553,7 +635,6 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         geometry={gltf.nodes.Cube002_cell037.geometry}
         material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[-0.76, 3.42, -1.13]}
-        opacity={1 - mainBodyOpacity}
       />
       <T.Mesh
         name="Cube002_cell039"
@@ -562,7 +643,6 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         geometry={gltf.nodes.Cube002_cell039.geometry}
         material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[0.77, 3.61, 0.12]}
-        opacity={1 - mainBodyOpacity}
       />
       <T.Mesh
         name="Cube002_cell040"
@@ -571,7 +651,6 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         geometry={gltf.nodes.Cube002_cell040.geometry}
         material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[0.56, 3.2, -1.01]}
-        opacity={1 - mainBodyOpacity}
       />
       <T.Mesh
         name="Cube002_cell042"
@@ -580,7 +659,6 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         geometry={gltf.nodes.Cube002_cell042.geometry}
         material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[-0.78, 3.55, -0.94]}
-        opacity={1 - mainBodyOpacity}
       />
       <T.Mesh
         name="Cube002_cell043"
@@ -589,7 +667,6 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         geometry={gltf.nodes.Cube002_cell043.geometry}
         material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[0.64, 2.9, -0.98]}
-        opacity={1 - mainBodyOpacity}
       />
       <T.Mesh
         name="Cube002_cell052"
@@ -598,7 +675,6 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         geometry={gltf.nodes.Cube002_cell052.geometry}
         material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[-0.44, 2.84, 0.76]}
-        opacity={1 - mainBodyOpacity}
       />
       <T.Mesh
         name="Cube002_cell055"
@@ -607,7 +683,6 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         geometry={gltf.nodes.Cube002_cell055.geometry}
         material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[-0.25, 3.38, -0.17]}
-        opacity={1 - mainBodyOpacity}
       />
       <T.Mesh
         name="Cube002_cell056"
@@ -616,9 +691,8 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         geometry={gltf.nodes.Cube002_cell056.geometry}
         material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[0.76, 3.86, 0.72]}
-        opacity={1 - mainBodyOpacity}
       />
-      <T.Group name="Cube002_cell062" position={[-0.3, 2.21, -1.08]} opacity={1 - mainBodyOpacity}>
+      <T.Group name="Cube002_cell062" position={[-0.3, 2.21, -1.08]}>
         <T.Mesh
           name="Cube002_cell022"
           castShadow
@@ -641,9 +715,8 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         geometry={gltf.nodes.Cube002_cell065.geometry}
         material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[0.72, 3.23, -0.6]}
-        opacity={1 - mainBodyOpacity}
       />
-      <T.Group name="Cube002_cell066" position={[-0.79, 2.01, 0.77]} opacity={1 - mainBodyOpacity}>
+      <T.Group name="Cube002_cell066" position={[-0.79, 2.01, 0.77]}>
         <T.Mesh
           name="Cube002_cell024_1"
           castShadow
@@ -666,7 +739,6 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         geometry={gltf.nodes.Cube002_cell071.geometry}
         material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[0.62, 3.08, -0.04]}
-        opacity={1 - mainBodyOpacity}
       />
       <T.Mesh
         name="Cube002_cell072"
@@ -675,9 +747,8 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         geometry={gltf.nodes.Cube002_cell072.geometry}
         material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[0.68, 2.53, -0.41]}
-        opacity={1 - mainBodyOpacity}
       />
-      <T.Group name="Cube002_cell074" position={[-0.88, 3.63, 0.2]} opacity={1 - mainBodyOpacity}>
+      <T.Group name="Cube002_cell074" position={[-0.88, 3.63, 0.2]}>
         <T.Mesh
           name="Cube002_cell027"
           castShadow
@@ -700,9 +771,8 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         geometry={gltf.nodes.Cube002_cell077.geometry}
         material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[-0.3, 3.63, -1.05]}
-        opacity={1 - mainBodyOpacity}
       />
-      <T.Group name="Cube002_cell078" position={[-0.89, 2.53, 0.7]} opacity={1 - mainBodyOpacity}>
+      <T.Group name="Cube002_cell078" position={[-0.89, 2.53, 0.7]}>
         <T.Mesh
           name="Cube002_cell029"
           castShadow
@@ -718,7 +788,7 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
           material={clonedM4 ?? gltf.materials["Material.004"]}
         />
       </T.Group>
-      <T.Group name="Cube002_cell080" position={[-0.31, 2.09, 0.77]} opacity={1 - mainBodyOpacity}>
+      <T.Group name="Cube002_cell080" position={[-0.31, 2.09, 0.77]}>
         <T.Mesh
           name="Cube002_cell030_1"
           castShadow
@@ -741,9 +811,8 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         geometry={gltf.nodes.Cube002_cell082.geometry}
         material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[0.96, 2.72, -0.48]}
-        opacity={1 - mainBodyOpacity}
       />
-      <T.Group name="Cube002_cell094" position={[-0.28, 3.84, 0.59]} opacity={1 - mainBodyOpacity}>
+      <T.Group name="Cube002_cell094" position={[-0.28, 3.84, 0.59]}>
         <T.Mesh
           name="Cube002_cell033_1"
           castShadow
@@ -766,7 +835,6 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         geometry={gltf.nodes.Cube002_cell096.geometry}
         material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[-0.61, 2.58, -0.6]}
-        opacity={1 - mainBodyOpacity}
       />
       <T.Mesh
         name="Cube002_cell002"
@@ -775,7 +843,6 @@ Command: npx @threlte/gltf@3.0.1 ./src/assets/models/CrateExplode.gltf --types -
         geometry={gltf.nodes.Cube002_cell002.geometry}
         material={clonedM3 ?? gltf.materials["Material.003"]}
         position={[-0.87, 2.47, 0.53]}
-        opacity={1 - mainBodyOpacity}
       />
     </T.Group>
   {:catch err}

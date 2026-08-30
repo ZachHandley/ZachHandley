@@ -127,7 +127,14 @@
         }))();
 
   // Set up animations
-  export const { actions, mixer } = useGltfAnimations<ActionName>(gltf, ref);
+  // Getters, not (store, Object3D). @threlte/extras 9.17 rewrote this hook: the
+  // legacy overload is still DECLARED, so TypeScript stays quiet, but a raw
+  // Object3D root is silently dropped and the clips bind to gltf.scene instead of
+  // the tree we actually render under <T is={ref}> — every animation stops.
+  export const { actions, mixer } = useGltfAnimations<ActionName>(
+    () => $gltf,
+    () => ref,
+  );
 
   // Helper function to ensure valid numeric values
   function safeValue(value: number, fallback: number, min?: number, max?: number): number {
@@ -350,8 +357,20 @@
 
   // Use pre-warmed particle system pool from AssetManager (zero-lag activation!)
   $effect(() => {
-    // Only proceed if we have the essentials and haven't initialized yet
-    if (!particleRef || !isActive || systemsInitialized) {
+    // Gate on whether THIS mode's system exists, not on the shared
+    // `systemsInitialized` flag.
+    //
+    // This effect runs once per mode, but `systemsInitialized` is a single flag
+    // for both. Travel set it first, so the `mode === "explosion"` branch below
+    // was unreachable dead code and every explosion fell through to the
+    // per-frame lazy path instead — building a brand-new 120-particle system
+    // (BufferGeometry + ShaderMaterial) at the exact instant of the explosion,
+    // then never returning it to the pool, because assetManager only recycles
+    // systems it handed out. Measured: the pool container grew 10 -> 11 -> 12 ->
+    // 13 across three fireballs, and @newkrok's module-global registry keeps
+    // simulating every orphan on every frame.
+    const modeSystemReady = mode === "travel" ? !!fireballSystem : !!explosionSystem;
+    if (!particleRef || !isActive || modeSystemReady) {
       return;
     }
 

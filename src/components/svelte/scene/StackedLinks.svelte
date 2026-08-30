@@ -6,17 +6,16 @@
   import { onMount, onDestroy, tick } from "svelte";
   import { Spring, Tween } from "svelte/motion";
   import { cubicInOut } from "svelte/easing";
-  import CrateLink from "./links/CrateLink.svelte";
   import CrateLinkExplode from "./links/CrateLinkExplode.svelte";
   import { useViewportLayout } from "~/components/svelte/utils/viewportLayout.svelte";
+  import { CATEGORY_CLEARANCE_MARGIN, DRAGON_WIDTH_FALLBACK, LINKS_Z_DEPTH } from "./rig";
 
   // Props with proper TypeScript typing
   let {
     links,
     onLinkClick,
     visible = true,
-    useExplodingCrates = false,
-    onExplodeRequest,
+    dragonWidth = DRAGON_WIDTH_FALLBACK,
     sceneController,
     screenWidth,
     screenHeight,
@@ -32,13 +31,13 @@
       crateId?: string,
     ) => void;
     visible?: boolean;
-    useExplodingCrates?: boolean;
-    onExplodeRequest?: (crateId: string) => Promise<void>;
+    /** Measured by BaseScene once the dragon mounts. */
+    dragonWidth?: number;
     sceneController?: any;
     screenWidth: number;
     screenHeight: number;
     modalManager?: {
-      showModal: (link: LinkType, x: number, y: number) => void;
+      showModal: (link: LinkType) => void;
       hideModal: () => void;
     } | null;
   } = $props();
@@ -47,12 +46,12 @@
   const { size, camera } = useThrelte();
   const dracoLoader = useDraco();
 
-  // Z depth where the crate planes live. Defined up here so the layout lib can use it.
-  const LINKS_Z_DEPTH = 6;
-
   // Continuous viewport-driven sizing. Replaces the previous breakpoint-quantized
   // `isMobile ? 3 : 4` style sizing. All consumers below read these reactive getters.
-  const layout = useViewportLayout({ zDepth: LINKS_Z_DEPTH });
+  const layout = useViewportLayout({
+    zDepth: LINKS_Z_DEPTH,
+    dragonWidth: () => dragonWidth,
+  });
 
   // Define categories with their Iconify icons - split for left/right sides
   const leftCategories = [
@@ -83,9 +82,6 @@
 
   // Combined categories for filtering
   const allCategories = [...leftCategories, ...rightCategories];
-
-  // Reactive state for device type - prefer Threlte renderer size, fallback to passed screenWidth
-  let isMobile = $derived(($size?.width ?? screenWidth) < 768);
 
   // UI State
   let selectedCategory = $state<string | null>(null);
@@ -164,15 +160,63 @@
     }
   }
 
-  // Filtered links based on selected category
+  // Filtered links based on selected category.
+  //
+  // Deliberately NOT gated on `transitioning`. It used to be, which meant that
+  // when selectCategory flipped `showingCategories` the back button mounted alone
+  // and the links stayed empty until `transitioning` cleared ~460ms later — so the
+  // button sat by itself on an empty scene and then every link popped in at full
+  // opacity, after its own fade-in tween had already finished. `showingCategories`
+  // alone is enough to key the branch: you can only reach another category by
+  // going back through the category view, so the {:else} branch is destroyed and
+  // rebuilt between any two selections regardless.
   let filteredLinks = $derived.by(() => {
-    if (!selectedCategory || transitioning) return [];
+    if (!selectedCategory) return [];
     return links.filter((link) => link.category === selectedCategory);
   });
 
   // Consistent back button Y position for both component types (using $derived).
   // Pulled from the layout lib's frustum dimensions so it reacts to viewport changes.
   let backButtonYPosition = $derived(layout.frustumHeight * 0.05);
+
+  /**
+   * Distance from centre for a column of crates flanking the dragon.
+   *
+   * The dragon sits at world z=0 while crates sit at z=6, so the dragon's raw
+   * world width was never comparable to the frustum width at the crate plane —
+   * yet both layout functions compared them directly, against two different
+   * hardcoded guesses at that width (9 here, 3 in the links grid). At portrait
+   * aspect the 9 exceeded the entire 8.8-unit frustum, driving `availableSpace`
+   * negative; the mobile branch then multiplied that negative number by the
+   * LARGER factor (0.75 vs 0.5), pulling crates further inward, and the
+   * off-screen guard finished the job by stacking all four on top of the dragon.
+   *
+   * `layout.dragonHalfWidthAtCrateDepth` is the measured dragon projected onto
+   * the crate plane, and the camera has already dollied back far enough for the
+   * crate to fit beside it (see rig.ts), so the clamp below is a backstop rather
+   * than the normal path.
+   */
+  function solveColumnX(contentWidth: number): number {
+    const screenEdgeX = layout.frustumWidth / 2;
+    const dragonEdgeX = layout.dragonHalfWidthAtCrateDepth;
+    const radius = contentWidth / 2;
+
+    const gap = Math.max(0, screenEdgeX - dragonEdgeX);
+    let x = dragonEdgeX + gap * 0.5;
+
+    // Furthest out we can go and stay fully on screen.
+    const maxX = Math.max(radius, screenEdgeX - radius - CATEGORY_CLEARANCE_MARGIN);
+    // Closest in we can come without sitting on top of the dragon.
+    const minX = dragonEdgeX + radius;
+
+    if (x > maxX) x = maxX;
+    // If the viewport is narrower than the rig can compensate for, staying on
+    // screen wins over clearing the dragon — an off-screen crate is unusable,
+    // an overlapping one is merely ugly.
+    if (x < minX) x = Math.min(minX, maxX);
+
+    return x;
+  }
 
   // Calculate grid layout for links with equidistant spacing and floor constraints
   function calculateGridLayout(links: LinkType[]) {
@@ -189,44 +233,12 @@
     const rightLinks = links.slice(Math.ceil(links.length / 2));
     const maxPerSide = Math.max(leftLinks.length, rightLinks.length);
 
-    // Calculate dragon bounding box (adjust as needed based on your dragon model)
-    const DRAGON_WIDTH = 3; // Assuming ENVIRONMENT_SCALE from parent component
-    const DRAGON_CENTER_X = 0; // Assuming dragon is centered at x=0
-
-    // Calculate how far from center we should place the links
-    // On mobile: position links closer to screen edge to ensure visibility
-    const dragonEdgeX = DRAGON_CENTER_X + DRAGON_WIDTH / 2;
-    const screenEdgeX = visibleWidth / 2;
-    const availableSpace = screenEdgeX - dragonEdgeX;
-
-    const distanceFromCenter = dragonEdgeX + availableSpace * 0.5;
-
-    // Position links
-    let leftX = -distanceFromCenter;
-    let rightX = distanceFromCenter;
-
     // Continuous link size from the layout lib (replaces `isMobile ? 2.5 : 4`).
     const maxLinkSize = layout.linkSize.width;
-    const linkRadius = maxLinkSize / 2;
 
-    // Function to check if an object is on screen
-    function isOnScreen(x: number): boolean {
-      // Check if the object with its size/radius would be fully visible on screen
-      return Math.abs(x) + linkRadius < screenEdgeX;
-    }
-
-    // Adjust positions if they would be off-screen
-    if (!isOnScreen(leftX)) {
-      // Move it inward so it's visible (with a small margin)
-      leftX = -screenEdgeX + linkRadius + 0.5; // 0.5 is margin
-      console.warn("Left links would be off-screen - adjusting X position");
-    }
-
-    if (!isOnScreen(rightX)) {
-      // Move it inward so it's visible (with a small margin)
-      rightX = screenEdgeX - linkRadius - 0.5; // 0.5 is margin
-      console.warn("Right links would be off-screen - adjusting X position");
-    }
+    const columnX = solveColumnX(maxLinkSize);
+    const leftX = -columnX;
+    const rightX = columnX;
 
     // Define vertical boundaries
     const TOP_BOUNDARY = visibleHeight * 0.45; // Top 45% of screen
@@ -393,46 +405,13 @@
     if (!camera.current) return;
 
     const visHeight = layout.frustumHeight;
-    const visWidth = layout.frustumWidth;
-
-    // Calculate dragon bounding box width - adjust as needed based on your dragon model
-    const DRAGON_WIDTH = 6 * 1.5; // Assuming ENVIRONMENT_SCALE from parent component
-    const DRAGON_CENTER_X = 0; // Assuming dragon is centered at x=0
-
-    // Calculate how far from center we should place the categories
-    // On mobile: position categories closer to screen edge to ensure visibility
-    const dragonEdgeX = DRAGON_CENTER_X + DRAGON_WIDTH / 2;
-    const screenEdgeX = visWidth / 2;
-    const availableSpace = screenEdgeX - dragonEdgeX;
-
-    const distanceFromCenter = dragonEdgeX + availableSpace * (layout.isMobile ? 0.75 : 0.5);
 
     // Continuous category crate size from the layout lib (replaces `isMobile ? 3 : 4`).
     const categorySize = layout.categorySize.width;
-    const categoryRadius = categorySize / 2;
 
-    // Function to check if an object is on screen
-    function isOnScreen(x: number): boolean {
-      // Check if the object with its size/radius would be fully visible on screen
-      return Math.abs(x) + categoryRadius < screenEdgeX;
-    }
-
-    // Calculate adjusted X positions for left and right categories
-    let leftX = -distanceFromCenter;
-    let rightX = distanceFromCenter;
-
-    // Adjust positions if they would be off-screen
-    if (!isOnScreen(leftX)) {
-      // Move it inward so it's visible (with a small margin)
-      leftX = -screenEdgeX + categoryRadius + 0.5; // 0.5 is margin
-      console.warn("Left categories would be off-screen - adjusting X position");
-    }
-
-    if (!isOnScreen(rightX)) {
-      // Move it inward so it's visible (with a small margin)
-      rightX = screenEdgeX - categoryRadius - 0.5; // 0.5 is margin
-      console.warn("Right categories would be off-screen - adjusting X position");
-    }
+    const columnX = solveColumnX(categorySize);
+    const leftX = -columnX;
+    const rightX = columnX;
 
     // Define vertical boundaries
     const TOP_BOUNDARY = visHeight * 0.45; // Top 45% of screen
@@ -480,13 +459,10 @@
 
   // Calculate grid layout reactively using $derived
   let calculatedGridLayout = $derived.by(() => {
-    if (
-      transitioning ||
-      showingCategories ||
-      filteredLinks.length === 0 ||
-      !$size ||
-      $size.width <= 0
-    ) {
+    // `transitioning` is not a guard here either — positions must be solved by
+    // the time the {:else} branch mounts, or the links have nowhere to render and
+    // the `{#if i < gridLayout.leftPositions.length}` gates hide them.
+    if (showingCategories || filteredLinks.length === 0 || !$size || $size.width <= 0) {
       return { leftPositions: [], rightPositions: [], linkSize: 4 };
     }
     return calculateGridLayout(filteredLinks);
@@ -544,20 +520,10 @@
         explodeCrate: () => void;
         resetCrate: () => void;
         resetToDefault: () => void;
-        explodeWithAction: (action?: () => void) => Promise<void>;
+        explodeFromFireball: () => Promise<void>;
       }
     >
   >({});
-
-  // Function to trigger explosion on a specific crate
-  export async function triggerCrateExplosion(crateId: string): Promise<void> {
-    const crate = crateComponents[crateId];
-    if (crate && crate.explodeCrate) {
-      crate.explodeCrate();
-      // Wait for explosion animation to complete
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    }
-  }
 
   // One debounced effect coalesces resize / viewport changes. Single source of truth.
   let layoutUpdateTimer: ReturnType<typeof setTimeout> | null = null;
@@ -580,20 +546,52 @@
     }, 100);
   });
 
-  // Register-or-update helper: registers a crate once, then only updates its
-  // stored position vector on subsequent calls. Reuses cached THREE.Vector3
-  // instances to avoid per-resize allocation churn.
+  // Register the crate's CURRENT handlers every time, and update its stored
+  // position vector in place. Reuses cached THREE.Vector3 instances to avoid
+  // per-resize allocation churn.
+  //
+  // This used to short-circuit on `hasCrate(id)` and refresh only the position,
+  // which quietly broke every explosion after the first navigation: the crate
+  // components live inside `{#if showingCategories}`, so moving between the
+  // category and links views destroys and recreates all of them, but the
+  // registry kept the closure over the ORIGINAL, now-destroyed component. The
+  // fireball still flew and the modal still opened (those go through the live
+  // component's own click handler), while `CrateController.triggerExplosion`
+  // called `explode()` on a corpse whose `isExploded` guard rejected it — the
+  // exact "fireball fires but the crate never bursts" symptom.
+  //
+  // Re-registering is a Map.set of two closures; there is nothing to conserve.
   function syncCrate(
     id: string,
     handlers: { explode: () => void; reset: () => void },
     pos: [number, number, number],
   ) {
     if (!sceneController) return;
-    const vec = vecFor(id, pos);
-    if (sceneController.hasCrate?.(id)) {
-      sceneController.updateCratePosition(id, vec);
-    } else {
-      sceneController.registerCrate(id, handlers, vec);
+    sceneController.registerCrate(id, handlers, vecFor(id, pos));
+  }
+
+  // Cleanup counterpart to `syncCrate`, called from each registration effect's
+  // teardown with exactly the ids that run registered.
+  //
+  // `unregisterCrate` had zero call sites before this, so every crate a
+  // navigation mounted stayed in the registry for the page's lifetime. Two
+  // costs: each stale entry pins a destroyed component instance alive, and a
+  // fireball still in flight when the view flips lands on that corpse —
+  // `triggerExplosion` calls `explode()` on a component whose materials and
+  // favicon texture `onDestroy` already disposed, re-arming the `resetTimeout`
+  // it just cleared and spinning up Tween/Spring rAF loops with nothing left to
+  // render. Dropping the entry turns a wrong-target explosion into
+  // `CrateController`'s "not found in registry" warn.
+  //
+  // The position cache is pruned alongside it. `registerCrate` stores
+  // `position.clone()`, so the registry never aliases a cached vector and
+  // nothing outside this file holds one either — dropping the entry is safe,
+  // and `vecFor` just allocates a fresh vector the next time that id registers.
+  // Without this the cache would keep an entry per id ever rendered.
+  function releaseCrates(ids: string[]) {
+    for (const id of ids) {
+      sceneController?.unregisterCrate(id);
+      crateVecCache.delete(id);
     }
   }
 
@@ -602,6 +600,8 @@
   $effect(() => {
     if (!sceneController || transitioning || !showingCategories) return;
 
+    const registered: string[] = [];
+
     leftCategories.forEach((category) => {
       const id = `category-left-${category.id}`;
       const component = crateComponents[id];
@@ -609,11 +609,12 @@
       syncCrate(
         id,
         {
-          explode: () => component.explodeWithAction?.(() => selectCategory(category.id)),
+          explode: () => component.explodeFromFireball?.(),
           reset: () => component.resetCrate?.(),
         },
         getSafePosition(category.id),
       );
+      registered.push(id);
     });
 
     rightCategories.forEach((category) => {
@@ -623,12 +624,15 @@
       syncCrate(
         id,
         {
-          explode: () => component.explodeWithAction?.(() => selectCategory(category.id)),
+          explode: () => component.explodeFromFireball?.(),
           reset: () => component.resetCrate?.(),
         },
         getSafePosition(category.id),
       );
+      registered.push(id);
     });
+
+    return () => releaseCrates(registered);
   });
 
   // Sync link crates with SceneController in links view.
@@ -636,6 +640,7 @@
     if (!sceneController || transitioning || showingCategories || filteredLinks.length === 0)
       return;
 
+    const registered: string[] = [];
     const half = Math.ceil(filteredLinks.length / 2);
     filteredLinks.forEach((link, i) => {
       const isLeftSide = i < half;
@@ -649,6 +654,7 @@
           { explode: () => component.explodeCrate?.(), reset: () => component.resetCrate?.() },
           safePosition,
         );
+        registered.push(id);
       } else {
         const rightIndex = i - half;
         const id = `link-right-${link.name}-${rightIndex}`;
@@ -660,21 +666,38 @@
           { explode: () => component.explodeCrate?.(), reset: () => component.resetCrate?.() },
           safePosition,
         );
+        registered.push(id);
       }
     });
 
-    // Back button
+    return () => releaseCrates(registered);
+  });
+
+  // The back button registers in its own effect, gated on the links view alone.
+  //
+  // It used to ride along at the tail of the link-crate effect above, behind
+  // that effect's `filteredLinks.length === 0` early return — but the button is
+  // rendered outside the each blocks, so a category with no links mounted a live
+  // back button that was never registered, while the previous visit's entry sat
+  // in the registry pointing at a destroyed one. Clicking back then flew a
+  // fireball into that corpse and left the live button sitting there intact:
+  // the "fireball fires but the crate never bursts" symptom, resurrected.
+  $effect(() => {
+    if (!sceneController || transitioning || showingCategories) return;
+
     const backButtonComponent = crateComponents["back-button"];
-    if (backButtonComponent) {
-      syncCrate(
-        "back-button",
-        {
-          explode: () => backButtonComponent.explodeWithAction?.(() => goBack()),
-          reset: () => backButtonComponent.resetCrate?.(),
-        },
-        [0, backButtonYPosition, LINKS_Z_DEPTH + 3],
-      );
-    }
+    if (!backButtonComponent) return;
+
+    syncCrate(
+      "back-button",
+      {
+        explode: () => backButtonComponent.explodeFromFireball?.(),
+        reset: () => backButtonComponent.resetCrate?.(),
+      },
+      [0, backButtonYPosition, LINKS_Z_DEPTH + 3],
+    );
+
+    return () => releaseCrates(["back-button"]);
   });
 
   // Initialize on mount
@@ -700,129 +723,71 @@
       <!-- Left side categories as Link components -->
       {#each leftCategories as category, i}
         <!-- Category link object -->
-        {#if useExplodingCrates}
-          <CrateLinkExplode
-            {dracoLoader}
-            {screenWidth}
-            {modalManager}
-            link={{
-              name: category.name,
-              type: "category" as LinkType["type"],
-              icon: category.icon,
-              category: category.name,
-            }}
-            position={getSafePosition(category.id)}
-            index={i}
-            columnKey="left"
-            width={layout.categorySize.width}
-            height={layout.categorySize.height}
-            opacity={categoryOpacity}
-            crateId={`category-left-${category.id}`}
-            bind:this={crateComponents[`category-left-${category.id}`]}
-            onLinkClick={(url, type, position, action) => {
-              // Use fireball system with immediate action execution for categories
-              onLinkClick!(
-                url,
-                type,
-                position,
-                category.name,
-                () => selectCategory(category.id),
-                `category-left-${category.id}`,
-              );
-            }}
-          />
-        {:else}
-          <CrateLink
-            {dracoLoader}
-            link={{
-              name: category.name,
-              type: "category" as LinkType["type"],
-              icon: category.icon,
-              category: category.name,
-            }}
-            position={getSafePosition(category.id)}
-            index={i}
-            columnKey="left"
-            width={layout.categorySize.width}
-            height={layout.categorySize.height}
-            opacity={categoryOpacity}
-            onLinkClick={(url, type, position, action) => {
-              // Use fireball system with immediate action execution for categories
-              onLinkClick!(
-                url,
-                type,
-                position,
-                category.name,
-                () => selectCategory(category.id),
-                `category-left-${category.id}`,
-              );
-            }}
-          />
-        {/if}
+        <CrateLinkExplode
+          {dracoLoader}
+          {screenWidth}
+          {modalManager}
+          link={{
+            name: category.name,
+            type: "category" as LinkType["type"],
+            icon: category.icon,
+            category: category.name,
+          }}
+          position={getSafePosition(category.id)}
+          index={i}
+          columnKey="left"
+          width={layout.categorySize.width}
+          height={layout.categorySize.height}
+          opacity={categoryOpacity}
+          crateId={`category-left-${category.id}`}
+          bind:this={crateComponents[`category-left-${category.id}`]}
+          onLinkClick={(url, type, position, action) => {
+            // Use fireball system with immediate action execution for categories
+            onLinkClick!(
+              url,
+              type,
+              position,
+              category.name,
+              () => selectCategory(category.id),
+              `category-left-${category.id}`,
+            );
+          }}
+        />
       {/each}
 
       <!-- Right side categories as Link components -->
       {#each rightCategories as category, i}
         <!-- Category link object -->
-        {#if useExplodingCrates}
-          <CrateLinkExplode
-            {dracoLoader}
-            {screenWidth}
-            {modalManager}
-            link={{
-              name: category.name,
-              type: "category" as LinkType["type"],
-              icon: category.icon,
-              category: category.name,
-            }}
-            position={getSafePosition(category.id)}
-            index={i}
-            columnKey="right"
-            width={layout.categorySize.width}
-            height={layout.categorySize.height}
-            opacity={categoryOpacity}
-            crateId={`category-right-${category.id}`}
-            bind:this={crateComponents[`category-right-${category.id}`]}
-            onLinkClick={(url, type, position, action) => {
-              // Use fireball system with immediate action execution for categories
-              onLinkClick!(
-                url,
-                type,
-                position,
-                category.name,
-                () => selectCategory(category.id),
-                `category-right-${category.id}`,
-              );
-            }}
-          />
-        {:else}
-          <CrateLink
-            {dracoLoader}
-            link={{
-              name: category.name,
-              type: "category" as LinkType["type"],
-              icon: category.icon,
-              category: category.name,
-            }}
-            position={getSafePosition(category.id)}
-            index={i}
-            columnKey="right"
-            width={layout.categorySize.width}
-            height={layout.categorySize.height}
-            opacity={categoryOpacity}
-            onLinkClick={(url, type, position, action) => {
-              // Use fireball system with immediate action execution for categories
-              onLinkClick!(
-                url,
-                type,
-                position,
-                category.name,
-                () => selectCategory(category.id),
-                `category-right-${category.id}`,
-              );
-            }}
-          />
-        {/if}
+        <CrateLinkExplode
+          {dracoLoader}
+          {screenWidth}
+          {modalManager}
+          link={{
+            name: category.name,
+            type: "category" as LinkType["type"],
+            icon: category.icon,
+            category: category.name,
+          }}
+          position={getSafePosition(category.id)}
+          index={i}
+          columnKey="right"
+          width={layout.categorySize.width}
+          height={layout.categorySize.height}
+          opacity={categoryOpacity}
+          crateId={`category-right-${category.id}`}
+          bind:this={crateComponents[`category-right-${category.id}`]}
+          onLinkClick={(url, type, position, action) => {
+            // Use fireball system with immediate action execution for categories
+            onLinkClick!(
+              url,
+              type,
+              position,
+              category.name,
+              () => selectCategory(category.id),
+              `category-right-${category.id}`,
+            );
+          }}
+        />
       {/each}
     </T.Group>
   {:else}
@@ -830,121 +795,70 @@
       <!-- Left side links -->
       {#each filteredLinks.slice(0, Math.ceil(filteredLinks.length / 2)) as link, i}
         {#if i < gridLayout.leftPositions.length}
-          {#if useExplodingCrates}
-            <CrateLinkExplode
-              {dracoLoader}
-              {screenWidth}
-              {modalManager}
-              {link}
-              position={gridLayout.leftPositions[i]}
-              index={i}
-              columnKey="left"
-              width={gridLayout.linkSize}
-              height={gridLayout.linkSize}
-              {onLinkClick}
-              opacity={1}
-              autoReset={true}
-              crateId={`link-left-${link.name}-${i}`}
-              bind:this={crateComponents[`link-left-${link.name}-${i}`]}
-            />
-          {:else}
-            <CrateLink
-              {dracoLoader}
-              {link}
-              position={gridLayout.leftPositions[i]}
-              index={i}
-              columnKey="left"
-              width={gridLayout.linkSize}
-              height={gridLayout.linkSize}
-              {onLinkClick}
-              opacity={1}
-            />
-          {/if}
+          <CrateLinkExplode
+            {dracoLoader}
+            {screenWidth}
+            {modalManager}
+            {link}
+            position={gridLayout.leftPositions[i]}
+            index={i}
+            columnKey="left"
+            width={gridLayout.linkSize}
+            height={gridLayout.linkSize}
+            {onLinkClick}
+            opacity={1}
+            autoReset={true}
+            crateId={`link-left-${link.name}-${i}`}
+            bind:this={crateComponents[`link-left-${link.name}-${i}`]}
+          />
         {/if}
       {/each}
 
       <!-- Right side links -->
       {#each filteredLinks.slice(Math.ceil(filteredLinks.length / 2)) as link, i}
         {#if i < gridLayout.rightPositions.length}
-          {#if useExplodingCrates}
-            <CrateLinkExplode
-              {dracoLoader}
-              {screenWidth}
-              {modalManager}
-              {link}
-              position={gridLayout.rightPositions[i]}
-              index={i + Math.ceil(filteredLinks.length / 2)}
-              columnKey="right"
-              width={gridLayout.linkSize}
-              height={gridLayout.linkSize}
-              {onLinkClick}
-              opacity={1}
-              autoReset={true}
-              crateId={`link-right-${link.name}-${i}`}
-              bind:this={crateComponents[`link-right-${link.name}-${i}`]}
-            />
-          {:else}
-            <CrateLink
-              {dracoLoader}
-              {link}
-              position={gridLayout.rightPositions[i]}
-              index={i + Math.ceil(filteredLinks.length / 2)}
-              columnKey="right"
-              width={gridLayout.linkSize}
-              height={gridLayout.linkSize}
-              {onLinkClick}
-              opacity={1}
-            />
-          {/if}
+          <CrateLinkExplode
+            {dracoLoader}
+            {screenWidth}
+            {modalManager}
+            {link}
+            position={gridLayout.rightPositions[i]}
+            index={i + Math.ceil(filteredLinks.length / 2)}
+            columnKey="right"
+            width={gridLayout.linkSize}
+            height={gridLayout.linkSize}
+            {onLinkClick}
+            opacity={1}
+            autoReset={true}
+            crateId={`link-right-${link.name}-${i}`}
+            bind:this={crateComponents[`link-right-${link.name}-${i}`]}
+          />
         {/if}
       {/each}
 
       <!-- Back button - positioned at the bottom -->
-      {#if useExplodingCrates}
-        <CrateLinkExplode
-          {dracoLoader}
-          {screenWidth}
-          link={{
-            name: "Back",
-            type: "action",
-            icon: "mdi:arrow-left",
-            inlineIcon: true,
-          }}
-          position={[0, backButtonYPosition, LINKS_Z_DEPTH + 2]}
-          index={0}
-          columnKey="bottom"
-          height={layout.backButtonSize.height}
-          width={layout.backButtonSize.width}
-          opacity={backButtonOpacity}
-          crateId="back-button"
-          reassembleOnMount={true}
-          bind:this={crateComponents["back-button"]}
-          onLinkClick={(url, type, position, action) => {
-            // Use fireball system with immediate action execution for back button
-            onLinkClick!(url, type, position, undefined, goBack, "back-button");
-          }}
-        />
-      {:else}
-        <CrateLink
-          {dracoLoader}
-          link={{
-            name: "Back",
-            type: "action",
-            icon: "mdi:arrow-left",
-            inlineIcon: true,
-          }}
-          position={[0, backButtonYPosition, LINKS_Z_DEPTH + 4]}
-          index={0}
-          columnKey="bottom"
-          height={layout.backButtonSize.height}
-          width={layout.backButtonSize.width}
-          opacity={backButtonOpacity}
-          onLinkClick={(url, type, position, action) => {
-            // Use fireball system with immediate action execution for back button
-            onLinkClick!(url, type, position, undefined, goBack);
-          }}
-        />
-      {/if}
+      <CrateLinkExplode
+        {dracoLoader}
+        {screenWidth}
+        link={{
+          name: "Back",
+          type: "action",
+          icon: "mdi:arrow-left",
+          inlineIcon: true,
+        }}
+        position={[0, backButtonYPosition, LINKS_Z_DEPTH + 2]}
+        index={0}
+        columnKey="bottom"
+        height={layout.backButtonSize.height}
+        width={layout.backButtonSize.width}
+        opacity={backButtonOpacity}
+        crateId="back-button"
+        bind:this={crateComponents["back-button"]}
+        onLinkClick={(url, type, position, action) => {
+          // Use fireball system with immediate action execution for back button
+          onLinkClick!(url, type, position, undefined, goBack, "back-button");
+        }}
+      />
     </T.Group>
   {/if}
 {/if}

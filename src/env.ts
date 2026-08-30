@@ -42,10 +42,17 @@ export const env = {
       access: "public",
       default: "links",
     }),
-    // Server-only secret (accessed from `astro:env/server`)
+    // Server-only secret (accessed from `astro:env/server`).
+    // Optional: the `links` table is world-readable, so the public site (/, /work,
+    // /links, /interactive) renders fine as a guest. getAppwriteClient only calls
+    // setKey() when this is present. Required in production for /admin and the
+    // write paths on /api/links — without it those fall back to guest scope and 401.
+    // Marking it required here made the entire site 500 on any machine lacking the
+    // secret, including local dev.
     APPWRITE_API_KEY: envField.string({
       context: "server",
       access: "secret",
+      optional: true,
     }),
   },
 };

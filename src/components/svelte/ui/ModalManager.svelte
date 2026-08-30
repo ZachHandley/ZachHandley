@@ -1,47 +1,35 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import LinkModal from "./LinkModal.svelte";
   import type { Link } from "~/types/baseSchemas";
 
   let {
-    isVisible = $bindable(),
-    currentLink = $bindable(),
-    clickPosition = $bindable(),
+    isVisible = $bindable(false),
+    currentLink = $bindable(null),
   }: {
-    isVisible: boolean;
-    currentLink: Link | null;
-    clickPosition: { x: number; y: number } | null;
+    isVisible?: boolean;
+    currentLink?: Link | null;
   } = $props();
 
-  // Function to show modal with link and click position
-  export function showModal(link: Link, screenX: number, screenY: number) {
+  // Function to show the modal for a link. The modal is viewport-centred, so no
+  // click coordinates are needed.
+  export function showModal(link: Link) {
     console.log(`🎭 ModalManager.showModal() called:`, {
       link: link?.name,
       linkType: link?.type,
       linkUrl: link?.url,
-      screenX,
-      screenY,
       currentVisible: isVisible,
     });
 
     currentLink = link;
-    clickPosition = { x: screenX, y: screenY };
     isVisible = true;
-
-    console.log(`🎭 Modal state updated:`, {
-      isVisible,
-      hasCurrentLink: !!currentLink,
-      hasClickPosition: !!clickPosition,
-    });
   }
 
   // Function to hide modal
   export function hideModal() {
     isVisible = false;
-    // Keep link and position for exit animation
+    // Keep the link around for the exit animation
     setTimeout(() => {
       currentLink = null;
-      clickPosition = null;
     }, 300);
   }
 
@@ -88,10 +76,4 @@
   }
 </script>
 
-<LinkModal
-  bind:isVisible
-  link={currentLink}
-  {clickPosition}
-  onNavigate={handleNavigation}
-  onClose={hideModal}
-/>
+<LinkModal bind:isVisible link={currentLink} onNavigate={handleNavigation} onClose={hideModal} />

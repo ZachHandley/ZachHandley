@@ -38,11 +38,22 @@
     }>
   >([]);
 
-  let animationFrame: number;
+  // 50 absolutely-positioned divs restyled every frame is affordable on a desktop
+  // main thread. On a phone this overlay is competing with three.js setup + DRACO
+  // decode for the exact same thread, so the field gets cut down there.
+  const DESKTOP_PARTICLE_COUNT = 50;
+  const MOBILE_PARTICLE_COUNT = 20;
+
+  let animationFrame = 0;
 
   onMount(() => {
+    // Mirrors the `@media (max-width: 768px)` breakpoint in this component's styles.
+    const isNarrowViewport = window.matchMedia("(max-width: 768px)").matches;
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const particleCount = isNarrowViewport ? MOBILE_PARTICLE_COUNT : DESKTOP_PARTICLE_COUNT;
+
     // Initialize particles
-    particles = Array.from({ length: 50 }, (_, i) => ({
+    particles = Array.from({ length: particleCount }, (_, i) => ({
       id: i,
       x: Math.random() * window.innerWidth,
       y: Math.random() * window.innerHeight,
@@ -55,21 +66,33 @@
 
     // Animate particles
     function animateParticles() {
-      particles = particles.map((particle) => ({
-        ...particle,
-        x: particle.x + particle.vx,
-        y: particle.y + particle.vy,
-        // Wrap around screen
-        x: particle.x > window.innerWidth ? 0 : particle.x < 0 ? window.innerWidth : particle.x,
-        y: particle.y > window.innerHeight ? 0 : particle.y < 0 ? window.innerHeight : particle.y,
-      }));
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+
+      particles = particles.map((particle) => {
+        // Advance first, then wrap the *advanced* value. Wrapping the old position
+        // instead discards vx/vy entirely and leaves the whole field frozen.
+        const nextX = particle.x + particle.vx;
+        const nextY = particle.y + particle.vy;
+
+        return {
+          ...particle,
+          x: nextX > viewportWidth ? 0 : nextX < 0 ? viewportWidth : nextX,
+          y: nextY > viewportHeight ? 0 : nextY < 0 ? viewportHeight : nextY,
+        };
+      });
 
       if (visible) {
         animationFrame = requestAnimationFrame(animateParticles);
       }
     }
 
-    animateParticles();
+    // The global `@media (prefers-reduced-motion: reduce)` rule only zeroes CSS
+    // animation/transition durations — a rAF loop is invisible to it, so it needs
+    // an explicit guard. Particles still render, they just sit still.
+    if (!prefersReducedMotion) {
+      animateParticles();
+    }
 
     return () => {
       if (animationFrame) {
@@ -80,7 +103,9 @@
 </script>
 
 {#if visible}
-  <div class="loading-screen" role="dialog" aria-label="Loading content" aria-live="polite">
+  <!-- `role="status"` (not dialog — nothing here is interactive or focus-trapping)
+       carries an implicit aria-live="polite", so it is not repeated. -->
+  <div class="loading-screen" role="status" aria-busy="true" aria-label="Loading content">
     <!-- Animated background with gradient -->
     <div class="background-gradient"></div>
 
@@ -111,8 +136,10 @@
         <div class="dragon-eye"></div>
       </div>
 
-      <!-- Loading text -->
-      <h1 class="loading-title">ZachHandley's Portfolio</h1>
+      <!-- Loading text. Deliberately not a heading: the route already owns the
+           page's single <h1> (InteractiveIsland's sr-only "interactive 3d scene"),
+           and this overlay renders inside it. -->
+      <p class="loading-title">ZachHandley's Portfolio</p>
 
       <p class="loading-message">
         {message}
@@ -140,11 +167,13 @@
 
 <style>
   .loading-screen {
+    /* `inset: 0` sizes against the fixed-position containing block, which tracks
+       the *visible* viewport. `height: 100vh` is the LARGE viewport on iOS (URL bar
+       collapsed), so with the bar expanded the overlay overshot the visible area by
+       ~60-100px and pushed the progress bar / dots under the fold. `100vw` also
+       overshot by the scrollbar width on desktop. */
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
+    inset: 0;
     z-index: 9999;
     display: flex;
     align-items: center;

@@ -74,17 +74,21 @@
       style="transition: color var(--dur-fast), background-color var(--dur-fast);"
     >
       {#if isActive}
-        <span class="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r bg-accent" aria-hidden="true"></span>
+        <span
+          class="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-r bg-accent"
+          aria-hidden="true"
+        ></span>
       {/if}
       <Icon icon={m.icon} width={20} height={20} />
     </a>
   {/each}
 </nav>
 
-<!-- Mobile: bottom tab bar (sits above StatusBar). 5 items fit; "interactive" overflows into command palette. -->
+<!-- Mobile: bottom tab bar (sits above StatusBar). All five non-home modes fit —
+     work, code, links, contact and interactive are all rendered here. -->
 <nav
   aria-label="Primary mobile"
-  class="fixed bottom-9 left-0 right-0 z-30 flex h-12 items-stretch justify-around border-t border-border bg-bg/85 backdrop-blur-md md:hidden"
+  class="mobile-tabs fixed bottom-9 left-0 right-0 z-30 flex min-h-12 items-stretch justify-around border-t border-border bg-bg/85 backdrop-blur-md md:hidden"
 >
   {#each MODES.slice(1, 6) as m (m.id)}
     {@const isActive = activeId === m.id}
@@ -105,5 +109,11 @@
 <style>
   a.active {
     color: var(--color-accent);
+  }
+
+  /* Keep the tab labels clear of the iOS home indicator. Paired with min-h-12 (not
+     h-12) so the inset grows the bar instead of eating into the 44px tap targets. */
+  nav.mobile-tabs {
+    padding-bottom: env(safe-area-inset-bottom);
   }
 </style>
