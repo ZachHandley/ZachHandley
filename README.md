@@ -17,7 +17,6 @@ Founder/CTO @ **[Socialaize](https://socialaize.com)** · Founder @ **[Black Lea
 
 <!-- featured:rust:start -->
 - **[ELID](https://github.com/zachhandley/ELID)** — ELID is based on ULID, except for vector embeddings -- the general idea is, what if we had a way to represent a vector as a sortable hash that was also similar in "closeness" to other ID's on the same dimension, created from embeddings.
-- **[Blazen](https://github.com/zachhandley/Blazen)** — Blazen is a workflow/event based orchestration system for agentic flows, but can be used for workflows of any kind.
 - **[FakeNotify](https://github.com/zachhandley/FakeNotify)** — inotify for FS events doesn't work on NFS mounts, and that's annoying, so this emulates them.
 <!-- featured:rust:end -->
 
